@@ -1,11 +1,12 @@
-# Project Title
-One-line description (e.g., "Volunteer scheduling app for [Non‑Profit Name]")
-
+# Mitchabrim
+A web platform designed to present the organization’s activities and efficiently manage its data.
 ## Contents
 - [Overview](#overview) • [Non‑Profit](#non-profit) • [Team](#team) • [Quick start](#quick-start) • [Handover](#handover) • [Privacy](#privacy) • [Contacts](#contacts)
 
 ## Overview
-Briefly describe what the project does, who it serves, and the main value (1–2 sentences).
+Mitchabrim is a community-driven platform dedicated to reducing social isolation by connecting individuals who experience loneliness with supportive social activities and personal accompaniment.
+The system helps the organization present its work and manage participants, volunteers, and ongoing community programs in a structured and sensitive way.
+
 
 ## Non‑Profit
 - Organization: [Non‑Profit Name]  
@@ -13,9 +14,12 @@ Briefly describe what the project does, who it serves, and the main value (1–2
 - Key deliverable for them: e.g., "Simple roster export and sign-up form."
 
 ## Team
-- Team lead — Name — email — GitHub  
-- Members — Name — role — GitHub  
-Include student IDs if required.
+- Team lead — Ahmad Bakri — ahmadbak@post.jce.ac.il — Ahmad-Bakrii  
+- Developer — Ahmad Abu Kteash — 	ahmadabk@post.jce.ac.il — Ahmad-AbuKteash
+- Developer — Bahaa Aqel — 	bahaaaq@post.jce.ac.il — Bahaa-Aqel
+- Developer — Omar Aqel — 	omaraq@post.jce.ac.il — Omar-Aqel
+- Developer — Omar Quttaineh — 	omarko@post.jce.ac.il — OmarQuttaineh94     
+
 
 ## Quick start (local)
 1. git clone https://github.com/<org>/<repo>.git
