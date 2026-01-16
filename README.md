@@ -9,7 +9,7 @@ The system helps the organization present its work and manage participants, volu
 
 
 ## Non‑Profit
-- Organization: [Non‑Profit Name]  
+- Organization: [Mitchabrim]  
 - Primary stakeholder(s): Name — role — email  
 - Key deliverable for them: e.g., "Simple roster export and sign-up form."
 
