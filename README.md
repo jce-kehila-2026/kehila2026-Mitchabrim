@@ -41,7 +41,15 @@ Open http://localhost:3000
 - [ ] Add non‑profit staff as repo collaborators or transfer repo
 
 ## Privacy & Security
-List data collected (names, emails), storage location, and retention policy. Never commit secrets; use environment variables and GitHub secrets.
+
+This project does not collect or store any personal user data.
+No names, email addresses, or sensitive information are required or processed.
+
+All project files are stored and managed within the GitHub repository.
+There is no external database or long-term data retention.
+
+Sensitive information such as passwords, API keys, or tokens must never be committed to the repository.
+If such data is required in the future, environment variables and GitHub Secrets should be used instead.
 
 ## Known limitations
 Briefly list major limitations or missing features and any workarounds.
