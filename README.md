@@ -13,6 +13,10 @@ The system helps the organization present its work and manage participants, volu
 - Primary stakeholder(s): Name — role — email  
 - Key deliverable for them: e.g., "Simple roster export and sign-up form."
 
+
+## Team Introduction
+- A workspace team building a data management and profile website for an elderly care organization.
+
 ## Team
 - Team lead — Ahmad Bakri — ahmadbak@post.jce.ac.il — Ahmad-Bakrii  
 - Developer — Ahmad Abu Kteash — 	ahmadabk@post.jce.ac.il — Ahmad-AbuKteash
