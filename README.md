@@ -59,9 +59,9 @@ If such data is required in the future, environment variables and GitHub Secrets
 Briefly list major limitations or missing features and any workarounds.
 
 ## Contacts
-- Project lead: Name — email  
-- Non‑profit contact: Name — email  
-- Instructor / TA: Name — email
+- Project lead: Ahmad Bakri — ahmadbak@post.jce.ac.il
+- Non‑profit contact: shera shashon — Shiragat15@gmail.com 
+- Instructor / TA: Noa Carnial — noaca@post.jce.ac.il 
 
 ## License
 Specify license (e.g., MIT) and any IP/ownership notes relevant to the non‑profit.
