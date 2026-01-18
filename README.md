@@ -32,7 +32,6 @@ The system helps the organization present its work and manage participants, volu
 4. npm install
 5. npm run dev
 Open http://localhost:3000
-
 (Or: docker-compose up --build)
 
 ## Demo / Deployment
