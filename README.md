@@ -10,8 +10,8 @@ The system helps the organization present its work and manage participants, volu
 
 ## Non‑Profit
 - Organization: [Mitchabrim]  
-- Primary stakeholder(s): Name — role — email  
-- Key deliverable for them: e.g., "Simple roster export and sign-up form."
+- Primary stakeholder(s): shera shashon — Contact person - Shiragat15@gmail.com  
+- Key deliverable for them: Web Platform
 
 
 ## Team Introduction
