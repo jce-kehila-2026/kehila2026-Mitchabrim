@@ -69,3 +69,4 @@ Specify license (e.g., MIT) and any IP/ownership notes relevant to the non‑pro
 
 ## The Date
 - 18/1/2025
+- Sunday
