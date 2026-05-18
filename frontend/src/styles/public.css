@@ -1,0 +1,275 @@
+/* Public Website Styles for Mitchabrim */
+
+body {
+  font-family: 'Arial', sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #FFF8DC; /* Cornsilk - warm light background */
+  color: #8B4513; /* SaddleBrown - warm dark text */
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Navbar */
+.navbar {
+  background-color: #D2691E; /* Chocolate */
+  color: white;
+  padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.navbar-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.navbar-logo {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #FFD700; /* Gold */
+}
+
+.navbar-links {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 2rem;
+}
+
+.navbar-links li a {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s;
+}
+
+.navbar-links li a:hover {
+  color: #FFD700; /* Gold on hover */
+}
+
+/* Sections */
+section {
+  padding: 4rem 0;
+  min-height: 50vh;
+}
+
+.about-section {
+  background-color: #FFF8DC; /* Cornsilk */
+}
+
+.activities-section {
+  background-color: #FAF0E6; /* Linen */
+}
+
+.join-request-section {
+  background-color: #FFF8DC; /* Cornsilk */
+}
+
+/* About Section */
+.about-section h2 {
+  color: #D2691E; /* Chocolate */
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.about-section h3 {
+  color: #FF6347; /* Tomato */
+  margin-top: 2rem;
+}
+
+/* Activities Section */
+.activities-section h2 {
+  color: #D2691E; /* Chocolate */
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.activities-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.card {
+  background-color: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  border: 2px solid #FFD700; /* Gold border */
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+}
+
+.card h3 {
+  color: #D2691E; /* Chocolate */
+  margin-bottom: 1rem;
+}
+
+/* Join Request Section */
+.join-request-section h2 {
+  color: #D2691E; /* Chocolate */
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.join-form {
+  max-width: 600px;
+  margin: 0 auto;
+  background-color: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  border: 2px solid #FFD700; /* Gold border */
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+  color: #8B4513; /* SaddleBrown */
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #D2691E; /* Chocolate */
+  border-radius: 4px;
+  font-size: 1rem;
+  background-color: #FFF8DC; /* Cornsilk */
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.submit-btn {
+  background-color: #FF6347; /* Tomato */
+  color: white;
+  border: none;
+  padding: 0.75rem 2rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  width: 100%;
+}
+
+.submit-btn:hover {
+  background-color: #D2691E; /* Chocolate */
+}
+
+/* Footer */
+.footer {
+  background-color: #D2691E; /* Chocolate */
+  color: white;
+  text-align: center;
+  padding: 2rem 0;
+  margin-top: 2rem;
+}
+
+/* Login Page */
+.login-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #FFF8DC; /* Cornsilk */
+}
+
+.login-container {
+  background-color: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  border: 2px solid #FFD700; /* Gold border */
+  max-width: 400px;
+  width: 100%;
+}
+
+.login-container h2 {
+  color: #D2691E; /* Chocolate */
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.login-form .form-group {
+  margin-bottom: 1.5rem;
+}
+
+.signin-btn {
+  background-color: #FF6347; /* Tomato */
+  color: white;
+  border: none;
+  padding: 0.75rem 2rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.signin-btn:hover {
+  background-color: #D2691E; /* Chocolate */
+}
+
+.google-signin-btn {
+  background-color: #FFD700; /* Gold */
+  color: #8B4513; /* SaddleBrown */
+  border: none;
+  padding: 0.75rem 2rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  width: 100%;
+}
+
+.google-signin-btn:hover {
+  background-color: #FFA500; /* Orange */
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .navbar-links {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .activities-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .join-form {
+    padding: 1rem;
+  }
+
+  section {
+    padding: 2rem 0;
+  }
+}
