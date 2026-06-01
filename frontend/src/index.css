@@ -1,111 +1,111 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@300;400;500;600;700&family=Heebo:wght@300;400;500;600;700;800&display=swap");
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* ===== Refined palette — warm, elegant, editorial ===== */
+  /* Soft layered creams instead of flat beige */
+  --color-bg: #faf3e7;          /* page background — warm ivory */
+  --color-surface: #fffaf2;     /* sidebar / panels */
+  --color-card: #ffffff;        /* cards */
+  --color-elevated: #fdf5e8;    /* hover / subtle fills */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Burgundy stays the hero — deeper, richer, more refined */
+  --color-primary: #8c1f1f;          /* signature burgundy */
+  --color-primary-hover: #731818;    /* deeper on hover */
+  --color-primary-deep: #4d0f0f;     /* near-black wine for text accents */
+  --color-primary-soft: #f6dede;     /* tinted bg for badges */
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Accent: a refined warm terracotta + soft peach */
+  --color-accent: #b85a36;           /* terracotta */
+  --color-accent-soft: #e3a886;      /* warm peach */
+  --color-accent-bg: #fbe6d8;        /* terracotta wash */
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Supporting warm gold for highlights */
+  --color-gold: #c9a35a;
+  --color-gold-soft: #f3e4c2;
+
+  --color-icon-bg: #fbe7d8;
+  --color-beige: #f4ead9;
+
+  /* Neutrals — warm-toned, not gray */
+  --color-border: #ecdfcc;
+  --color-border-strong: #d9c5a8;
+
+  --color-text: #2a1a14;        /* deep espresso */
+  --color-text-soft: #4a342c;
+  --color-muted: #8a7a6f;
+
+  /* States */
+  --color-success: #5f8a55;
+  --color-success-bg: #e7efde;
+  --color-warning: #d49149;
+  --color-warning-bg: #fbe9d2;
+  --color-error: #b3382f;
+  --color-error-bg: #f6dcd8;
+  --color-gray: #8a8480;
+  --color-gray-bg: #efe9e0;
+
+  /* ===== Legacy aliases ===== */
+  --color-burgundy: var(--color-primary);
+  --color-burgundy-dark: var(--color-primary-hover);
+  --color-burgundy-deep: var(--color-primary-deep);
+  --color-red: var(--color-error);
+  --color-orange: var(--color-accent);
+  --color-orange-soft: var(--color-accent-soft);
+  --color-orange-dark: #944422;
+  --color-yellow: var(--color-gold);
+  --color-cream: var(--color-bg);
+  --color-cream-2: var(--color-beige);
+  --color-white: var(--color-card);
+  --color-text-muted: var(--color-muted);
+  --color-warn: var(--color-warning);
+  --color-warn-bg: var(--color-warning-bg);
+  --color-danger: var(--color-error);
+  --color-danger-bg: var(--color-error-bg);
+
+  /* Softer, warmer shadows */
+  --shadow-sm: 0 1px 2px rgba(80, 35, 25, 0.04), 0 1px 1px rgba(80, 35, 25, 0.03);
+  --shadow-md: 0 10px 24px rgba(80, 35, 25, 0.07);
+  --shadow-lg: 0 24px 50px rgba(80, 35, 25, 0.12);
+  --shadow-burgundy: 0 10px 24px rgba(140, 31, 31, 0.22);
+  --shadow-warm: 0 8px 24px rgba(184, 90, 54, 0.18);
+
+  --radius: 16px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+
+  --font-display: "Outfit", "Heebo", system-ui, sans-serif;
+  --font-body: "Figtree", "Heebo", system-ui, sans-serif;
+
+  --sidebar-w: 280px;
+  --sidebar-w-collapsed: 78px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
 body {
   margin: 0;
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  direction: rtl;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
+h1, h2, h3, h4 {
   margin: 0;
+  color: var(--color-primary);
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
+h1 { font-size: 34px; line-height: 1.15; }
+h2 { font-size: 26px; line-height: 1.2; }
+h3 { font-size: 20px; line-height: 1.25; }
+h4 { font-size: 16px; line-height: 1.3; }
+p { margin: 0; line-height: 1.65; }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
+::selection { background: rgba(201, 107, 60, .25); color: var(--color-text); }
