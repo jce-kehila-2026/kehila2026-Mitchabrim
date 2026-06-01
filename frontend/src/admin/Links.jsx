@@ -1,51 +1,42 @@
-import AdminLayout from '../components/admin/AdminLayout';
-import SearchFilters from '../components/admin/SearchFilters';
-import DataTable from '../components/admin/DataTable';
-import '../styles/admin.css';
+import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import SectionCard from "@/components/admin/SectionCard.jsx";
+import SearchFilters from "@/components/admin/SearchFilters.jsx";
+import DataTable from "@/components/admin/DataTable.jsx";
 
-function Links() {
-  const filters = [
-    { label: 'קטגוריה', options: [
-      { value: 'רווחה', label: 'רווחה' },
-      { value: 'בריאות', label: 'בריאות' },
-      { value: 'חינוך', label: 'חינוך' }
-    ]},
-    { label: 'תאריך', options: [
-      { value: 'השבוע', label: 'השבוע' },
-      { value: 'החודש', label: 'החודש' },
-      { value: 'השנה', label: 'השנה' }
-    ]}
-  ];
+const LINKS = [
+  { title: "טופס הצטרפות מתנדבים", cat: "מתנדבים", url: "https://forms.mitchabrim.org/volunteer", desc: "טופס הרשמה רשמי", date: "01.03.2026" },
+  { title: "נוהל ביטוח מתנדבים", cat: "ביטוח", url: "https://docs.mitchabrim.org/insurance", desc: "מסמך נוהל מעודכן", date: "12.04.2026" },
+  { title: "מצגת פרלמנטים", cat: "הדרכה", url: "https://drive.mitchabrim.org/parl-deck", desc: "מצגת לרכזות", date: "20.04.2026" },
+  { title: "סטטיסטיקות עירייה", cat: "מקורות", url: "https://jerusalem.muni.il/stats", desc: "נתוני אוכלוסייה", date: "10.05.2026" },
+];
 
-  const columns = ['כותרת', 'קטגוריה', 'קישור', 'תיאור', 'תאריך הוספה', 'פעולה'];
-
-  const data = [
-    { כותרת: 'שירותי רווחה ירושלים', קטגוריה: 'רווחה', קישור: 'https://welfare.jerusalem.muni.il', תיאור: 'מידע על שירותי רווחה בעיר', 'תאריך הוספה': '01/04/2026' },
-    { כותרת: 'מרכז בריאות הנפש', קטגוריה: 'בריאות', קישור: 'https://mentalhealth.gov.il', תיאור: 'שירותי בריאות נפשית', 'תאריך הוספה': '15/03/2026' },
-    { כותרת: 'חינוך מבוגרים', קטגוריה: 'חינוך', קישור: 'https://adulted.edu.gov.il', תיאור: 'קורסים לחינוך מבוגרים', 'תאריך הוספה': '20/02/2026' },
-    { כותרת: 'ביטוח לאומי', קטגוריה: 'רווחה', קישור: 'https://bituachleumi.gov.il', תיאור: 'זכויות וקצבאות', 'תאריך הוספה': '10/01/2026' },
-    { כותרת: 'מרכז לקשיש', קטגוריה: 'בריאות', קישור: 'https://elderlycenter.org.il', תיאור: 'שירותים לקשישים', 'תאריך הוספה': '05/12/2025' }
-  ];
-
+export default function Links() {
   return (
-    <AdminLayout>
-      <div className="page-header">
-        <h1 className="page-title">מאגר קישורים</h1>
-        <p className="page-subtitle">קישורים חשובים ונגישים לצוות</p>
-      </div>
-
-      <div style={{ marginBottom: '20px' }}>
-        <button className="btn btn-primary">הוספת קישור</button>
-      </div>
-
-      <SearchFilters
-        searchPlaceholder="חיפוש קישור..."
-        filters={filters}
-      />
-
-      <DataTable columns={columns} data={data} />
+    <AdminLayout
+      title="מאגר קישורים"
+      subtitle="קישורים חשובים ונגישים לצוות"
+      actions={<button className="btn btn-primary">+ הוספת קישור</button>}
+    >
+      <SectionCard>
+        <SearchFilters
+          searchPlaceholder="חיפוש קישור..."
+          filters={[
+            { label: "קטגוריה", options: ["מתנדבים", "ביטוח", "הדרכה", "מקורות"] },
+            { label: "תאריך", options: ["החודש", "3 חודשים אחרונים", "השנה"] },
+          ]}
+        />
+        <DataTable
+          columns={[
+            { key: "title", label: "כותרת" },
+            { key: "cat", label: "קטגוריה", render: (r) => <span className="badge">{r.cat}</span> },
+            { key: "url", label: "קישור", render: (r) => <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "var(--color-burgundy)" }}>פתח קישור ↗</a> },
+            { key: "desc", label: "תיאור" },
+            { key: "date", label: "תאריך הוספה" },
+            { key: "actions", label: "פעולה", render: () => (<><button>עריכה</button><button>מחיקה</button></>) },
+          ]}
+          data={LINKS}
+        />
+      </SectionCard>
     </AdminLayout>
   );
 }
-
-export default Links;

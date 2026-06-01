@@ -1,41 +1,18 @@
-function ProjectCard({ title, date, status, progress, delivered, onWay, packed }) {
-  const statusLabels = {
-    active: 'פעיל',
-    completed: 'הושלם',
-    planning: 'בתכנון'
-  };
-
+export default function ProjectCard({ title, date, status, progress = 0, delivered = 0, onWay = 0, packed = 0 }) {
+  const cls = status === "פעיל" ? "badge-green" : status === "בהכנה" ? "badge-orange" : status === "הסתיים" ? "badge-gray" : "";
   return (
     <div className="project-card">
-      <div className="project-card-header">
-        <h3 className="project-card-title">{title}</h3>
-        <span className={`status-badge status-${status}`}>
-          {statusLabels[status]}
-        </span>
+      <div className="head">
+        <h4>{title}</h4>
+        <span className={`badge ${cls}`}>{status}</span>
       </div>
-      <p className="date">{date}</p>
-      <div className="progress-bar">
-        <div
-          className="progress-fill"
-          style={{ width: `${progress}%` }}
-        ></div>
-      </div>
-      <div className="project-stats">
-        <div className="stat-item">
-          <span className="stat-number">{delivered}</span>
-          <span className="stat-label">נמסרו</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-number">{onWay}</span>
-          <span className="stat-label">בדרך</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-number">{packed}</span>
-          <span className="stat-label">נארזו</span>
-        </div>
+      <div style={{ color: "var(--color-text-muted)", fontSize: 13 }}>תאריך חלוקה: {date}</div>
+      <div className="project-progress"><div style={{ width: `${progress}%` }} /></div>
+      <div className="project-meta">
+        <div><span>נמסרו</span><strong>{delivered}</strong></div>
+        <div><span>בדרך</span><strong>{onWay}</strong></div>
+        <div><span>נארזו</span><strong>{packed}</strong></div>
       </div>
     </div>
   );
 }
-
-export default ProjectCard;

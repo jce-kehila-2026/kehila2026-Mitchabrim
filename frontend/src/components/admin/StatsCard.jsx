@@ -1,12 +1,12 @@
-function StatsCard({ title, value, subtitle, icon }) {
+export default function StatsCard({ title, value, subtitle, icon }) {
   return (
     <div className="stats-card">
-      <div className="icon">{icon}</div>
-      <h3>{title}</h3>
-      <div className="value">{value}</div>
-      <p className="subtitle">{subtitle}</p>
+      <div className="stats-icon">{icon}</div>
+      <div>
+        <h3>{title}</h3>
+        <div className="stats-value">{value}</div>
+        {subtitle && <div className="stats-sub">{subtitle}</div>}
+      </div>
     </div>
   );
 }
-
-export default StatsCard;

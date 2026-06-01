@@ -1,62 +1,64 @@
-import AdminLayout from '../components/admin/AdminLayout';
-import StatsCard from '../components/admin/StatsCard';
-import SectionCard from '../components/admin/SectionCard';
-import '../styles/admin.css';
+import { Link } from "react-router-dom";
+import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import StatsCard from "@/components/admin/StatsCard.jsx";
+import SectionCard from "@/components/admin/SectionCard.jsx";
 
-function Dashboard() {
+const REQUESTS = [
+  { name: "מרים לוי", note: "בקשה להתנדב" },
+  { name: "יעקב אברהם", note: "רוצה לחבר אזרח ותיק" },
+  { name: "רחל פרידמן", note: "בקשה לחיבור" },
+  { name: "דוד שמש", note: "מתנדב חדש" },
+];
+
+const TASKS = [
+  "להתקשר ל-12 אזרחים ותיקים שלא ענו השבוע",
+  "להשלים שיבוץ מתנדבים בשכונת רחביה",
+  "לאשר רשימת חלוקה לחג פסח",
+  "לעדכן פרטי קשר של 3 אזרחים ותיקים",
+];
+
+export default function Dashboard() {
   return (
-    <AdminLayout>
-      <div className="page-header">
-        <h1 className="page-title">שלום שרה, בוקר טוב</h1>
-        <p className="page-subtitle">מבט מהיר על פעילות הקהילה היום</p>
+    <AdminLayout
+      title="שלום שרה, בוקר טוב"
+      subtitle="מבט מהיר על פעילות הקהילה היום"
+      actions={<Link to="/admin/site-content" className="btn btn-primary">🌐 עריכת האתר הראשי</Link>}
+    >
+      <div className="stats-grid">
+        <StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value="270" subtitle="ב-7 אזורים" />
+        <StatsCard icon="🤝" title="מתנדבים פעילים" value="138" subtitle="+12 החודש" />
+        <StatsCard icon="🎁" title="פרויקטים פעילים" value="3" subtitle="כולל חנוכה" />
+        <StatsCard icon="✉️" title="בקשות חדשות" value="9" subtitle="ממתינות לטיפול" />
       </div>
 
       <div className="stats-grid">
-        <StatsCard
-          title="סה״כ קשישים"
-          value="342"
-          subtitle="+12 החודש"
-          icon="👴"
-        />
-        <StatsCard
-          title="מתנדבים פעילים"
-          value="127"
-          subtitle="+5 השבוע"
-          icon="🤝"
-        />
-        <StatsCard
-          title="פרויקטים פעילים"
-          value="3"
-          subtitle="פסח, שבועות, ראש השנה"
-          icon="📦"
-        />
-        <StatsCard
-          title="בקשות חדשות"
-          value="8"
-          subtitle="ב-4 שכונות"
-          icon="📋"
-        />
+        <StatsCard icon="🏛️" title="מפגשי פרלמנט השבוע" value="4" />
+        <StatsCard icon="📞" title="שיחות מתוכננות" value="32" />
+        <StatsCard icon="📦" title="חבילות שנמסרו" value="217" subtitle="החודש" />
+        <StatsCard icon="⚠️" title="התראות פתוחות" value="6" />
       </div>
 
-      <SectionCard title="בקשות הצטרפות אחרונות">
-        <ul>
-          <li>מרים לוי — בקשה להתנדב</li>
-          <li>יעקב אברהם — רוצה לחבר קשיש</li>
-          <li>רחל פרידמן — בקשה לחיבור</li>
-          <li>דוד שמש — מתנדב חדש</li>
-        </ul>
-      </SectionCard>
-
-      <SectionCard title="משימות והתראות">
-        <ul>
-          <li>להתקשר ל-12 קשישים שלא ענו השבוע</li>
-          <li>להשלים שיבוץ מתנדבים בשכונת רחביה</li>
-          <li>לאשר רשימת חלוקה לחג פסח</li>
-          <li>לעדכן פרטי קשר של 3 קשישים</li>
-        </ul>
-      </SectionCard>
+      <div className="two-col-grid">
+        <SectionCard title="בקשות הצטרפות אחרונות">
+          {REQUESTS.map((r) => (
+            <div key={r.name} className="list-item">
+              <div>
+                <div className="list-item-title">{r.name}</div>
+                <div className="list-item-sub">{r.note}</div>
+              </div>
+              <button className="btn">צפייה</button>
+            </div>
+          ))}
+        </SectionCard>
+        <SectionCard title="משימות והתראות">
+          {TASKS.map((t) => (
+            <div key={t} className="list-item">
+              <div className="list-item-title" style={{ fontWeight: 500 }}>{t}</div>
+              <span className="badge badge-orange">פתוח</span>
+            </div>
+          ))}
+        </SectionCard>
+      </div>
     </AdminLayout>
   );
 }
-
-export default Dashboard;

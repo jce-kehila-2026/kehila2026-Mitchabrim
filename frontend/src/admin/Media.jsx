@@ -1,51 +1,41 @@
-import AdminLayout from '../components/admin/AdminLayout';
-import '../styles/admin.css';
+import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import SectionCard from "@/components/admin/SectionCard.jsx";
 
-function Media() {
-  const images = [
-    { title: 'מפגש פרלמנט רחביה', category: 'פרלמנטים', date: '15/04/2026' },
-    { title: 'חלוקת חבילות פסח', category: 'חגים', date: '10/04/2026' },
-    { title: 'מתנדבים בקהילה', category: 'מתנדבים', date: '05/04/2026' },
-    { title: 'כרטיס ברכה לפסח', category: 'כרטיסי ברכה', date: '01/04/2026' },
-    { title: 'מפגש חברתי', category: 'שיווק', date: '20/03/2026' },
-    { title: 'חלוקת מתנות', category: 'חגים', date: '25/03/2026' },
-    { title: 'פרלמנט גבעת שאול', category: 'פרלמנטים', date: '18/03/2026' },
-    { title: 'צוות מתחברים', category: 'מתנדבים', date: '12/03/2026' }
-  ];
+const CATEGORIES = ["הכל", "פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"];
+const IMAGES = [
+  { title: "מפגש פרלמנט רחביה", cat: "פרלמנטים", date: "10.05.2026" },
+  { title: "חלוקת חבילות חנוכה", cat: "חגים", date: "12.12.2025" },
+  { title: "כנס מתנדבים שנתי", cat: "מתנדבים", date: "01.01.2026" },
+  { title: "כרטיס ברכה לראש השנה", cat: "כרטיסי ברכה", date: "01.09.2025" },
+  { title: "פוסט קמפיין הצטרפות", cat: "שיווק", date: "15.04.2026" },
+  { title: "פרלמנט גילה - מפגש שנתי", cat: "פרלמנטים", date: "20.03.2026" },
+];
 
+export default function Media() {
   return (
-    <AdminLayout>
-      <div className="page-header">
-        <h1 className="page-title">מאגר תמונות</h1>
-        <p className="page-subtitle">ניהול תמונות לפי נושאים</p>
-      </div>
-
-      <div style={{ marginBottom: '20px' }}>
-        <button className="btn btn-primary">העלאת תמונה</button>
-      </div>
-
-      <div style={{ marginBottom: '20px' }}>
-        <button className="btn btn-secondary">פרלמנטים</button>
-        <button className="btn btn-secondary">מתנדבים</button>
-        <button className="btn btn-secondary">חגים</button>
-        <button className="btn btn-secondary">שיווק</button>
-        <button className="btn btn-secondary">כרטיסי ברכה</button>
-      </div>
-
-      <div className="media-gallery">
-        {images.map((image, index) => (
-          <div key={index} className="media-card">
-            <div className="media-image">🖼️</div>
-            <div className="media-info">
-              <h4 className="media-title">{image.title}</h4>
-              <p className="media-category">{image.category}</p>
-              <p className="media-date">{image.date}</p>
+    <AdminLayout
+      title="מאגר תמונות"
+      subtitle="ניהול תמונות לפי נושאים"
+      actions={<button className="btn btn-primary">+ העלאת תמונה</button>}
+    >
+      <SectionCard>
+        <div className="search-filters">
+          {CATEGORIES.map((c) => (
+            <button key={c} className="btn">{c}</button>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+          {IMAGES.map((img) => (
+            <div key={img.title} className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <div style={{ aspectRatio: "4/3", background: "linear-gradient(135deg, #f6ecdc, #f4a259)", display: "grid", placeItems: "center", fontSize: 42 }}>🖼️</div>
+              <div style={{ padding: 14 }}>
+                <div style={{ fontWeight: 700 }}>{img.title}</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>{img.cat} • {img.date}</div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </SectionCard>
     </AdminLayout>
   );
 }
-
-export default Media;

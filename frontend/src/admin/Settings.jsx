@@ -1,71 +1,70 @@
-import AdminLayout from '../components/admin/AdminLayout';
-import '../styles/admin.css';
+import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import SectionCard from "@/components/admin/SectionCard.jsx";
 
-function Settings() {
+export default function Settings() {
   return (
-    <AdminLayout>
-      <div className="page-header">
-        <h1 className="page-title">הגדרות</h1>
-        <p className="page-subtitle">ניהול הגדרות המערכת</p>
-      </div>
+    <AdminLayout title="הגדרות" subtitle="ניהול הגדרות המערכת">
+      <SectionCard title="פרטי הארגון">
+        <div className="row row-2">
+          <div className="field"><label>שם הארגון</label><input className="input" defaultValue="מתחברים" /></div>
+          <div className="field"><label>כתובת</label><input className="input" defaultValue="ירושלים" /></div>
+          <div className="field"><label>טלפון</label><input className="input" defaultValue="02-0000000" /></div>
+          <div className="field"><label>אימייל</label><input className="input" defaultValue="info@mitchabrim.org" /></div>
+        </div>
+        <button className="btn btn-primary">שמירה</button>
+      </SectionCard>
 
-      <div className="settings-sections">
-        <div className="settings-section">
-          <h3>פרטי הארגון</h3>
-          <div className="settings-field">
-            <label>שם הארגון</label>
-            <input type="text" defaultValue="מתחברים" />
+      <SectionCard title="משתמשי מערכת">
+        {[
+          { name: "שרה כהן", role: "רכזת ראשית" },
+          { name: "פנינה לוי", role: "רכזת מתנדבים" },
+          { name: "שירה אברהם", role: "רכזת פרויקטים" },
+        ].map((u) => (
+          <div key={u.name} className="list-item">
+            <div><div className="list-item-title">{u.name}</div><div className="list-item-sub">{u.role}</div></div>
+            <button className="btn">עריכה</button>
           </div>
-          <div className="settings-field">
-            <label>כתובת</label>
-            <input type="text" defaultValue="ירושלים, ישראל" />
+        ))}
+      </SectionCard>
+
+      <SectionCard title="אזורים ושכונות">
+        <div className="row row-3">
+          {[
+            { area: "מרכז", n: ["רחביה", "קטמון", "טלביה"] },
+            { area: "צפון", n: ["פסגת זאב", "רמות", "נווה יעקב"] },
+            { area: "דרום", n: ["גילה", "ארנונה", "תלפיות"] },
+            { area: "מערב", n: ["בית הכרם", "קריית יובל"] },
+            { area: "מזרח", n: ["מעלות דפנה"] },
+            { area: "מערב חדש", n: ["הר נוף"] },
+            { area: "פסגות", n: ["מצפה נפתוח"] },
+          ].map((a) => (
+            <div key={a.area} className="card">
+              <h4 style={{ fontSize: 15 }}>{a.area}</h4>
+              <ul style={{ paddingInlineStart: 18, color: "var(--color-text-muted)", marginTop: 8 }}>
+                {a.n.map((nb) => <li key={nb}>{nb}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="קטגוריות">
+        <div className="row row-2">
+          <div>
+            <h4 style={{ fontSize: 14, marginBottom: 8 }}>תמונות</h4>
+            {["פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"].map((c) => <span key={c} className="badge" style={{ marginInlineEnd: 6 }}>{c}</span>)}
           </div>
-          <div className="settings-field">
-            <label>טלפון</label>
-            <input type="tel" defaultValue="02-1234567" />
-          </div>
-          <div className="settings-field">
-            <label>אימייל</label>
-            <input type="email" defaultValue="info@mitchabrim.org" />
+          <div>
+            <h4 style={{ fontSize: 14, marginBottom: 8 }}>קישורים</h4>
+            {["מתנדבים", "ביטוח", "הדרכה", "מקורות"].map((c) => <span key={c} className="badge" style={{ marginInlineEnd: 6 }}>{c}</span>)}
           </div>
         </div>
+      </SectionCard>
 
-        <div className="settings-section">
-          <h3>משתמשי מערכת</h3>
-          <ul className="settings-list">
-            <li>שרה כהן - רכזת ראשית</li>
-            <li>דניאל לוי - מתאם מתנדבים</li>
-            <li>נועה רוזן - מנהלת פרויקטים</li>
-            <li>איתן גולד - רכז כספים</li>
-          </ul>
-        </div>
-
-        <div className="settings-section">
-          <h3>אזורים ושכונות</h3>
-          <ul className="settings-list">
-            <li>ירושלים - רחביה, גבעת שאול, תלפיות</li>
-            <li>תל אביב - רמת אביב, פלורנטין</li>
-            <li>חיפה - כרמל, הדר</li>
-          </ul>
-        </div>
-
-        <div className="settings-section">
-          <h3>קטגוריות</h3>
-          <ul className="settings-list">
-            <li>תמונות: פרלמנטים, מתנדבים, חגים, שיווק, כרטיסי ברכה</li>
-            <li>קישורים: רווחה, בריאות, חינוך, תרבות</li>
-          </ul>
-        </div>
-
-        <div className="settings-section">
-          <h3>גיבוי נתונים</h3>
-          <p>גיבוי אחרון: 15/04/2026</p>
-          <p>סטטוס: תקין</p>
-          <button className="btn btn-primary">הפעל גיבוי</button>
-        </div>
-      </div>
+      <SectionCard title="גיבוי נתונים">
+        <p>גיבוי אחרון: 28.05.2026 • הצליח</p>
+        <div style={{ marginTop: 12 }}><button className="btn btn-primary">הפעל גיבוי</button></div>
+      </SectionCard>
     </AdminLayout>
   );
 }
-
-export default Settings;
