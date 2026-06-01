@@ -1,20 +1,21 @@
-import '../styles/public.css';
-import Navbar from '../components/Navbar';
-import AboutSection from '../components/AboutSection';
-import ActivitiesSection from '../components/ActivitiesSection';
-import JoinRequestSection from '../components/JoinRequestSection';
-import Footer from '../components/Footer';
+import PublicNavbar from "@/components/public/PublicNavbar.jsx";
+import HeroSection from "@/components/public/HeroSection.jsx";
+import AboutSection from "@/components/public/AboutSection.jsx";
+import ActivitiesSection from "@/components/public/ActivitiesSection.jsx";
+import TeamSection from "@/components/public/TeamSection.jsx";
+import JoinRequestSection from "@/components/public/JoinRequestSection.jsx";
+import PublicFooter from "@/components/public/PublicFooter.jsx";
 
-function Home() {
+export default function Home() {
   return (
-    <div>
-      <Navbar />
+    <>
+      <PublicNavbar />
+      <HeroSection />
       <AboutSection />
       <ActivitiesSection />
+      <TeamSection />
       <JoinRequestSection />
-      <Footer />
-    </div>
+      <PublicFooter />
+    </>
   );
 }
-
-export default Home;
