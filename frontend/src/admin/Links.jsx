@@ -14,7 +14,6 @@ import {
   normalizeUrl 
 } from "../services/linkService.js";
 
-// الفئات حسب ملف المتطلبات
 const CATEGORIES = ["עירייה", "ביטוח מתנדבים", "רישום משתתפי פרלמנט", "עדכון מפגשי פרלמנט", "קנבה", "מתנדבים", "ביטוח", "הדרכה", "מקורות", "אחר"];
 
 export default function Links() {
@@ -42,13 +41,11 @@ export default function Links() {
     setTimeout(() => setAlertMessage({ show: false, text: "", type: "" }), 3000);
   };
 
-  // فتح مربع الخيارات عند الضغط على الاسم
   const handleTitleClick = (link) => {
     setSelectedLink(link);
     setShowActionModal(true);
   };
 
-  // فتح نموذج التعديل من المربع
   const handleEditFromModal = () => {
     if (!selectedLink) return;
     setEditingLink(selectedLink);
@@ -62,7 +59,6 @@ export default function Links() {
     setShowForm(true);
   };
 
-  // حذف من المربع
   const handleDeleteFromModal = async () => {
     if (!selectedLink) return;
     setShowActionModal(false);
@@ -77,7 +73,6 @@ export default function Links() {
     }
   };
 
-  // التحقق من المستخدم
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
@@ -85,7 +80,6 @@ export default function Links() {
     return () => unsubscribe();
   }, []);
 
-  // جلب الروابط باستخدام الـ Service
   const fetchLinks = async () => {
     setLoading(true);
     try {
@@ -106,7 +100,6 @@ export default function Links() {
     fetchLinks();
   }, []);
 
-  // فلترة الروابط
   useEffect(() => {
     let filtered = [...links];
     if (searchTerm) {
@@ -123,7 +116,6 @@ export default function Links() {
     setFilteredLinks(filtered);
   }, [searchTerm, selectedCategory, links]);
 
-  // إضافة رابط جديد
   const handleAddLink = async (e) => {
     e.preventDefault();
     const url = normalizeUrl(formData.url);
@@ -144,7 +136,6 @@ export default function Links() {
     }
   };
 
-  // تحديث رابط
   const handleUpdateLink = async (e) => {
     e.preventDefault();
     const url = normalizeUrl(formData.url);
@@ -165,17 +156,6 @@ export default function Links() {
     }
   };
 
-  const handleEditClick = (link) => {
-    setEditingLink(link);
-    setFormData({
-      title: link.title || "",
-      url: link.url || "",
-      category: link.category || "",
-      description: link.description || "",
-    });
-    setShowForm(true);
-  };
-
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingLink(null);
@@ -192,7 +172,6 @@ export default function Links() {
         </button>
       }
     >
-      {/* رسالة التنبيه */}
       {alertMessage.show && (
         <div style={{
           position: "fixed", top: "20px", right: "20px", zIndex: 1000,
@@ -236,7 +215,7 @@ export default function Links() {
                       color: "#8B0000",
                       cursor: "pointer",
                       fontWeight: "bold",
-                      textDecoration: "underline",
+                      textDecoration: "none",
                       fontSize: "14px"
                     }}
                   >
@@ -247,7 +226,7 @@ export default function Links() {
               { 
                 key: "category", 
                 label: "קטגוריה", 
-                render: (r) => <span style={{ backgroundColor: "#f0f0f0", padding: "4px 8px", borderRadius: "12px" }}>{r.category}</span> 
+                render: (r) => <span style={{ backgroundColor: "#f0f0f0", padding: "4px 8px", borderRadius: "12px" }}>{r.category}</span>
               },
               { 
                 key: "url", 
@@ -262,73 +241,60 @@ export default function Links() {
         )}
       </SectionCard>
 
-      {/* مربع الخيارات (Action Modal) - عند الضغط على الاسم */}
+      {/* مربع الخيارات - مطابق تماماً لتصميم المتطوعين */}
       {showActionModal && selectedLink && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.5)", display: "flex",
-          alignItems: "center", justifyContent: "center", zIndex: 1000
-        }} onClick={() => setShowActionModal(false)}>
-          <div style={{
-            backgroundColor: "white",
-            borderRadius: "16px",
-            padding: "24px",
-            width: "320px",
-            maxWidth: "90%",
-            textAlign: "center",
-            boxShadow: "0 10px 40px rgba(0,0,0,0.2)"
-          }} onClick={(e) => e.stopPropagation()}>
-            
-            <h3 style={{ marginBottom: "8px", fontSize: "18px" }}>{selectedLink.title}</h3>
-            <p style={{ color: "#666", marginBottom: "24px", fontSize: "14px" }}>בחר פעולה</p>
-            
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <button
-                onClick={handleEditFromModal}
-                style={{
-                  backgroundColor: "#4CAF50",
-                  color: "white",
-                  padding: "12px",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "16px",
-                  fontWeight: "bold"
-                }}
-              >
-                ✏️ עריכה
+        <div className="modal-backdrop" onClick={() => setShowActionModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 500, maxWidth: "90%", borderRadius: "16px" }}>
+            <div className="modal-header">
+              <h2>{selectedLink.title}</h2>
+              <button className="modal-close" onClick={() => setShowActionModal(false)}>
+                ×
               </button>
-              
-              <button
-                onClick={handleDeleteFromModal}
-                style={{
-                  backgroundColor: "#dc2626",
-                  color: "white",
-                  padding: "12px",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "16px",
-                  fontWeight: "bold"
-                }}
-              >
-                🗑️ מחיקה
+            </div>
+
+            <div className="form-section">
+              <div className="section-card-header" style={{ marginBottom: 12 }}>
+                <h4>פרטי הקישור</h4>
+                <button className="btn btn-primary" onClick={handleEditFromModal}>
+                  עריכת פרטים
+                </button>
+              </div>
+
+              <div className="detail-grid">
+                <div className="item">
+                  <label>שם הקישור</label>
+                  <div>{selectedLink.title}</div>
+                </div>
+                <div className="item">
+                  <label>קטגוריה</label>
+                  <div>{selectedLink.category}</div>
+                </div>
+                <div className="item" style={{ gridColumn: "span 2" }}>
+                  <label>קישור</label>
+                  <div>
+                    <a
+                      href={selectedLink.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--color-burgundy)", textDecoration: "none", wordBreak: "break-all" }}
+                    >
+                      {selectedLink.url}
+                    </a>
+                  </div>
+                </div>
+                <div className="item" style={{ gridColumn: "span 2" }}>
+                  <label>תיאור</label>
+                  <div>{selectedLink.description || "—"}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setShowActionModal(false)}>
+                סגירה
               </button>
-              
-              <button
-                onClick={() => setShowActionModal(false)}
-                style={{
-                  backgroundColor: "#ccc",
-                  color: "#333",
-                  padding: "10px",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  marginTop: "8px"
-                }}
-              >
-                ❌ ביטול
+              <button className="btn btn-danger" onClick={handleDeleteFromModal}>
+                מחיקת קישור
               </button>
             </div>
           </div>
@@ -342,31 +308,34 @@ export default function Links() {
           backgroundColor: "rgba(0,0,0,0.5)", display: "flex",
           alignItems: "center", justifyContent: "center", zIndex: 1000
         }} onClick={handleCloseForm}>
-          <div style={{ backgroundColor: "white", borderRadius: "12px", padding: "24px", width: "500px", maxWidth: "90%" }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: "20px" }}>{editingLink ? "עריכת קישור" : "הוספת קישור חדש"}</h2>
+          <div style={{ backgroundColor: "white", borderRadius: "16px", padding: "24px", width: "500px", maxWidth: "90%" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ margin: 0 }}>{editingLink ? "עריכת קישור" : "הוספת קישור חדש"}</h2>
+              <button onClick={handleCloseForm} style={{ background: "none", border: "none", fontSize: "24px", cursor: "pointer" }}>×</button>
+            </div>
             <form onSubmit={editingLink ? handleUpdateLink : handleAddLink}>
               <div style={{ marginBottom: "15px" }}>
                 <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>כותרת *</label>
-                <input type="text" required value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }} />
+                <input type="text" required value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "8px" }} />
               </div>
               <div style={{ marginBottom: "15px" }}>
                 <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>קישור (URL) *</label>
-                <input type="text" required value={formData.url} onChange={(e) => setFormData({ ...formData, url: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }} />
+                <input type="text" required value={formData.url} onChange={(e) => setFormData({ ...formData, url: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "8px" }} />
               </div>
               <div style={{ marginBottom: "15px" }}>
                 <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>קטגוריה *</label>
-                <select required value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
+                <select required value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "8px" }}>
                   <option value="">בחר קטגוריה...</option>
                   {CATEGORIES.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
                 </select>
               </div>
               <div style={{ marginBottom: "15px" }}>
                 <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>תיאור</label>
-                <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "6px", minHeight: "80px" }} />
+                <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "8px", minHeight: "80px" }} />
               </div>
-              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-                <button type="button" onClick={handleCloseForm} style={{ padding: "8px 16px", backgroundColor: "#ccc", border: "none", borderRadius: "6px", cursor: "pointer" }}>ביטול</button>
-                <button type="submit" style={{ padding: "8px 16px", backgroundColor: "#8B0000", color: "white", border: "none", borderRadius: "6px", cursor: "pointer" }}>{editingLink ? "עדכן" : "שמור"}</button>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "20px" }}>
+                <button type="button" onClick={handleCloseForm} style={{ padding: "8px 16px", backgroundColor: "#ccc", border: "none", borderRadius: "8px", cursor: "pointer" }}>ביטול</button>
+                <button type="submit" style={{ padding: "8px 16px", backgroundColor: "#8B0000", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>{editingLink ? "עדכן" : "שמור"}</button>
               </div>
             </form>
           </div>

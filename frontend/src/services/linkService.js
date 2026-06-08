@@ -11,10 +11,8 @@ import {
   orderBy 
 } from "firebase/firestore";
 
-// اسم المجموعة في Firestore
 const COLLECTION_NAME = "links";
 
-// جلب جميع الروابط (مرتبة حسب التاريخ تنازلياً)
 export const getAllLinks = async () => {
   try {
     const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
@@ -29,7 +27,6 @@ export const getAllLinks = async () => {
   }
 };
 
-// إضافة رابط جديد
 export const addLink = async (linkData) => {
   try {
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
@@ -44,7 +41,6 @@ export const addLink = async (linkData) => {
   }
 };
 
-// تحديث رابط موجود
 export const updateLink = async (id, linkData) => {
   try {
     const linkRef = doc(db, COLLECTION_NAME, id);
@@ -59,7 +55,6 @@ export const updateLink = async (id, linkData) => {
   }
 };
 
-// حذف رابط
 export const deleteLink = async (id) => {
   try {
     const linkRef = doc(db, COLLECTION_NAME, id);
@@ -71,7 +66,6 @@ export const deleteLink = async (id) => {
   }
 };
 
-// تنسيق التاريخ للعرض
 export const formatDate = (timestamp) => {
   if (!timestamp) return "";
   if (timestamp.seconds) {
@@ -83,7 +77,6 @@ export const formatDate = (timestamp) => {
   return new Date(timestamp).toLocaleDateString("he-IL");
 };
 
-// التحقق من صحة الرابط وإضافة https:// إذا لزم الأمر
 export const normalizeUrl = (url) => {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -91,4 +84,3 @@ export const normalizeUrl = (url) => {
   }
   return "https://" + url;
 };
-
