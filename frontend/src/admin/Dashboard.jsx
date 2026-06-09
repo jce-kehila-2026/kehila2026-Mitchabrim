@@ -1,7 +1,8 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
+import { logout } from "../services/authService";
 
 const REQUESTS = [
   { name: "מרים לוי", note: "בקשה להתנדב" },
@@ -18,11 +19,37 @@ const TASKS = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
+
   return (
     <AdminLayout
       title="שלום שרה, בוקר טוב"
       subtitle="מבט מהיר על פעילות הקהילה היום"
-      actions={<Link to="/admin/site-content" className="btn btn-primary">🌐 עריכת האתר הראשי</Link>}
+      actions={
+        <div style={{ display: "flex", gap: "12px" }}>
+          <Link to="/admin/site-content" className="btn btn-primary">🌐 עריכת האתר הראשי</Link>
+          <button 
+            onClick={handleLogout}
+            style={{
+              backgroundColor: "#8B0000",
+              color: "white",
+              padding: "8px 16px",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "500"
+            }}
+          >
+            🚪 התנתק
+          </button>
+        </div>
+      }
     >
       <div className="stats-grid">
         <StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value="270" subtitle="ב-7 אזורים" />
