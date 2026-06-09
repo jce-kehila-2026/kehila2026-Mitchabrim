@@ -57,6 +57,8 @@ export default function App() {
       <Route path="/volunteer/reports" element={<VolunteerReportsHistory />} />
       <Route path="/volunteer/tasks" element={<VolunteerTasks />} />
       <Route path="/volunteer/profile" element={<VolunteerProfile />} />
+      <Route path="/__auth/action" element={<NewPassword />} />
+      <Route path="/new-password" element={<NewPassword />} />
     </Routes>
   );
 }

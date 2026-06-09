@@ -1,6 +1,6 @@
 // src/pages/Login.jsx
 import { useState, useEffect } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { login, getCurrentUser } from "../services/authService";
 import { getUserRole } from "../services/userService";
 import openEye from "../assets/openEyes.png";
@@ -8,9 +8,7 @@ import closeEye from "../assets/closeEyes.png";
 import "../styles/Login.css";
 
 export default function Login() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const role = params.get("role");
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -68,84 +66,53 @@ export default function Login() {
     setLoading(false);
   };
 
-  // صفحة اختيار الدور
-  if (!role) {
-    return (
-      <div className="login-page">
-        <div className="login-container">
-          <div className="login-box">
-            <img src="/logo.png" className="logo" alt="מתחברים" />
-            <div className="header-text">
-              <h1>מתחברים</h1>
-              <p>חיבור אזרחים בודדים לקהילה</p>
-            </div>
-            <hr />
-            <div className="role-cards">
-              <Link to="/login?role=admin" className="role-card">
-                <div className="role-icon">🛡️</div>
-                <h3>כניסת מנהלים</h3>
-                <p>למנהלות, רכזות וצוות פנימי</p>
-              </Link>
-              <Link to="/login?role=volunteer" className="role-card">
-                <div className="role-icon">🤝</div>
-                <h3>כניסת מתנדבים</h3>
-                <p>לאזור הדיווחים האישי של המתנדבים</p>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isAdmin = role === "admin";
-
   return (
     <div className="login-page">
       <div className="login-container">
         <div className="login-box">
           <img src="/logo.png" className="logo" alt="מתחברים" />
           <div className="header-text">
+            <h1>מתחברים</h1>
+            <p>חיבור אזרחים בודדים לקהילה</p>
           </div>
           <hr />
 
           <form onSubmit={handleSubmit} className="login-form">
-           <input
-  type="email"
-  className="login-input email-input"
-  value={email}
-  onChange={(e) => setEmail(e.target.value)}
-  placeholder="אימייל"
-  dir="ltr"
-  disabled={loading}
-  
-/>
+            <input
+              type="email"
+              className="login-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="אימייל"
+              dir="ltr"
+              disabled={loading}
+            />
 
-      <div className="password-wrapper">
-  <input
-    type={showPassword ? "text" : "password"}
-    className="login-input"
-    value={password}
-    onChange={(e) => setPassword(e.target.value)}
-    placeholder="סיסמה"
-    dir="ltr"
-    disabled={loading}
-  />
-  <div className="eye-container">
-    <img
-      src={closeEye}
-      className={`eye-icon eye-close ${!showPassword ? "active" : "hidden"}`}
-      onClick={() => setShowPassword(true)}
-      alt="הצג סיסמה"
-    />
-    <img
-      src={openEye}
-      className={`eye-icon eye-open ${showPassword ? "active" : "hidden"}`}
-      onClick={() => setShowPassword(false)}
-      alt="הסתר סיסמה"
-    />
-  </div>
-</div>
+            <div className="password-wrapper">
+              <input
+                type={showPassword ? "text" : "password"}
+                className="login-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="סיסמה"
+                dir="ltr"
+                disabled={loading}
+              />
+              <div className="eye-container">
+                <img
+                  src={closeEye}
+                  className={`eye-icon eye-close ${!showPassword ? "active" : "hidden"}`}
+                  onClick={() => setShowPassword(true)}
+                  alt="הצג סיסמה"
+                />
+                <img
+                  src={openEye}
+                  className={`eye-icon eye-open ${showPassword ? "active" : "hidden"}`}
+                  onClick={() => setShowPassword(false)}
+                  alt="הסתר סיסמה"
+                />
+              </div>
+            </div>
 
             {error && <p className="error-text">{error}</p>}
 
@@ -164,7 +131,7 @@ export default function Login() {
             </div>
 
             <button type="submit" className="login-button" disabled={loading}>
-              {loading ? "מתחבר..." : (isAdmin ? "כניסה למערכת" : "כניסה לאזור המתנדבים")}
+              {loading ? "מתחבר..." : "כניסה"}
             </button>
           </form>
         </div>

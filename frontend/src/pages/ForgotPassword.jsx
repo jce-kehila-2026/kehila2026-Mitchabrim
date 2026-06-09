@@ -67,7 +67,7 @@ export default function ForgotPassword() {
             </button>
 
             <div className="back-link" style={{ textAlign: "center", marginTop: "20px" }}>
-              <Link to="/login?role=admin" className="forgot-link">חזרה לעמוד הכניסה</Link>
+              <Link to="/login" className="forgot-link">חזרה לעמוד הכניסה</Link>
             </div>
           </form>
         </div>

@@ -62,9 +62,21 @@ export const login = async (email, password) => {
 // إرسال رابط إعادة تعيين كلمة المرور
 export const forgotPassword = async (email) => {
   try {
-    await sendPasswordResetEmail(auth, email, {
-      url: window.location.origin + "/login",
-    });
+    const actionCodeSettings = {
+       url: window.location.origin + "/new-password",
+      handleCodeInApp: true,
+      iOS: {
+        bundleId: "com.example.ios"
+      },
+      android: {
+        packageName: "com.example.android",
+        installApp: true,
+        minimumVersion: "12"
+      },
+      dynamicLinkDomain: "mitchabrim-jce2026.firebaseapp.com"
+    };
+    
+    await sendPasswordResetEmail(auth, email, actionCodeSettings);
     return { success: true, message: "קישור לאיפוס סיסמה נשלח לאימייל שלך" };
   } catch (error) {
     let message = "שגיאה בשליחת הקישור";
@@ -81,7 +93,6 @@ export const forgotPassword = async (email) => {
     return { success: false, error: message };
   }
 };
-
 // تسجيل الخروج
 export const logout = async () => {
   try {

@@ -1,6 +1,6 @@
 // src/pages/NewPassword.jsx
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { confirmPasswordReset, verifyPasswordResetCode } from "firebase/auth";
 import { auth } from "../firebase";
 import "../styles/Login.css";
