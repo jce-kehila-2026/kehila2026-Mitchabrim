@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import "./App.css";
 import "./styles/public.css";
 import "./styles/admin.css";
@@ -7,6 +7,8 @@ import "./styles/Login.css";
 
 import Home from "./pages/Home.jsx";
 import Login from "./pages/Login.jsx";
+import ForgotPassword from "./pages/ForgotPassword.jsx";
+import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 import Dashboard from "./admin/Dashboard.jsx";
 import Elderly from "./admin/Elderly.jsx";
@@ -21,38 +23,47 @@ import Reports from "./admin/Reports.jsx";
 import Settings from "./admin/Settings.jsx";
 import SiteContent from "./admin/SiteContent.jsx";
 
-import VolunteerLogin from "./volunteer/VolunteerLogin.jsx";
 import VolunteerDashboard from "./volunteer/VolunteerDashboard.jsx";
 import VolunteerReportForm from "./volunteer/VolunteerReportForm.jsx";
 import VolunteerReportsHistory from "./volunteer/VolunteerReportsHistory.jsx";
 import VolunteerTasks from "./volunteer/VolunteerTasks.jsx";
 import VolunteerProfile from "./volunteer/VolunteerProfile.jsx";
 
+const Admin = ({ children }) => (
+  <ProtectedRoute allow={["admin"]}>{children}</ProtectedRoute>
+);
+const Vol = ({ children }) => (
+  <ProtectedRoute allow={["volunteer", "admin"]}>{children}</ProtectedRoute>
+);
+
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
 
-      <Route path="/admin" element={<Dashboard />} />
-      <Route path="/admin/elderly" element={<Elderly />} />
-      <Route path="/admin/elderly/:id" element={<ElderlyProfile />} />
-      <Route path="/admin/volunteers" element={<Volunteers />} />
-      <Route path="/admin/projects" element={<Projects />} />
-      <Route path="/admin/parliaments" element={<Parliaments />} />
-      <Route path="/admin/media" element={<Media />} />
-      <Route path="/admin/links" element={<Links />} />
-      <Route path="/admin/financial" element={<Financial />} />
-      <Route path="/admin/reports" element={<Reports />} />
-      <Route path="/admin/settings" element={<Settings />} />
-      <Route path="/admin/site-content" element={<SiteContent />} />
+      {/* Legacy redirect — single login button only */}
+      <Route path="/volunteer/login" element={<Navigate to="/login" replace />} />
 
-      <Route path="/volunteer/login" element={<VolunteerLogin />} />
-      <Route path="/volunteer" element={<VolunteerDashboard />} />
-      <Route path="/volunteer/report/new" element={<VolunteerReportForm />} />
-      <Route path="/volunteer/reports" element={<VolunteerReportsHistory />} />
-      <Route path="/volunteer/tasks" element={<VolunteerTasks />} />
-      <Route path="/volunteer/profile" element={<VolunteerProfile />} />
+      <Route path="/admin" element={<Admin><Dashboard /></Admin>} />
+      <Route path="/admin/elderly" element={<Admin><Elderly /></Admin>} />
+      <Route path="/admin/elderly/:id" element={<Admin><ElderlyProfile /></Admin>} />
+      <Route path="/admin/volunteers" element={<Admin><Volunteers /></Admin>} />
+      <Route path="/admin/projects" element={<Admin><Projects /></Admin>} />
+      <Route path="/admin/parliaments" element={<Admin><Parliaments /></Admin>} />
+      <Route path="/admin/media" element={<Admin><Media /></Admin>} />
+      <Route path="/admin/links" element={<Admin><Links /></Admin>} />
+      <Route path="/admin/financial" element={<Admin><Financial /></Admin>} />
+      <Route path="/admin/reports" element={<Admin><Reports /></Admin>} />
+      <Route path="/admin/settings" element={<Admin><Settings /></Admin>} />
+      <Route path="/admin/site-content" element={<Admin><SiteContent /></Admin>} />
+
+      <Route path="/volunteer" element={<Vol><VolunteerDashboard /></Vol>} />
+      <Route path="/volunteer/report/new" element={<Vol><VolunteerReportForm /></Vol>} />
+      <Route path="/volunteer/reports" element={<Vol><VolunteerReportsHistory /></Vol>} />
+      <Route path="/volunteer/tasks" element={<Vol><VolunteerTasks /></Vol>} />
+      <Route path="/volunteer/profile" element={<Vol><VolunteerProfile /></Vol>} />
     </Routes>
   );
 }
