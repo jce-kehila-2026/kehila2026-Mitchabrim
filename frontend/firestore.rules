@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: is the requesting user an active admin in users/{uid}?
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true
+        );
+    }
+
+    match /users/{userId} {
+      // A user can always read their own role document during login.
+      allow get: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      // Authenticated users may query (needed for the email/fullName
+      // fallback lookup during login, before the role is known).
+      allow list: if request.auth != null;
+      // Admins manage users. A user may also create their OWN doc
+      // (users/{auth.uid}) — used only by the VITE_ADMIN_EMAIL bootstrap.
+      allow create: if isAdmin() || request.auth.uid == userId;
+      allow update, delete: if isAdmin();
+    }
+
+    // Legacy collection from the previous implementation — admins only.
+    match /allowedUsers/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // Default: deny. Add app-specific rules for your other collections.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

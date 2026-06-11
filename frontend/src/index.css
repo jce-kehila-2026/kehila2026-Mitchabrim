@@ -3,7 +3,7 @@
 :root {
   /* ===== Refined palette — warm, elegant, editorial ===== */
   /* Soft layered creams instead of flat beige */
-  --color-bg: #faf3e7;          /* page background — warm ivory */
+  --color-bg: #fbf4ea;          /* page background — warm cream */
   --color-surface: #fffaf2;     /* sidebar / panels */
   --color-card: #ffffff;        /* cards */
   --color-elevated: #fdf5e8;    /* hover / subtle fills */
@@ -82,6 +82,7 @@
 
 
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 100px; }
 html, body, #root { height: 100%; }
 body {
   margin: 0;

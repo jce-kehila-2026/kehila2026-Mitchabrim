@@ -1,99 +1,61 @@
 // src/services/authService.js
-import { 
+import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  signOut
+  signOut,
 } from "firebase/auth";
 import { auth } from "../firebase";
-import { getUser, createUser, updateLastLogin, createLoginSession } from "./userService";
+import { resolveUserAccess } from "./allowedUsersService";
 
-// تسجيل الدخول بالإيميل وكلمة السر
+const ERROR_MESSAGES = {
+  "auth/invalid-credential": "אימייל או סיסמה לא נכונים",
+  "auth/user-not-found": "משתמש לא נמצא",
+  "auth/wrong-password": "סיסמה לא נכונה",
+  "auth/too-many-requests": "יותר מדי ניסיונות. נסה שוב מאוחר יותר",
+  "auth/invalid-email": "כתובת אימייל לא תקינה",
+  "auth/network-request-failed": "בעיית רשת. בדוק את החיבור",
+};
+
+const friendlyError = (code) => ERROR_MESSAGES[code] || "שגיאה בהתחברות. נסה שוב";
+
+// Sign in + verify role against users/{uid} (with email fallback)
 export const login = async (email, password) => {
   try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    
-    // جلب بيانات المستخدم من Firestore
-    const userData = await getUser(user.uid);
-    let role = "volunteer";
-    
-    if (userData.success) {
-      role = userData.user.role;
-      await updateLastLogin(user.uid);
-    } else {
-      // إذا كان المستخدم جديداً، ننشئه مع دور افتراضي
-      await createUser(user.uid, "", user.email || "", "volunteer");
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    const user = cred.user;
+
+    const allowed = await resolveUserAccess({ uid: user.uid, email: user.email });
+    if (!allowed.success) {
+      await signOut(auth);
+      return { success: false, error: "אין לך הרשאה להיכנס למערכת" };
     }
-    
-    // تسجيل جلسة الدخول
-    await createLoginSession(user.uid);
-    
-    return { 
-      success: true, 
-      user: { uid: user.uid, email: user.email, role },
-      redirectTo: role === "admin" ? "/admin" : "/volunteer"
+    if (!allowed.user.active) {
+      await signOut(auth);
+      return { success: false, error: "החשבון שלך אינו פעיל. פנה למנהל המערכת" };
+    }
+
+    const role = allowed.user.role;
+    if (!["admin", "volunteer"].includes(role)) {
+      await signOut(auth);
+      return { success: false, error: "תפקיד המשתמש אינו תקין" };
+    }
+
+    return {
+      success: true,
+      user: {
+        uid: user.uid,
+        email: user.email,
+        displayName: allowed.user.displayName || "",
+        role,
+      },
+      redirectTo: role === "admin" ? "/admin" : "/volunteer",
     };
   } catch (error) {
-    console.error("Error logging in:", error);
-    let message = "שגיאה בהתחברות";
-    switch (error.code) {
-      case "auth/invalid-credential":
-        message = "אימייל או סיסמה לא נכונים";
-        break;
-      case "auth/user-not-found":
-        message = "משתמש לא נמצא";
-        break;
-      case "auth/wrong-password":
-        message = "סיסמה לא נכונה";
-        break;
-      case "auth/too-many-requests":
-        message = "יותר מדי ניסיונות כושלים. נסה מאוחר יותר";
-        break;
-      case "auth/invalid-email":
-        message = "כתובת אימייל לא תקינה";
-        break;
-      default:
-        message = error.message;
-    }
-    return { success: false, error: message };
+    console.error("login error:", error);
+    return { success: false, error: friendlyError(error.code) };
   }
 };
 
-// إرسال رابط إعادة تعيين كلمة المرور
-export const forgotPassword = async (email) => {
-  try {
-    const actionCodeSettings = {
-       url: window.location.origin + "/new-password",
-      handleCodeInApp: true,
-      iOS: {
-        bundleId: "com.example.ios"
-      },
-      android: {
-        packageName: "com.example.android",
-        installApp: true,
-        minimumVersion: "12"
-      },
-      dynamicLinkDomain: "mitchabrim-jce2026.firebaseapp.com"
-    };
-    
-    await sendPasswordResetEmail(auth, email, actionCodeSettings);
-    return { success: true, message: "קישור לאיפוס סיסמה נשלח לאימייל שלך" };
-  } catch (error) {
-    let message = "שגיאה בשליחת הקישור";
-    switch (error.code) {
-      case "auth/user-not-found":
-        message = "אימייל לא רשום במערכת";
-        break;
-      case "auth/invalid-email":
-        message = "כתובת אימייל לא תקינה";
-        break;
-      default:
-        message = error.message;
-    }
-    return { success: false, error: message };
-  }
-};
-// تسجيل الخروج
 export const logout = async () => {
   try {
     await signOut(auth);
@@ -103,12 +65,22 @@ export const logout = async () => {
   }
 };
 
-// الحصول على المستخدم الحالي
-export const getCurrentUser = () => {
-  return auth.currentUser;
+export const forgotPassword = async (email) => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+    return { success: true, message: "קישור לאיפוס סיסמה נשלח לאימייל שלך" };
+  } catch (error) {
+    return { success: false, error: friendlyError(error.code) };
+  }
 };
 
-// مراقبة حالة المستخدم
-export const onAuthStateChange = (callback) => {
-  return auth.onAuthStateChanged(callback);
+// Resolve the current Firebase user's role from users/{uid}
+export const getCurrentUserRole = async () => {
+  const user = auth.currentUser;
+  if (!user?.email) return null;
+  const res = await resolveUserAccess({ uid: user.uid, email: user.email });
+  if (!res.success || !res.user.active) return null;
+  return res.user.role;
 };
+
+export const onAuthStateChange = (cb) => auth.onAuthStateChanged(cb);
