@@ -1,5 +1,6 @@
-import { NavLink, Link } from "react-router-dom";
+import { NavLink, Link, useNavigate } from "react-router-dom";
 import logo from "@/assets/logo.jpeg";
+import { useAuth } from "@/context/AuthContext";
 
 const LINKS = [
   { to: "/volunteer", label: "אזור אישי", end: true },
@@ -10,6 +11,16 @@ const LINKS = [
 ];
 
 export default function VolunteerHeader() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const displayName = user?.displayName || user?.email || "מתנדב";
+  const initial = (displayName || "מ").trim().charAt(0);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/", { replace: true });
+  };
+
   return (
     <header className="vol-header">
       <div className="container vol-header-inner">
@@ -25,12 +36,12 @@ export default function VolunteerHeader() {
           ))}
         </nav>
         <div className="vol-user">
-          <div className="vol-user-avatar">ד</div>
+          <div className="vol-user-avatar">{initial}</div>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>דניאלה כץ</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{displayName}</div>
             <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>מתנדבת</div>
           </div>
-          <Link to="/" className="btn" style={{ marginInlineStart: 10 }}>יציאה</Link>
+          <button onClick={handleLogout} className="btn" style={{ marginInlineStart: 10 }}>יציאה</button>
         </div>
       </div>
     </header>
