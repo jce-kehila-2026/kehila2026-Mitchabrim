@@ -32,8 +32,10 @@ export default function Dashboard() {
       subtitle="מבט מהיר על פעילות הקהילה היום"
       actions={
         <div style={{ display: "flex", gap: "12px" }}>
-          <Link to="/admin/site-content" className="btn btn-primary">🌐 עריכת האתר הראשי</Link>
-          <button 
+          <Link to="/admin/site-content" className="btn btn-primary">
+            🌐 עריכת האתר הראשי
+          </Link>
+          <button
             onClick={handleLogout}
             style={{
               backgroundColor: "#8B0000",
@@ -43,7 +45,7 @@ export default function Dashboard() {
               borderRadius: "8px",
               cursor: "pointer",
               fontSize: "14px",
-              fontWeight: "500"
+              fontWeight: "500",
             }}
           >
             🚪 התנתק
@@ -80,7 +82,9 @@ export default function Dashboard() {
         <SectionCard title="משימות והתראות">
           {TASKS.map((t) => (
             <div key={t} className="list-item">
-              <div className="list-item-title" style={{ fontWeight: 500 }}>{t}</div>
+              <div className="list-item-title" style={{ fontWeight: 500 }}>
+                {t}
+              </div>
               <span className="badge badge-orange">פתוח</span>
             </div>
           ))}
