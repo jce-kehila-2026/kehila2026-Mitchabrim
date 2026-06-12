@@ -10,10 +10,11 @@ import {
   editElderly,
   deleteElderly,
 } from "@/services/elderlyService.js";
+import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 
-/* ===== Options (shared with volunteers page) ===== */
-const AREA_OPTIONS = ["מרכז", "דרום", "צפון", "מערב", "מזרח", "גילה", "בית הכרם"];
-const NEIGHBORHOOD_OPTIONS = ["גילה", "בית הכרם", "קטמון", "רחביה", "רוממה", "ארנונה", "תלפיות", "פסגת זאב"];
+/* ===== Options (shared with volunteers page) =====
+   Areas and neighborhoods are loaded from Firestore (settings/general) via the
+   useAreasAndNeighborhoods hook — no hardcoded lists here. */
 const PARLIAMENT_OPTIONS = [
   "ללא פרלמנט",
   "פרלמנט גילה",
@@ -68,6 +69,28 @@ export default function Elderly() {
   const [openId, setOpenId] = useState(null);
   const [openVolunteer, setOpenVolunteer] = useState(null);
 
+  // Area/Neighborhood data — single source of truth from settings/general.
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
+  // Filters (only area/neighborhood are wired to actual filtering).
+  const [filterArea, setFilterArea] = useState("");
+  const [filterNeighborhood, setFilterNeighborhood] = useState("");
+
+  // If the area changes and the previously-selected neighborhood is no longer
+  // valid for the new area, reset it.
+  useEffect(() => {
+    if (!filterNeighborhood) return;
+    const valid = getNeighborhoods(filterArea).includes(filterNeighborhood);
+    if (!valid) setFilterNeighborhood("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterArea]);
+
   // Load elderly from Firestore on mount. Fallback to SEED so the page still works
   // in environments where Firebase isn't configured.
   useEffect(() => {
@@ -96,7 +119,16 @@ export default function Elderly() {
     [data],
   );
 
+  const visible = useMemo(() => {
+    return sorted.filter((e) => {
+      if (filterArea && e.area !== filterArea) return false;
+      if (filterNeighborhood && e.neighborhood !== filterNeighborhood) return false;
+      return true;
+    });
+  }, [sorted, filterArea, filterNeighborhood]);
+
   const openElderly = sorted.find((e) => e.id === openId) || null;
+
 
   // Update an elderly citizen in Firestore + local state
   const handleEditElderly = async (id, updated) => {
@@ -177,11 +209,30 @@ export default function Elderly() {
       </div>
 
       <SectionCard>
+        {areasError && (
+          <div style={{ color: "#b91c1c", fontSize: 13, marginBottom: 8 }}>{areasError}</div>
+        )}
+        {areasLoading && (
+          <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>טוען אזורים ושכונות...</div>
+        )}
+        {areasEmpty && (
+          <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>
+        )}
         <SearchFilters
           searchPlaceholder="חיפוש לפי שם, טלפון, ת.ז, שכונה או הערות..."
           filters={[
-            { label: "אזור", options: AREA_OPTIONS },
-            { label: "שכונה", options: NEIGHBORHOOD_OPTIONS },
+            {
+              label: "אזור",
+              value: filterArea,
+              onChange: (e) => setFilterArea(e.target.value),
+              options: ["", ...areaNames],
+            },
+            {
+              label: "שכונה",
+              value: filterNeighborhood,
+              onChange: (e) => setFilterNeighborhood(e.target.value),
+              options: ["", ...getNeighborhoods(filterArea)],
+            },
             { label: "סטטוס מתנדב", options: VOLUNTEER_STATUS_OPTIONS },
             { label: "מצב משפחתי", options: MARITAL_OPTIONS },
             { label: "סיוע", options: ASSISTANCE_OPTIONS },
@@ -224,8 +275,9 @@ export default function Elderly() {
             },
             { key: "notes", label: "הערות" },
           ]}
-          data={sorted}
+          data={visible}
         />
+
       </SectionCard>
 
       {showAdd && (
@@ -371,11 +423,19 @@ const REQUIRED_LABELS = {
 };
 
 function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave }) {
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
   const [f, setF] = useState(
     initial || {
       firstName: "", lastName: "", idNum: "", birth: "",
       mobile: "", homePhone: "",
-      area: AREA_OPTIONS[0], neighborhood: NEIGHBORHOOD_OPTIONS[0], address: "",
+      area: "", neighborhood: "", address: "",
       contactName: "", contactPhone: "", lastContact: "",
       volStatus: "לא רוצה", volName: "",
       assistance: "", marital: MARITAL_OPTIONS[0],
@@ -389,12 +449,15 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const [idDup, setIdDup] = useState(false);
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  // Changing area resets neighborhood to avoid stale/invalid pairings.
+  const setArea = (e) => setF({ ...f, area: e.target.value, neighborhood: "" });
   const setDigits = (k) => (e) => {
     const raw = e.target.value;
     const cleaned = raw.replace(/\D/g, "");
     setNumericWarn((w) => ({ ...w, [k]: raw !== cleaned }));
     setF({ ...f, [k]: cleaned });
   };
+
 
   const showVolName = f.volStatus === "כן" || f.volStatus === "לא מתאים";
 
@@ -467,16 +530,27 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
             </div>
             <div className="field">
               <label>אזור</label>
-              <select className="select" value={f.area} onChange={set("area")}>
-                {AREA_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+              <select className="select" value={f.area || ""} onChange={setArea} disabled={areasLoading || areasEmpty}>
+                <option value="">
+                  {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
+                </option>
+                {areaNames.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
+              {areasError && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 4 }}>{areasError}</div>}
             </div>
             <div className="field">
               <label>שכונה</label>
-              <select className="select" value={f.neighborhood} onChange={set("neighborhood")}>
-                {NEIGHBORHOOD_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+              <select
+                className="select"
+                value={f.neighborhood || ""}
+                onChange={set("neighborhood")}
+                disabled={!f.area}
+              >
+                <option value="">{f.area ? "בחר שכונה" : "בחר אזור תחילה"}</option>
+                {getNeighborhoods(f.area).map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
+
             <div className="field"><label>כתובת</label><input className="input" value={f.address} onChange={set("address")} /></div>
           </div>
         </div>
@@ -579,6 +653,7 @@ function VolunteerQuickModal({ entry, onClose }) {
 
 /* ===== Print / report modal ===== */
 function PrintReportModal({ items, onClose }) {
+  const { areaNames, getNeighborhoods } = useAreasAndNeighborhoods();
   const [sel, setSel] = useState({ area: "", neighborhood: "", volStatus: "", marital: "", assistance: "" });
   const [showPreview, setShowPreview] = useState(false);
 
@@ -595,7 +670,16 @@ function PrintReportModal({ items, onClose }) {
     [items, sel],
   );
 
-  const setF = (k) => (e) => setSel({ ...sel, [k]: e.target.value });
+  const setF = (k) => (e) => {
+    const value = e.target.value;
+    if (k === "area") {
+      const validNb = getNeighborhoods(value).includes(sel.neighborhood);
+      setSel({ ...sel, area: value, neighborhood: validNb ? sel.neighborhood : "" });
+      return;
+    }
+    setSel({ ...sel, [k]: value });
+  };
+
 
   const handleDownload = () => {
     const headers = ["שם", "ת.ז", "אזור", "שכונה", "טלפון", "סטטוס מתנדב", "מצב משפחתי", "סיוע", "פרלמנט", "סטטוס"];
@@ -618,12 +702,13 @@ function PrintReportModal({ items, onClose }) {
   };
 
   const filterDefs = [
-    ["area", "אזור", AREA_OPTIONS],
-    ["neighborhood", "שכונה", NEIGHBORHOOD_OPTIONS],
+    ["area", "אזור", areaNames],
+    ["neighborhood", "שכונה", getNeighborhoods(sel.area)],
     ["volStatus", "סטטוס מתנדב", VOLUNTEER_STATUS_OPTIONS],
     ["marital", "מצב משפחתי", MARITAL_OPTIONS],
     ["assistance", "סיוע", ASSISTANCE_OPTIONS],
   ];
+
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
