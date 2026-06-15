@@ -22,19 +22,17 @@ import {
   clearGroupFromVolunteers,
 } from "../services/volunteersService";
 
+import useAreasAndNeighborhoods from "../hooks/useAreasAndNeighborhoods";
+
 /* =========================
    Options
+   Areas & neighborhoods are loaded from Firestore (settings/general) via the
+   useAreasAndNeighborhoods hook — no hardcoded lists.
 ========================= */
 
 const GROUP_TYPE_OPTIONS = ["סטודנטים", "בית ספר", "חברה", "עמותה", "מתנדבים פרטיים", "אחר"];
 
-const GROUP_AREA_OPTIONS = ["מרכז", "דרום", "צפון", "מערב", "מזרח", "גילה", "בית הכרם"];
-
 const GROUP_STATUS_OPTIONS = ["פעילה", "לא פעילה", "בהקמה"];
-
-const AREA_OPTIONS = ["מרכז", "דרום", "צפון", "מערב", "מזרח", "גילה", "בית הכרם"];
-
-const NEIGHBORHOOD_OPTIONS = ["גילה", "בית הכרם", "קטמון", "רחביה", "רוממה", "ארנונה", "תלפיות"];
 
 const PARLIAMENT_OPTIONS = [
   "ללא פרלמנט",
@@ -45,13 +43,9 @@ const PARLIAMENT_OPTIONS = [
   "פרלמנט רוממה",
 ];
 
-const FILTERS = [
-  { key: "area", label: "אזור", options: ["מרכז", "צפון", "דרום", "מערב"] },
-  {
-    key: "neighborhood",
-    label: "שכונה",
-    options: ["רחביה", "גילה", "בית הכרם", "פסגת זאב"],
-  },
+// Non-area/neighborhood filters kept as static defaults; area & neighborhood
+// are injected dynamically inside the component from the shared hook.
+const BASE_FILTERS = [
   {
     key: "status",
     label: "סטטוס",
@@ -66,6 +60,7 @@ const FILTERS = [
 ];
 
 const REPORTS_SEED = {};
+
 
 const statusBadge = (s) => (s === "פעיל" ? "badge-green" : s === "ממתין לשיבוץ" ? "badge-orange" : "badge-gray");
 
@@ -92,6 +87,29 @@ export default function Volunteers() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Shared area/neighborhood data — drives both filters and form dropdowns.
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
+  // Filter state (area + neighborhood are wired to actual filtering).
+  const [filterArea, setFilterArea] = useState("");
+  const [filterNeighborhood, setFilterNeighborhood] = useState("");
+
+  // Reset neighborhood when area changes if it's no longer valid for that area.
+  useEffect(() => {
+    if (!filterNeighborhood) return;
+    if (!getNeighborhoods(filterArea).includes(filterNeighborhood)) {
+      setFilterNeighborhood("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterArea]);
+
 
   /* =========================
      Load Firebase data
@@ -126,6 +144,15 @@ export default function Volunteers() {
   const sorted = useMemo(() => {
     return [...volunteers].sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
   }, [volunteers]);
+
+  const visibleVolunteers = useMemo(() => {
+    return sorted.filter((v) => {
+      if (filterArea && v.area !== filterArea) return false;
+      if (filterNeighborhood && v.neighborhood !== filterNeighborhood) return false;
+      return true;
+    });
+  }, [sorted, filterArea, filterNeighborhood]);
+
 
   const openVolunteer = sorted.find((v) => v.id === openVolunteerId) || null;
 
@@ -380,10 +407,36 @@ export default function Volunteers() {
 
       {tab === "volunteers" && (
         <SectionCard>
+          {areasError && (
+            <div style={{ color: "#b91c1c", fontSize: 13, marginBottom: 8 }}>{areasError}</div>
+          )}
+          {areasLoading && (
+            <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>טוען אזורים ושכונות...</div>
+          )}
+          {areasEmpty && (
+            <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>
+          )}
           <SearchFilters
             searchPlaceholder="חיפוש לפי שם, טלפון, קבוצה, שכונה או אזרח ותיק משויך..."
-            filters={FILTERS}
+            filters={[
+              {
+                key: "area",
+                label: "אזור",
+                value: filterArea,
+                onChange: (e) => setFilterArea(e.target.value),
+                options: ["", ...areaNames],
+              },
+              {
+                key: "neighborhood",
+                label: "שכונה",
+                value: filterNeighborhood,
+                onChange: (e) => setFilterNeighborhood(e.target.value),
+                options: ["", ...getNeighborhoods(filterArea)],
+              },
+              ...BASE_FILTERS,
+            ]}
           />
+
 
           {loading ? (
             <p style={{ padding: 20 }}>טוען מתנדבים...</p>
@@ -440,7 +493,7 @@ export default function Volunteers() {
                 },
                 { key: "rating", label: "דירוג" },
               ]}
-              data={sorted}
+              data={visibleVolunteers}
             />
           )}
         </SectionCard>
@@ -526,6 +579,13 @@ export default function Volunteers() {
 function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSave, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(volunteer);
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
 
   const set = (key) => (e) => {
     const value = e.target.value;
@@ -542,6 +602,12 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
       return;
     }
 
+    if (key === "area") {
+      // Reset neighborhood when area changes to avoid invalid pairings.
+      setForm({ ...form, area: value, neighborhood: "" });
+      return;
+    }
+
     setForm({
       ...form,
       [key]: value,
@@ -551,6 +617,7 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
   const handleSave = () => {
     onSave?.(form);
   };
+
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -650,28 +717,38 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
                 </div>
 
                 <div className="field">
+                  <label>אזור</label>
+                  <select
+                    className="select"
+                    value={form.area || ""}
+                    onChange={set("area")}
+                    disabled={areasLoading || areasEmpty}
+                  >
+                    <option value="">
+                      {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
+                    </option>
+                    {areaNames.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
+                  {areasError && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 4 }}>{areasError}</div>}
+                </div>
+
+                <div className="field">
                   <label>שכונה</label>
-                  <select className="select" value={form.neighborhood || ""} onChange={set("neighborhood")}>
-                    <option value="">בחר שכונה</option>
-                    {NEIGHBORHOOD_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
+                  <select
+                    className="select"
+                    value={form.neighborhood || ""}
+                    onChange={set("neighborhood")}
+                    disabled={!form.area}
+                  >
+                    <option value="">{form.area ? "בחר שכונה" : "בחר אזור תחילה"}</option>
+                    {getNeighborhoods(form.area).map((o) => (
+                      <option key={o} value={o}>{o}</option>
                     ))}
                   </select>
                 </div>
 
-                <div className="field">
-                  <label>אזור</label>
-                  <select className="select" value={form.area || ""} onChange={set("area")}>
-                    <option value="">בחר אזור</option>
-                    {AREA_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </div>
 
                 <div className="field">
                   <label>סוג מתנדב</label>
@@ -837,6 +914,8 @@ function GroupManageModal({ group, volunteers, allVolunteers = [], onClose, onSa
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(group);
   const [showAddVol, setShowAddVol] = useState(false);
+  const { areaNames, loading: areasLoading, isEmpty: areasEmpty } = useAreasAndNeighborhoods();
+
 
   const set = (key) => (e) => {
     setForm({
@@ -946,15 +1025,14 @@ function GroupManageModal({ group, volunteers, allVolunteers = [], onClose, onSa
 
                 <div className="field">
                   <label>אזור פעילות</label>
-                  <select className="select" value={form.area || ""} onChange={set("area")}>
-                    <option value="">בחר אזור</option>
-                    {GROUP_AREA_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
+                  <select className="select" value={form.area || ""} onChange={set("area")} disabled={areasLoading || areasEmpty}>
+                    <option value="">{areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}</option>
+                    {areaNames.map((o) => (
+                      <option key={o} value={o}>{o}</option>
                     ))}
                   </select>
                 </div>
+
 
                 <div className="field">
                   <label>סטטוס קבוצה</label>
@@ -1197,6 +1275,7 @@ function AddVolunteerToGroupModal({ allVolunteers, existingIds, onClose, onAdd }
 ========================= */
 
 function CreateGroupModal({ onClose, onSave }) {
+  const { areaNames, loading: areasLoading, isEmpty: areasEmpty } = useAreasAndNeighborhoods();
   const [form, setForm] = useState({
     name: "",
     type: "",
@@ -1214,6 +1293,7 @@ function CreateGroupModal({ onClose, onSave }) {
       [key]: e.target.value,
     });
   };
+
 
   const handleSave = () => {
     if (!form.name.trim()) {
@@ -1274,17 +1354,16 @@ function CreateGroupModal({ onClose, onSave }) {
 
             <div className="field">
               <label>אזור פעילות</label>
-              <select className="select" value={form.area} onChange={set("area")}>
+              <select className="select" value={form.area} onChange={set("area")} disabled={areasLoading || areasEmpty}>
                 <option value="" disabled>
-                  בחר אזור
+                  {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
                 </option>
-                {GROUP_AREA_OPTIONS.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
+                {areaNames.map((o) => (
+                  <option key={o} value={o}>{o}</option>
                 ))}
               </select>
             </div>
+
 
             <div className="field">
               <label>סטטוס קבוצה</label>
@@ -1322,6 +1401,14 @@ function CreateGroupModal({ onClose, onSave }) {
 ========================= */
 
 function AddVolunteerModal({ groups = [], onClose, onSave }) {
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -1362,11 +1449,18 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
       return;
     }
 
+    if (key === "area") {
+      // Reset neighborhood when area changes to avoid invalid pairings.
+      setForm({ ...form, area: value, neighborhood: "" });
+      return;
+    }
+
     setForm({
       ...form,
       [key]: value,
     });
   };
+
 
   const handleSave = () => {
     if (!form.firstName.trim()) {
@@ -1432,32 +1526,40 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
             </div>
 
             <div className="field">
-              <label>שכונה</label>
-              <select className="select" value={form.neighborhood} onChange={set("neighborhood")}>
+              <label>אזור</label>
+              <select
+                className="select"
+                value={form.area}
+                onChange={set("area")}
+                disabled={areasLoading || areasEmpty}
+              >
                 <option value="" disabled>
-                  בחר שכונה
+                  {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
                 </option>
-                {NEIGHBORHOOD_OPTIONS.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
+                {areaNames.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+              {areasError && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 4 }}>{areasError}</div>}
+            </div>
+
+            <div className="field">
+              <label>שכונה</label>
+              <select
+                className="select"
+                value={form.neighborhood}
+                onChange={set("neighborhood")}
+                disabled={!form.area}
+              >
+                <option value="" disabled>
+                  {form.area ? "בחר שכונה" : "בחר אזור תחילה"}
+                </option>
+                {getNeighborhoods(form.area).map((o) => (
+                  <option key={o} value={o}>{o}</option>
                 ))}
               </select>
             </div>
 
-            <div className="field">
-              <label>אזור</label>
-              <select className="select" value={form.area} onChange={set("area")}>
-                <option value="" disabled>
-                  בחר אזור
-                </option>
-                {AREA_OPTIONS.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         </div>
 
@@ -1584,6 +1686,7 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
 ========================= */
 
 function PrintReportModal({ volunteers, onClose }) {
+  const { areaNames, getNeighborhoods } = useAreasAndNeighborhoods();
   const [sel, setSel] = useState({
     area: "",
     neighborhood: "",
@@ -1609,11 +1712,15 @@ function PrintReportModal({ volunteers, onClose }) {
   }, [volunteers, sel]);
 
   const setF = (key) => (e) => {
-    setSel({
-      ...sel,
-      [key]: e.target.value,
-    });
+    const value = e.target.value;
+    if (key === "area") {
+      const validNb = getNeighborhoods(value).includes(sel.neighborhood);
+      setSel({ ...sel, area: value, neighborhood: validNb ? sel.neighborhood : "" });
+      return;
+    }
+    setSel({ ...sel, [key]: value });
   };
+
 
   const handleDownload = () => {
     const headers = ["שם", "טלפון", "שכונה", "אזור", "סוג", "קבוצה", "משויך ל", "ביטוח", "סטטוס"];
@@ -1671,9 +1778,11 @@ function PrintReportModal({ volunteers, onClose }) {
               ["insurance", "ביטוח"],
               ["availability", "זמינות"],
             ].map(([key, label]) => {
-              const opts =
-                FILTERS.find((f) => f.key === key)?.options ||
-                (key === "availability" ? ["בוקר", "צהריים", "ערב"] : []);
+              let opts;
+              if (key === "area") opts = areaNames;
+              else if (key === "neighborhood") opts = getNeighborhoods(sel.area);
+              else if (key === "availability") opts = ["בוקר", "צהריים", "ערב"];
+              else opts = BASE_FILTERS.find((f) => f.key === key)?.options || [];
 
               return (
                 <select key={key} className="filter-pill" value={sel[key]} onChange={setF(key)}>
@@ -1687,6 +1796,7 @@ function PrintReportModal({ volunteers, onClose }) {
               );
             })}
           </div>
+
         </div>
 
         {showPreview && (

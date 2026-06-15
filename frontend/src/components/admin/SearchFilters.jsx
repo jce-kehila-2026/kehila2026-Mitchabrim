@@ -30,16 +30,18 @@ export default function SearchFilters({
             סינון:
           </span>
           {filters.map((f, i) => (
-            <select 
-              key={i} 
-              className="filter-pill" 
-              value={f.value || ""}
-              onChange={f.onChange || (() => {})}
-            >
-              {(f.options || []).map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
+            <label key={i} className="filter-field">
+              {f.label && <span className="filter-field-label">{f.label}</span>}
+              <select
+                className="filter-pill"
+                value={f.value || ""}
+                onChange={f.onChange || (() => {})}
+              >
+                {(f.options || []).map((o) => (
+                  <option key={o} value={o}>{o === "" ? `כל ה${f.label || "ערכים"}` : o}</option>
+                ))}
+              </select>
+            </label>
           ))}
         </div>
       )}
