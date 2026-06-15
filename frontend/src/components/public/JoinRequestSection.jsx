@@ -1,16 +1,53 @@
 import { useState } from "react";
+// هذا هو المسار الدقيق والصحيح لملف الفايربيس الخاص بك:
+import { db } from "../../firebase"; 
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 export default function JoinRequestSection() {
+  // إنشاء ذاكرة حية (State) لحفظ القيم التي يكتبها المستخدم في الفورم
   const [form, setForm] = useState({ fullName: "", phone: "", type: "", message: "" });
+  // حالة لمعرفة هل تم إرسال الطلب بنجاح لإظهار الرسالة الخضراء
   const [sent, setSent] = useState(false);
+  // حالة تمنع المستخدم من الضغط على زر الإرسال مرتين متتاليتين أثناء التحميل
+  const [isSubmitting, setIsSubmitting] = useState(false); 
 
+  // دالة تحديث الحقول تلقائياً عند الكتابة داخلها
   const update = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  const submit = (e) => {
-    e.preventDefault();
+  // الدالة البرمجية الحقيقية التي تأخذ البيانات وتطير بها إلى سيرفر Firebase
+  const submit = async (e) => {
+    e.preventDefault(); // منع المتصفح من إعادة تحميل الصفحة (المنطق الأساسي في React)
+    
+    // تأكيد أن الحقول الإجبارية ليست فارغة قبل بدء الاتصال بالإنترنت
     if (!form.fullName || !form.phone || !form.type) return;
-    setSent(true);
-    setForm({ fullName: "", phone: "", type: "", message: "" });
+    
+    setIsSubmitting(true); // تفعيل وضع التحميل وقفل الأزرار الحقول
+
+    try {
+      // إرسال وحفظ كائن البيانات (Object) داخل جدول joinRequests في قاعدة البيانات
+      await addDoc(collection(db, "joinRequests"), {
+        fullName: form.fullName.trim(),
+        phone: form.phone.trim(),
+        // دمج نوع الطلب مع الرسالة لكي تظهر واضحة ومنظمة للمدير في لوحة التحكم
+        note: `${form.type} - ${form.message}`.trim(), 
+        type: form.type,
+        createdAt: serverTimestamp() // إضافة ختم الوقت الرسمي من سيرفر جوجل للترتيب الزمني
+      });
+
+      // إذا نجحت العملية، نغير حالة sent إلى true لتظهر الكبسولة الخضراء للمستخدم
+      setSent(true);
+      // تفريغ الحقول بالكامل وإعادتها لنصوص فارغة لتهيئتها لطلب جديد
+      setForm({ fullName: "", phone: "", type: "", message: "" });
+      
+      // مؤقت زمني (Timer) يقوم بإخفاء الرسالة الخضراء تلقائياً بعد 5 ثوانٍ
+      setTimeout(() => setSent(false), 5000);
+
+    } catch (error) {
+      console.error("שגיאה בשליחת הפנייה:", error);
+      alert("אירעה שגיאה בשליחת הפנייה. אנא נסו שוב.");
+    } finally {
+      setIsSubmitting(false); // إلغاء وضع التحميل وإعادة تفعيل زر الإرسال
+    }
   };
 
   return (
@@ -61,19 +98,20 @@ export default function JoinRequestSection() {
           </ul>
         </div>
 
+        {/* نموذج إدخال البيانات - مرتبط بدالة الـ submit عند الضغط على الزر */}
         <form className="join-card" onSubmit={submit}>
           {sent && <div className="join-success">הבקשה נשלחה בהצלחה. ניצור איתך קשר בהקדם.</div>}
           <div className="field">
             <label>שם מלא</label>
-            <input className="input" value={form.fullName} onChange={update("fullName")} required />
+            <input className="input" value={form.fullName} onChange={update("fullName")} required disabled={isSubmitting} />
           </div>
           <div className="field">
             <label>טלפון</label>
-            <input className="input" type="tel" value={form.phone} onChange={update("phone")} required />
+            <input className="input" type="tel" value={form.phone} onChange={update("phone")} required disabled={isSubmitting} />
           </div>
           <div className="field">
             <label>סוג פנייה</label>
-            <select className="select" value={form.type} onChange={update("type")} required>
+            <select className="select" value={form.type} onChange={update("type")} required disabled={isSubmitting}>
               <option value="">בחר/י סוג פנייה...</option>
               <option>אזרח ותיק</option>
               <option>פונה עבור אזרח ותיק אחר</option>
@@ -84,9 +122,11 @@ export default function JoinRequestSection() {
           </div>
           <div className="field">
             <label>הודעה קצרה</label>
-            <textarea className="textarea" rows={4} value={form.message} onChange={update("message")} />
+            <textarea className="textarea" rows={4} value={form.message} onChange={update("message")} disabled={isSubmitting} />
           </div>
-          <button type="submit" className="btn btn-primary btn-lg btn-block">שליחת פנייה</button>
+          <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={isSubmitting}>
+            {isSubmitting ? "שולח..." : "שליחת פנייה"}
+          </button>
           <p className="join-note">נחזור אליך בהקדם ונשמח לעזור.</p>
         </form>
       </div>
