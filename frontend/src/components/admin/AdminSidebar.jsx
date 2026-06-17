@@ -12,6 +12,7 @@ const LINKS = [
   { to: "/admin/links", label: "מאגר קישורים", icon: "🔗" },
   { to: "/admin/financial", label: "ניהול כספי", icon: "💰" },
   { to: "/admin/reports", label: "דוחות", icon: "📈" },
+  { to: "/admin/volunteer-reports", label: "דוחות מתנדבים", icon: "📨" },
   { to: "/admin/settings", label: "הגדרות", icon: "⚙️" },
 ];
 

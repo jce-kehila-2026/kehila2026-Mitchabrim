@@ -14,6 +14,7 @@ import {
   deleteAllowedUser,
   sendPasswordSetupEmail,
 } from "@/services/allowedUsersService";
+import { getVolunteers } from "@/services/volunteersService";
 
 const ROLE_LABEL = { admin: "מנהל", volunteer: "מתנדב" };
 
@@ -46,7 +47,8 @@ export default function Settings() {
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [activeTab, setActiveTab] = useState("admin"); 
-  const [userForm, setUserForm] = useState({ displayName: "", email: "" });
+  const [userForm, setUserForm] = useState({ displayName: "", email: "", linkedVolunteerId: "" });
+  const [allVolunteers, setAllVolunteers] = useState([]);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [resendingId, setResendingId] = useState("");
   const [userSearchTerm, setUserSearchTerm] = useState(""); // Search Feature State
@@ -159,6 +161,17 @@ export default function Settings() {
       console.error("Failed to refresh users", error);
     }
   };
+
+  const refreshVolunteers = async () => {
+    try {
+      const list = await getVolunteers();
+      setAllVolunteers(list || []);
+    } catch (err) {
+      console.error("Failed to load volunteers", err);
+    }
+  };
+
+  useEffect(() => { refreshVolunteers(); }, []);
 
   // ==========================================
   // LOGIC: Save Global Configuration
@@ -350,11 +363,10 @@ export default function Settings() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     const emailVal = userForm?.email?.trim();
-    const nameVal = userForm?.displayName?.trim();
 
-    if (!emailVal || !nameVal) { 
-      showToast("יש למלא שם ואימייל"); 
-      return; 
+    if (!emailVal) {
+      showToast("יש למלא אימייל");
+      return;
     }
 
     // Email Regex Validation
@@ -363,17 +375,43 @@ export default function Settings() {
       showToast("נא להזין כתובת אימייל תקינה");
       return;
     }
-    
+
+    if (activeTab === "volunteer" && !userForm?.linkedVolunteerId) {
+      showToast("יש לבחור פרופיל מתנדב לקישור החשבון");
+      return;
+    }
+
+    // Derive displayName: from linked volunteer for volunteers, or email prefix for admins
+    let displayName = userForm?.displayName?.trim() || "";
+    if (activeTab === "volunteer" && userForm?.linkedVolunteerId) {
+      const linkedVol = allVolunteers.find((v) => v.id === userForm.linkedVolunteerId);
+      displayName =
+        linkedVol?.name ||
+        linkedVol?.fullName ||
+        [linkedVol?.firstName, linkedVol?.lastName].filter(Boolean).join(" ").trim() ||
+        displayName;
+    }
+    if (!displayName) {
+      displayName = emailVal.split("@")[0];
+    }
+
     setIsAddingUser(true);
     try {
-      const res = await inviteUser({ ...userForm, role: activeTab, active: true });
-      if (!res?.success) { 
-        showToast(res?.error || "שגיאה בהוספת המשתמש"); 
-        return; 
+      const res = await inviteUser({
+        displayName,
+        email: emailVal,
+        role: activeTab,
+        active: true,
+        linkedVolunteerId: activeTab === "volunteer" ? userForm.linkedVolunteerId : null,
+      });
+      if (!res?.success) {
+        showToast(res?.error || "שגיאה בהוספת המשתמש");
+        return;
       }
       showToast(`ה${ROLE_LABEL[activeTab]} נוסף בהצלחה ונשלחה הודעה!`);
-      setUserForm({ displayName: "", email: "" });
+      setUserForm({ displayName: "", email: "", linkedVolunteerId: "" });
       await refreshUsers();
+      await refreshVolunteers();
     } catch (error) {
       showToast("אירעה שגיאה חמורה בעת הוספת משתמש");
     } finally {
@@ -572,13 +610,36 @@ export default function Settings() {
           <div style={{ backgroundColor: "#faf8f5", padding: "20px", borderRadius: "12px", border: "1px solid #e9ecef", marginBottom: "30px" }}>
             <form onSubmit={handleAddUser} style={{ display: "flex", gap: "15px", alignItems: "flex-end", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: "200px" }}>
-                <label style={labelStyle}>שם מלא</label>
-                <input className="input" style={inputStyle} value={userForm?.displayName || ""} onChange={(e) => setUserForm({ ...userForm, displayName: e.target.value })} placeholder="שם מלא" />
-              </div>
-              <div style={{ flex: 1, minWidth: "200px" }}>
                 <label style={labelStyle}>אימייל</label>
                 <input className="input" type="email" dir="ltr" style={inputStyle} value={userForm?.email || ""} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} placeholder="user@example.com" />
               </div>
+              {activeTab === "volunteer" && (
+                <div style={{ flex: "1 1 100%", minWidth: "200px" }}>
+                  <label style={labelStyle}>קישור לפרופיל מתנדב</label>
+                  <select
+                    className="select"
+                    style={inputStyle}
+                    value={userForm?.linkedVolunteerId || ""}
+                    onChange={(e) => setUserForm({ ...userForm, linkedVolunteerId: e.target.value })}
+                  >
+                    <option value="">בחר/י מתנדב קיים מהמערכת...</option>
+                    {allVolunteers.map((v) => {
+                      const name =
+                        v.name ||
+                        v.fullName ||
+                        [v.firstName, v.lastName].filter(Boolean).join(" ").trim() ||
+                        v.email ||
+                        v.id;
+                      const linked = v.authUid ? " (כבר מקושר)" : "";
+                      return (
+                        <option key={v.id} value={v.id} disabled={!!v.authUid}>
+                          {name}{linked}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
               <div>
                 <button className="btn btn-primary" type="submit" disabled={isAddingUser} style={{ padding: "10px 24px", borderRadius: "8px", backgroundColor: "#8b2c2c", color: "white", border: "none", fontWeight: "bold", cursor: isAddingUser ? "not-allowed" : "pointer" }}>
                   הוספת {ROLE_LABEL[activeTab] || ""}

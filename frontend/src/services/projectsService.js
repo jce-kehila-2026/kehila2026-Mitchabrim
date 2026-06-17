@@ -1,6 +1,7 @@
 import {
   collection,
   addDoc,
+  getDoc,
   getDocs,
   updateDoc,
   setDoc,
@@ -13,8 +14,51 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { getElderly } from "./elderlyService";
+import { getAreasAndNeighborhoods } from "./settingsService";
 
 const projectsCollection = collection(db, "projects");
+
+/* =========================
+   Single project
+========================= */
+
+export async function getProjectById(projectId) {
+  const ref = doc(db, "projects", projectId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() };
+}
+
+/* =========================
+   Neighborhoods in a project
+   (the project doc stores `neighborhoods: string[]` and `allElderly: bool`.
+    If `allElderly` is true we fall back to ALL neighborhoods from
+    settings/general — the same source used by Elderly + Volunteers.)
+========================= */
+
+export async function getProjectNeighborhoods(project) {
+  if (!project) return [];
+  if (project.allElderly) {
+    const areas = await getAreasAndNeighborhoods();
+    return Array.from(new Set(areas.flatMap((a) => a.neighborhoods || [])));
+  }
+  return Array.isArray(project.neighborhoods) ? project.neighborhoods : [];
+}
+
+/* Elderly residents from the global `elderly` collection that live in the
+   given neighborhood — used to populate the "add elderly to project" picker. */
+export async function getElderlyByNeighborhood(neighborhood) {
+  if (!neighborhood) return [];
+  const all = await getElderly();
+  return all.filter((e) => e.neighborhood === neighborhood);
+}
+
+/* Elderly participants of a project filtered by neighborhood. */
+export async function getProjectElderlyByNeighborhood(projectId, neighborhood) {
+  const list = await getElderlyParticipants(projectId);
+  return list.filter((e) => e.neighborhood === neighborhood);
+}
 
 /* =========================
    Projects
@@ -60,6 +104,22 @@ export async function editProject(projectId, projectData) {
 export async function deleteProject(projectId) {
   const projectRef = doc(db, "projects", projectId);
   await deleteDoc(projectRef);
+}
+
+/* Cascade delete: remove the project and all of its project-scoped
+   subcollection data (elderlyParticipants + projectGroups).
+   IMPORTANT: this does NOT delete elderly residents, neighborhoods, or
+   volunteer groups from the main database. */
+export async function deleteProjectCascade(projectId) {
+  const [parts, groups] = await Promise.all([
+    getDocs(participantsCol(projectId)),
+    getDocs(projectGroupsCol(projectId)),
+  ]);
+  const batch = writeBatch(db);
+  parts.docs.forEach((d) => batch.delete(d.ref));
+  groups.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(doc(db, "projects", projectId));
+  await batch.commit();
 }
 
 /* =========================

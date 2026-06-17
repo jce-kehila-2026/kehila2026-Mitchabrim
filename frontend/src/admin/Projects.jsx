@@ -8,6 +8,7 @@ import {
   getProjects,
   createProject,
   editProject,
+  deleteProjectCascade,
   getElderlyParticipants,
   addElderlyParticipants,
   updateElderlyParticipant,
@@ -17,100 +18,40 @@ import {
   removeProjectGroup,
   setProjectGroupVolunteers,
 } from "@/services/projectsService.js";
+import { getElderly } from "@/services/elderlyService.js";
+import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
+import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 
 /* ============================================================
-   Static reference data (project-detail screens still use these
-   until Stages 2 & 3 wire participants/groups to Firestore).
+   Static reference data — only enums/options. All groups,
+   volunteers, neighborhoods and elderly come from Firestore.
 ============================================================ */
 
 const PROJECT_TYPES = ["חלוקת חבילות", "אירוע קהילתי", "פעילות מיוחדת", "שי לחג"];
 const PROJECT_STATUSES = ["פעיל", "הסתיים", "בוטל"];
 
-const NEIGHBORHOODS_IN_PROJECT = [
-  { name: "גילה",        elderly: 34, packages: 32, assigned: 30, delivered: 24, notes: 2 },
-  { name: "בית הכרם",    elderly: 22, packages: 21, assigned: 21, delivered: 20, notes: 0 },
-  { name: "רחביה",       elderly: 18, packages: 17, assigned: 16, delivered: 14, notes: 1 },
-  { name: "קטמון",       elderly: 16, packages: 15, assigned: 14, delivered: 12, notes: 0 },
-  { name: "ארמון הנציב", elderly: 14, packages: 14, assigned: 12, delivered: 11, notes: 0 },
-  { name: "תלפיות",      elderly: 16, packages: 13, assigned: 11, delivered: 14, notes: 0 },
-];
+/* ============================================================
+   Normalizers — Firestore docs may use a few field-name variants.
+============================================================ */
 
-const INITIAL_ELDERLY_BY_NEIGHBORHOOD = {
-  "גילה": [
-    { id: "e-g-1", n: 1, first: "יוסף",  last: "ברקוביץ", phone: "054-9876543", address: "הפלמ\"ח 8", receives: "כן", delivery: "ממתין למסירה", notes: "להתקשר לפני הגעה" },
-    { id: "e-g-2", n: 2, first: "אברהם", last: "כהן",     phone: "053-3334444", address: "מבוא 2",    receives: "לא", delivery: "לא נמסר",       notes: "ביקש לא לקבל חבילה השנה" },
-    { id: "e-g-3", n: 3, first: "רחל",   last: "לוי",     phone: "052-1112233", address: "הזית 4",    receives: "כן", delivery: "נמסר",          notes: "" },
-    { id: "e-g-4", n: 4, first: "דוד",   last: "ביטון",   phone: "050-7778888", address: "האלון 11",  receives: "כן", delivery: "נמסר",          notes: "זוג — חבילה אחת" },
-  ],
-  "בית הכרם": [
-    { id: "e-b-1", n: 1, first: "חנה", last: "שטרן",    phone: "050-1112222", address: "החלוץ 4",   receives: "כן", delivery: "נמסר",          notes: "" },
-    { id: "e-b-2", n: 2, first: "משה", last: "פרידמן",  phone: "052-4445555", address: "הנרקיס 9",  receives: "כן", delivery: "ממתין למסירה", notes: "למסור בבוקר בלבד" },
-  ],
-};
+const volName = (v) =>
+  v?.name || `${v?.firstName || v?.first || ""} ${v?.lastName || v?.last || ""}`.trim();
+const volPhone = (v) => v?.phone || v?.mobile || v?.homePhone || "";
+const volEmail = (v) => v?.email || "";
+const volStatus = (v) => v?.status || "פעיל";
+const volNotes = (v) => v?.notes || v?.groupNotes || "";
+const volRole = (v) => v?.role || v?.groupRole || "";
 
-/* Master list: all elderly that exist globally in the system, by neighborhood.
-   Used when adding existing elderly residents to the current project. */
-const ALL_ELDERLY_BY_NEIGHBORHOOD = {
-  "גילה": [
-    { id: "e-g-1", first: "יוסף",  last: "ברקוביץ", phone: "054-9876543", address: "הפלמ\"ח 8",  status: "פעיל", notes: "להתקשר לפני הגעה" },
-    { id: "e-g-2", first: "אברהם", last: "כהן",     phone: "053-3334444", address: "מבוא 2",     status: "פעיל", notes: "" },
-    { id: "e-g-3", first: "רחל",   last: "לוי",     phone: "052-1112233", address: "הזית 4",     status: "פעיל", notes: "" },
-    { id: "e-g-4", first: "דוד",   last: "ביטון",   phone: "050-7778888", address: "האלון 11",   status: "פעיל", notes: "זוג — חבילה אחת" },
-    { id: "e-g-5", first: "שרה",   last: "אברהמי",  phone: "052-9990011", address: "הדקל 3",     status: "פעיל", notes: "" },
-    { id: "e-g-6", first: "מרדכי", last: "פרץ",     phone: "054-2223344", address: "האורן 17",   status: "פעיל", notes: "מתגורר עם בן" },
-  ],
-  "בית הכרם": [
-    { id: "e-b-1", first: "חנה", last: "שטרן",   phone: "050-1112222", address: "החלוץ 4",   status: "פעיל", notes: "" },
-    { id: "e-b-2", first: "משה", last: "פרידמן", phone: "052-4445555", address: "הנרקיס 9",  status: "פעיל", notes: "למסור בבוקר בלבד" },
-    { id: "e-b-3", first: "לאה", last: "גולן",   phone: "053-6667777", address: "הצבר 12",   status: "פעיל", notes: "" },
-  ],
-};
+const groupMembers = (g, volsInGroup) =>
+  Array.isArray(volsInGroup) ? volsInGroup.length : (g?.count ?? g?.members ?? 0);
+const groupContact = (g) => g?.contact || "";
+const groupPhone = (g) => g?.phone || "";
+const groupEmail = (g) => g?.email || "";
+const groupRole = (g) => g?.role || g?.notes || "";
 
-/* All groups that exist globally in the system (master list). */
-const ALL_GROUPS_IN_SYSTEM = [
-  { id: "g1", name: "חברת חשמל",         type: "ארגון",    members: 12, contact: "נועם לב",   phone: "053-4444444", email: "noam@iec.co.il",      role: "רכז התנדבות", notes: "רכז התנדבות" },
-  { id: "g2", name: "בית ספר גילה",      type: "בית ספר",  members: 18, contact: "מר לוי",    phone: "02-6789012",  email: "school@gilo.k12.il",  role: "מורה אחראי",  notes: "מורה אחראי" },
-  { id: "g3", name: "כפר הסטודנטים",     type: "סטודנטים", members: 9,  contact: "תמר ברקת",  phone: "050-9988776", email: "tamar@students.org",  role: "רכזת",        notes: "" },
-  { id: "g4", name: "מתנדבים עצמאיים",   type: "יחידים",   members: 7,  contact: "—",         phone: "—",           email: "—",                   role: "—",           notes: "ללא ארגון" },
-  { id: "g5", name: "קהילת רחביה",       type: "קהילה",    members: 14, contact: "שירה אבני", phone: "052-7654321", email: "shira@rehavia.org",   role: "מתאמת",       notes: "" },
-  { id: "g6", name: "תיכון בויאר",       type: "בית ספר",  members: 22, contact: "רונית שפר", phone: "02-5556677",  email: "ronit@boyar.k12.il",  role: "מורה אחראית", notes: "" },
-];
-
-/* All volunteers globally, grouped by their group assignment. */
-const ALL_VOLUNTEERS_BY_GROUP = {
-  g1: [
-    { id: "v1", name: "נועם לב",         phone: "053-4444444", email: "noam@iec.co.il",      status: "פעיל", notes: "רכז" },
-    { id: "v2", name: "מירב כהן",        phone: "052-1212121", email: "meirav@iec.co.il",    status: "פעיל", notes: "" },
-    { id: "v3", name: "אורי דהן",        phone: "054-3232323", email: "uri@iec.co.il",       status: "פעיל", notes: "" },
-  ],
-  g2: [
-    { id: "v4", name: "מר לוי",          phone: "02-6789012",  email: "school@gilo.k12.il",  status: "פעיל", notes: "מורה אחראי" },
-    { id: "v5", name: "תלמיד כיתה י׳",   phone: "—",           email: "—",                   status: "פעיל", notes: "תלמיד" },
-    { id: "v6", name: "תלמידה כיתה יא׳", phone: "—",           email: "—",                   status: "פעיל", notes: "תלמידה" },
-  ],
-  g3: [
-    { id: "v7", name: "תמר ברקת",        phone: "050-9988776", email: "tamar@students.org",  status: "פעיל", notes: "רכזת" },
-    { id: "v8", name: "יונתן שמש",       phone: "054-1239876", email: "yonatan@students.org",status: "פעיל", notes: "" },
-  ],
-  g4: [
-    { id: "v9", name: "רונן אבידן",      phone: "050-5556677", email: "ronen@gmail.com",     status: "פעיל", notes: "" },
-  ],
-  g5: [
-    { id: "v10", name: "שירה אבני",      phone: "052-7654321", email: "shira@rehavia.org",   status: "פעיל", notes: "מתאמת" },
-  ],
-  g6: [
-    { id: "v11", name: "רונית שפר",      phone: "02-5556677",  email: "ronit@boyar.k12.il",  status: "פעיל", notes: "מורה אחראית" },
-  ],
-};
-
-/* Initial project-scoped attachments (in real app: from project doc). */
-const INITIAL_PROJECT_GROUP_IDS = ["g1", "g2"];
-const INITIAL_PROJECT_VOLUNTEERS = { g1: ["v1", "v2"], g2: ["v4"] };
-
-/* Manual (non group-derived) partners. */
-const MANUAL_PARTNERS = [
-  { id: "p1", org: "עיריית ירושלים", contact: "רינת בר", phone: "02-1234567", email: "rinat@jlm.muni.il", role: "מתאמת קהילה" },
-];
+const elderlyDisplayName = (e) =>
+  `${e?.firstName || e?.first || ""} ${e?.lastName || e?.last || ""}`.trim();
+const elderlyDisplayPhone = (e) => e?.mobile || e?.homePhone || e?.phone || "";
 
 /* ============================================================
    Badge helpers
@@ -134,6 +75,7 @@ const deliveryBadge = (v) =>
 
 export default function Projects() {
   const [projects, setProjects] = useState([]);
+  const [projectStats, setProjectStats] = useState({}); // { [projectId]: { elderly, packages, delivered } }
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [view, setView] = useState({ name: "list" });
@@ -142,12 +84,66 @@ export default function Projects() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ year: "", type: "", status: "", date: "" });
 
+  // Real groups + volunteers from Firestore (shared across all subviews).
+  const [allGroups, setAllGroups] = useState([]);
+  const [allVolunteers, setAllVolunteers] = useState([]);
+  const [allElderly, setAllElderly] = useState([]);
+
+  const volunteersByGroupId = useMemo(() => {
+    const map = {};
+    allVolunteers.forEach((v) => {
+      const gid = v.groupId;
+      if (!gid) return;
+      if (!map[gid]) map[gid] = [];
+      map[gid].push(v);
+    });
+    return map;
+  }, [allVolunteers]);
+
+  const computeStatsForProject = async (projectId) => {
+    const list = await getElderlyParticipants(projectId);
+    return {
+      elderly: list.length,
+      packages: list.filter((p) => p.receives === "כן").length,
+      delivered: list.filter((p) => p.delivery === "נמסר").length,
+    };
+  };
+
+  const refreshProjectStats = async (projectId) => {
+    try {
+      const stats = await computeStatsForProject(projectId);
+      setProjectStats((prev) => ({ ...prev, [projectId]: stats }));
+    } catch (err) {
+      console.error("Failed to refresh project stats", err);
+    }
+  };
+
+  const setProjectStatsDirect = (projectId, stats) => {
+    setProjectStats((prev) => ({ ...prev, [projectId]: stats }));
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const list = await getProjects();
-        if (!cancelled) setProjects(list);
+        const [list, groups, volunteers, elderly] = await Promise.all([
+          getProjects(),
+          getVolunteerGroups().catch(() => []),
+          getVolunteers().catch(() => []),
+          getElderly().catch(() => []),
+        ]);
+        if (cancelled) return;
+        setProjects(list);
+        setAllGroups(groups);
+        setAllVolunteers(volunteers);
+        setAllElderly(elderly);
+        const entries = await Promise.all(
+          list.map(async (p) => [p.id, await computeStatsForProject(p.id).catch(() => null)])
+        );
+        if (cancelled) return;
+        const map = {};
+        entries.forEach(([id, s]) => { if (s) map[id] = s; });
+        setProjectStats(map);
       } catch (err) {
         console.error("Failed to load projects", err);
         if (!cancelled) setLoadError("טעינת הפרויקטים נכשלה");
@@ -158,14 +154,95 @@ export default function Projects() {
     return () => { cancelled = true; };
   }, []);
 
+  /**
+   * Create a project AND auto-populate it from real database records:
+   *   - if allElderly: add every neighborhood + every elderly resident in those
+   *     neighborhoods to the project.
+   *   - else: add only the selected neighborhoods + the elderly residents that
+   *     belong to them.
+   *   - for each selected group: attach the group and pre-fill its volunteers
+   *     with the volunteers already belonging to that group.
+   *
+   * No new neighborhoods / elderly / volunteers / groups are created here.
+   */
   const handleCreateProject = async (data) => {
     const created = await createProject(data);
     setProjects((prev) => [created, ...prev]);
+
+    const targetNeighborhoods = Array.isArray(data.neighborhoods) ? data.neighborhoods : [];
+    const neighSet = new Set(targetNeighborhoods);
+
+    // 1) Elderly participants for the project, derived from real elderly records.
+    const participants = allElderly
+      .filter((e) => e.neighborhood && neighSet.has(e.neighborhood))
+      .map((e) => ({
+        elderlyId: e.id,
+        neighborhood: e.neighborhood,
+        first: e.firstName || e.first || "",
+        last: e.lastName || e.last || "",
+        phone: e.mobile || e.homePhone || e.phone || "",
+        address: e.address || "",
+        receives: "כן",
+        delivery: "ממתין למסירה",
+        notes: "",
+      }));
+
+    if (participants.length > 0) {
+      try { await addElderlyParticipants(created.id, participants); }
+      catch (err) { console.error("Failed to seed elderly participants", err); }
+    }
+
+    // 2) Volunteer groups + their existing volunteers.
+    const groupIds = Array.isArray(data.groupIds) ? data.groupIds : [];
+    if (groupIds.length > 0) {
+      try { await addProjectGroups(created.id, groupIds); }
+      catch (err) { console.error("Failed to attach groups", err); }
+      await Promise.all(
+        groupIds.map(async (gid) => {
+          const vIds = (volunteersByGroupId[gid] || []).map((v) => v.id);
+          if (vIds.length === 0) return;
+          try { await setProjectGroupVolunteers(created.id, gid, vIds); }
+          catch (err) { console.error("Failed to seed group volunteers", err); }
+        })
+      );
+    }
+
+    // 3) Compute fresh stats for the new project.
+    const stats = {
+      elderly: participants.length,
+      packages: participants.filter((p) => p.receives === "כן").length,
+      delivered: participants.filter((p) => p.delivery === "נמסר").length,
+    };
+    setProjectStats((prev) => ({ ...prev, [created.id]: stats }));
     return created;
   };
 
+  const handleDeleteProject = async (projectId, projectName) => {
+    if (!confirm(`למחוק את הפרויקט "${projectName}"?\n\nפעולה זו תמחק את הפרויקט וכל הנתונים הקשורים אליו (אזרחים ותיקים בפרויקט, קבוצות בפרויקט).\n\nהאזרחים הוותיקים, השכונות וקבוצות המתנדבים לא יימחקו מהמערכת.`)) return;
+    try {
+      await deleteProjectCascade(projectId);
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setProjectStats((prev) => {
+        const n = { ...prev };
+        delete n[projectId];
+        return n;
+      });
+    } catch (err) {
+      console.error("Failed to delete project", err);
+      alert("מחיקת הפרויקט נכשלה");
+    }
+  };
+
+  const projectsWithStats = useMemo(() => {
+    return projects.map((p) => {
+      const s = projectStats[p.id];
+      if (!s) return p;
+      return { ...p, elderly: s.elderly, packages: s.packages, delivered: s.delivered };
+    });
+  }, [projects, projectStats]);
+
   const filtered = useMemo(() => {
-    return projects.filter((p) => {
+    return projectsWithStats.filter((p) => {
       if (filters.year && String(p.year) !== filters.year) return false;
       if (filters.type && p.type !== filters.type) return false;
       if (filters.status && p.status !== filters.status) return false;
@@ -175,13 +252,29 @@ export default function Projects() {
       }
       return true;
     });
-  }, [search, filters, projects]);
+  }, [search, filters, projectsWithStats]);
+
+  const totals = useMemo(() => {
+    return Object.values(projectStats).reduce(
+      (acc, s) => ({
+        elderly: acc.elderly + (s?.elderly || 0),
+        packages: acc.packages + (s?.packages || 0),
+        delivered: acc.delivered + (s?.delivered || 0),
+      }),
+      { elderly: 0, packages: 0, delivered: 0 }
+    );
+  }, [projectStats]);
 
   if (view.name === "project") {
     return (
       <ProjectDetail
         project={view.project}
-        onBack={() => setView({ name: "list" })}
+        allGroups={allGroups}
+        allVolunteers={allVolunteers}
+        volunteersByGroupId={volunteersByGroupId}
+        allElderlyResidents={allElderly}
+        onBack={() => { refreshProjectStats(view.project.id); setView({ name: "list" }); }}
+        onStatsChange={(stats) => setProjectStatsDirect(view.project.id, stats)}
         onUpdate={async (updated) => {
           const { id, createdAt, updatedAt, ...rest } = updated;
           try {
@@ -197,12 +290,29 @@ export default function Projects() {
   }
 
   if (view.name === "groups") {
-    return <GroupsListView onBack={() => setView({ name: "list" })} />;
+    return (
+      <GroupsListView
+        allGroups={allGroups}
+        volunteersByGroupId={volunteersByGroupId}
+        onBack={() => setView({ name: "list" })}
+      />
+    );
   }
 
+  // Nearest upcoming project — by real `date` field, falling back to `startDate`.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const upcoming = [...projects]
     .filter((p) => p.status !== "הסתיים" && p.status !== "בוטל")
-    .sort((a, b) => a.year - b.year)[0];
+    .map((p) => {
+      const raw = p.date || p.startDate || "";
+      const d = raw ? new Date(raw) : null;
+      return { p, d: d && !isNaN(d.getTime()) ? d : null };
+    })
+    .filter(({ d }) => d && d >= today)
+    .sort((a, b) => a.d - b.d)
+    .map(({ p }) => p)[0];
+
 
   return (
     <AdminLayout
@@ -218,9 +328,9 @@ export default function Projects() {
     >
       <div className="stats-grid">
         <StatsCard icon="📅" title="פרויקט קרוב" value={upcoming?.name || "—"} subtitle={upcoming?.date || ""} />
-        <StatsCard icon="👵" title="אזרחים ותיקים בפרויקט" value="420" />
-        <StatsCard icon="🎁" title="כמות חבילות" value="242" />
-        <StatsCard icon="📦" title="נמסרו" value="95" />
+        <StatsCard icon="👵" title="אזרחים ותיקים בפרויקט" value={totals.elderly} />
+        <StatsCard icon="🎁" title="כמות חבילות" value={totals.packages} />
+        <StatsCard icon="📦" title="נמסרו" value={totals.delivered} />
       </div>
 
       <SectionCard>
@@ -252,13 +362,23 @@ export default function Projects() {
               { key: "packages",  label: "כמות חבילות" },
               { key: "delivered", label: "נמסרו" },
               { key: "status",    label: "סטטוס", render: (r) => <span className={`badge ${projectStatusBadge(r.status)}`}>{r.status}</span> },
+              { key: "delete",    label: "", render: (r) => (
+                <button className="btn-link btn-danger" onClick={() => handleDeleteProject(r.id, r.name)}>מחיקת פרויקט</button>
+              )},
             ]}
             data={filtered}
           />
         )}
       </SectionCard>
 
-      {showAdd && <AddProjectModal onClose={() => setShowAdd(false)} onSave={handleCreateProject} />}
+      {showAdd && (
+        <AddProjectModal
+          allGroups={allGroups}
+          volunteersByGroupId={volunteersByGroupId}
+          onClose={() => setShowAdd(false)}
+          onSave={handleCreateProject}
+        />
+      )}
       {showPrint && (
         <PrintModal
           title="הדפסת רשימת פרויקטים"
@@ -279,8 +399,22 @@ export default function Projects() {
    Groups list view (entry from main page button)
 ============================================================ */
 
-function GroupsListView({ onBack }) {
+function GroupsListView({ onBack, allGroups = [], volunteersByGroupId = {} }) {
   const [group, setGroup] = useState(null);
+  const groupRows = allGroups.map((g) => ({
+    ...g,
+    members: groupMembers(g, volunteersByGroupId[g.id]),
+  }));
+  const volRows = group
+    ? (volunteersByGroupId[group.id] || []).map((v) => ({
+        id: v.id,
+        name: volName(v),
+        phone: volPhone(v),
+        email: volEmail(v),
+        status: volStatus(v),
+        notes: volNotes(v),
+      }))
+    : [];
   return (
     <AdminLayout title="רשימות לפי קבוצות" subtitle="קבוצות מתנדבים במערכת">
       <button className="back-link" onClick={onBack}>→ חזרה לפרויקטים</button>
@@ -295,7 +429,7 @@ function GroupsListView({ onBack }) {
               { key: "members", label: "מספר מתנדבים" },
               { key: "notes",   label: "הערות" },
             ]}
-            data={ALL_GROUPS_IN_SYSTEM}
+            data={groupRows}
           />
         </SectionCard>
       ) : (
@@ -310,7 +444,7 @@ function GroupsListView({ onBack }) {
                 { key: "status", label: "סטטוס", render: (r) => <span className="badge badge-green">{r.status}</span> },
                 { key: "notes",  label: "הערות" },
               ]}
-              data={ALL_VOLUNTEERS_BY_GROUP[group.id] || []}
+              data={volRows}
             />
           </SectionCard>
         </>
@@ -323,13 +457,32 @@ function GroupsListView({ onBack }) {
    Project Detail
 ============================================================ */
 
-function ProjectDetail({ project, onBack, onUpdate }) {
+function ProjectDetail({
+  project,
+  onBack,
+  onUpdate,
+  onStatsChange,
+  allGroups = [],
+  allVolunteers = [],
+  volunteersByGroupId = {},
+  allElderlyResidents = [],
+}) {
   const [tab, setTab] = useState("dist");
   const [neighborhood, setNeighborhood] = useState(null);
   const [group, setGroup] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
   const [elderlyByNeighborhood, setElderlyByNeighborhood] = useState({});
   const [elderlyLoading, setElderlyLoading] = useState(true);
+
+  // Real neighborhoods source — same data used by Elderly + Volunteers.
+  const { allNeighborhoods } = useAreasAndNeighborhoods();
+
+  // The neighborhoods that belong to THIS project.
+  const projectNeighborhoods = useMemo(() => {
+    if (project.allElderly) return allNeighborhoods;
+    return Array.isArray(project.neighborhoods) ? project.neighborhoods : [];
+  }, [project.allElderly, project.neighborhoods, allNeighborhoods]);
+
 
   // Load elderly participants for this project from Firestore.
   useEffect(() => {
@@ -345,14 +498,8 @@ function ProjectDetail({ project, onBack, onUpdate }) {
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(p);
         });
-        // Assign sequential row numbers per neighborhood for display.
         Object.keys(grouped).forEach((k) => {
           grouped[k] = grouped[k].map((e, i) => ({ ...e, n: i + 1 }));
-        });
-        // Seed neighborhoods that exist in the project but have no participants yet,
-        // so the neighborhood view still shows an empty list rather than nothing.
-        NEIGHBORHOODS_IN_PROJECT.forEach((n) => {
-          if (!grouped[n.name]) grouped[n.name] = [];
         });
         setElderlyByNeighborhood(grouped);
       } catch (err) {
@@ -363,6 +510,35 @@ function ProjectDetail({ project, onBack, onUpdate }) {
     })();
     return () => { cancelled = true; };
   }, [project.id]);
+
+  // Per-neighborhood stats derived from participants in the project.
+  const neighborhoodRows = useMemo(() => {
+    return projectNeighborhoods.map((name) => {
+      const rows = elderlyByNeighborhood[name] || [];
+      const packages = rows.filter((r) => r.receives === "כן").length;
+      const delivered = rows.filter((r) => r.delivery === "נמסר").length;
+      const notes = rows.filter((r) => r.notes && r.notes.trim()).length;
+      return { name, elderly: rows.length, packages, delivered, notes };
+    });
+  }, [projectNeighborhoods, elderlyByNeighborhood]);
+
+  // Totals across all neighborhoods for THIS project — drive both the summary
+  // cards in the detail view and the row in the main Projects table.
+  const projectTotals = useMemo(() => {
+    const all = Object.values(elderlyByNeighborhood).flat();
+    return {
+      elderly: all.length,
+      packages: all.filter((r) => r.receives === "כן").length,
+      delivered: all.filter((r) => r.delivery === "נמסר").length,
+    };
+  }, [elderlyByNeighborhood]);
+
+  useEffect(() => {
+    if (elderlyLoading) return;
+    onStatsChange?.(projectTotals);
+  }, [projectTotals, elderlyLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
 
   const [showPrint, setShowPrint] = useState(false);
   const [showAddElderly, setShowAddElderly] = useState(false);
@@ -395,22 +571,35 @@ function ProjectDetail({ project, onBack, onUpdate }) {
   }, [project.id]);
 
   const projectGroups = useMemo(
-    () => ALL_GROUPS_IN_SYSTEM.filter((g) => projectGroupIds.includes(g.id))
+    () => allGroups.filter((g) => projectGroupIds.includes(g.id))
       .map((g) => ({ ...g, members: (projectVolunteers[g.id] || []).length })),
-    [projectGroupIds, projectVolunteers]
+    [allGroups, projectGroupIds, projectVolunteers]
   );
 
   const addGroupsToProject = async (ids) => {
     const newIds = ids.filter((id) => !projectGroupIds.includes(id));
     if (newIds.length === 0) return;
     setProjectGroupIds((prev) => Array.from(new Set([...prev, ...newIds])));
+    // Pre-fill with the volunteers that already belong to each group.
     setProjectVolunteers((prev) => {
       const next = { ...prev };
-      newIds.forEach((id) => { if (!next[id]) next[id] = []; });
+      newIds.forEach((id) => {
+        if (!next[id]) next[id] = (volunteersByGroupId[id] || []).map((v) => v.id);
+      });
       return next;
     });
-    try { await addProjectGroups(project.id, newIds); }
-    catch (err) { console.error("Failed to add project groups", err); }
+    try {
+      await addProjectGroups(project.id, newIds);
+      await Promise.all(
+        newIds.map((id) => {
+          const vIds = (volunteersByGroupId[id] || []).map((v) => v.id);
+          if (vIds.length === 0) return Promise.resolve();
+          return setProjectGroupVolunteers(project.id, id, vIds);
+        })
+      );
+    } catch (err) {
+      console.error("Failed to add project groups", err);
+    }
   };
   const removeGroupFromProject = async (id) => {
     if (!confirm("להסיר את הקבוצה מהפרויקט? (הקבוצה לא תימחק מהמערכת)")) return;
@@ -435,22 +624,22 @@ function ProjectDetail({ project, onBack, onUpdate }) {
   };
 
 
-  // Partners auto-derived from project groups (deduped by group id) + manual partners
+  // Partners auto-derived from project groups (deduped by group id).
   const partners = useMemo(() => {
-    const fromGroups = projectGroups
-      .filter((g) => g.contact && g.contact !== "—")
+    return projectGroups
+      .filter((g) => groupContact(g))
       .map((g) => ({
         id: `grp-${g.id}`,
         groupId: g.id,
         org: g.name,
-        contact: g.contact,
-        phone: g.phone,
-        email: g.email,
-        role: g.role || g.notes || "",
+        contact: groupContact(g),
+        phone: groupPhone(g),
+        email: groupEmail(g),
+        role: groupRole(g),
         source: "קבוצה",
       }));
-    return [...fromGroups, ...MANUAL_PARTNERS.map((p) => ({ ...p, source: "ידני" }))];
   }, [projectGroups]);
+
 
   const updateElderly = (neighName, id, patch) => {
     // Optimistic UI update.
@@ -478,17 +667,16 @@ function ProjectDetail({ project, onBack, onUpdate }) {
 
   const addElderlyToProject = async (neighName, ids) => {
     const current = elderlyByNeighborhood[neighName] || [];
-    const master = ALL_ELDERLY_BY_NEIGHBORHOOD[neighName] || [];
     const existingIds = new Set(current.map((e) => e.id));
-    const newOnes = master
+    const newOnes = allElderlyResidents
       .filter((m) => ids.includes(m.id) && !existingIds.has(m.id))
       .map((m) => ({
         elderlyId: m.id,
         neighborhood: neighName,
-        first: m.first,
-        last: m.last,
-        phone: m.phone,
-        address: m.address,
+        first: m.firstName || m.first || "",
+        last: m.lastName || m.last || "",
+        phone: m.mobile || m.homePhone || m.phone || "",
+        address: m.address || "",
         receives: "כן",
         delivery: "ממתין למסירה",
         notes: "",
@@ -507,6 +695,79 @@ function ProjectDetail({ project, onBack, onUpdate }) {
     }
   };
 
+  /* ---- Add / remove neighborhoods to this project (does not change the
+     global areas/neighborhoods database). ---- */
+  const [showAddNeighborhood, setShowAddNeighborhood] = useState(false);
+
+  const addNeighborhoodsToProject = async (names) => {
+    const current = projectNeighborhoods;
+    const adding = names.filter((n) => !current.includes(n));
+    if (adding.length === 0) return;
+    const newList = [...current, ...adding];
+
+    // Persist on the project doc (and stop treating it as "all elderly").
+    onUpdate({ ...project, neighborhoods: newList, allElderly: false });
+
+    // Collect existing elderly residents who belong to those neighborhoods.
+    const participants = [];
+    adding.forEach((nbh) => {
+      allElderlyResidents
+        .filter((e) => e.neighborhood === nbh)
+        .forEach((e) => {
+          participants.push({
+            elderlyId: e.id,
+            neighborhood: nbh,
+            first: e.firstName || e.first || "",
+            last: e.lastName || e.last || "",
+            phone: e.mobile || e.homePhone || e.phone || "",
+            address: e.address || "",
+            receives: "כן",
+            delivery: "ממתין למסירה",
+            notes: "",
+          });
+        });
+    });
+
+    // Optimistic UI update.
+    setElderlyByNeighborhood((prev) => {
+      const next = { ...prev };
+      adding.forEach((nbh) => { if (!next[nbh]) next[nbh] = []; });
+      participants.forEach((p) => {
+        const list = next[p.neighborhood] || [];
+        list.push({ ...p, id: p.elderlyId, n: list.length + 1 });
+        next[p.neighborhood] = list;
+      });
+      return next;
+    });
+
+    if (participants.length > 0) {
+      try { await addElderlyParticipants(project.id, participants); }
+      catch (err) { console.error("Failed to seed elderly participants", err); }
+    }
+  };
+
+  const removeNeighborhoodFromProject = async (name) => {
+    if (!confirm(`להסיר את השכונה "${name}" מהפרויקט?\n\nהאזרחים הוותיקים בשכונה זו יוסרו מהפרויקט בלבד ולא יימחקו מהמערכת.`)) return;
+    const baseList = project.allElderly ? allNeighborhoods : projectNeighborhoods;
+    const newList = baseList.filter((n) => n !== name);
+    onUpdate({ ...project, neighborhoods: newList, allElderly: false });
+
+    const toRemove = elderlyByNeighborhood[name] || [];
+    setElderlyByNeighborhood((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+    try {
+      await Promise.all(toRemove.map((e) => removeElderlyParticipant(project.id, e.id)));
+    } catch (err) {
+      console.error("Failed to remove neighborhood participants", err);
+    }
+  };
+
+
+
+
 
   return (
     <AdminLayout
@@ -521,9 +782,9 @@ function ProjectDetail({ project, onBack, onUpdate }) {
       <button className="back-link" onClick={onBack}>→ חזרה לפרויקטים</button>
 
       <div className="stats-grid">
-        <StatsCard icon="👵" title="אזרחים ותיקים" value={project.elderly} />
-        <StatsCard icon="🎁" title="כמות חבילות"   value={project.packages} />
-        <StatsCard icon="📦" title="נמסרו"          value={project.delivered} />
+        <StatsCard icon="👵" title="אזרחים ותיקים" value={projectTotals.elderly} />
+        <StatsCard icon="🎁" title="כמות חבילות"   value={projectTotals.packages} />
+        <StatsCard icon="📦" title="נמסרו"          value={projectTotals.delivered} />
         <StatsCard icon="📝" title="הערות מיוחדות" value={project.notes} />
       </div>
 
@@ -534,7 +795,10 @@ function ProjectDetail({ project, onBack, onUpdate }) {
       </div>
 
       {tab === "dist" && !neighborhood && (
-        <SectionCard title="ניהול חלוקה לפי שכונות">
+        <SectionCard
+          title="ניהול חלוקה לפי שכונות"
+          actions={<button className="btn btn-primary" onClick={() => setShowAddNeighborhood(true)}>+ הוספת שכונה לפרויקט</button>}
+        >
           <DataTable
             columns={[
               { key: "name", label: "שכונה", render: (r) => (
@@ -544,15 +808,32 @@ function ProjectDetail({ project, onBack, onUpdate }) {
               { key: "packages",  label: "כמות חבילות" },
               { key: "delivered", label: "נמסרו" },
               { key: "notes",     label: "הערות מיוחדות" },
+              { key: "remove",    label: "", render: (r) => (
+                <button className="btn-link btn-danger" onClick={() => removeNeighborhoodFromProject(r.name)}>הסר שכונה מהפרויקט</button>
+              )},
             ]}
-            data={NEIGHBORHOODS_IN_PROJECT}
+            data={neighborhoodRows}
           />
         </SectionCard>
       )}
 
-      {tab === "dist" && neighborhood && (
+      {tab === "dist" && neighborhood && (() => {
+        const rows = elderlyByNeighborhood[neighborhood.name] || [];
+        const neighStats = {
+          elderly: rows.length,
+          packages: rows.filter((r) => r.receives === "כן").length,
+          delivered: rows.filter((r) => r.delivery === "נמסר").length,
+        };
+        return (
         <>
           <button className="back-link" onClick={() => setNeighborhood(null)}>→ חזרה לרשימת השכונות</button>
+
+          <div className="stats-grid">
+            <StatsCard icon="👵" title="אזרחים ותיקים בשכונה" value={neighStats.elderly} />
+            <StatsCard icon="🎁" title="כמות חבילות" value={neighStats.packages} />
+            <StatsCard icon="📦" title="נמסרו" value={neighStats.delivered} />
+          </div>
+
           <SectionCard
             title={`שכונת ${neighborhood.name} — ${project.name}`}
             actions={
@@ -574,23 +855,37 @@ function ProjectDetail({ project, onBack, onUpdate }) {
                   <select
                     className="inline-select"
                     value={r.receives}
-                    onChange={(e) => updateElderly(neighborhood.name, r.id, { receives: e.target.value })}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      // When the resident does NOT receive a package, force
+                      // delivery status to "לא נמסר" so totals stay accurate
+                      // and the delivery select is locked below.
+                      const patch = v === "לא"
+                        ? { receives: v, delivery: "לא נמסר" }
+                        : { receives: v };
+                      updateElderly(neighborhood.name, r.id, patch);
+                    }}
                   >
                     <option value="כן">כן</option>
                     <option value="לא">לא</option>
                   </select>
                 )},
-                { key: "delivery", label: "סטטוס מסירה", render: (r) => (
-                  <select
-                    className="inline-select"
-                    value={r.delivery}
-                    onChange={(e) => updateElderly(neighborhood.name, r.id, { delivery: e.target.value })}
-                  >
-                    <option value="נמסר">נמסר</option>
-                    <option value="ממתין למסירה">ממתין למסירה</option>
-                    <option value="לא נמסר">לא נמסר</option>
-                  </select>
-                )},
+                { key: "delivery", label: "סטטוס מסירה", render: (r) => {
+                  const locked = r.receives === "לא";
+                  return (
+                    <select
+                      className="inline-select"
+                      value={r.delivery}
+                      disabled={locked}
+                      title={locked ? "לא ניתן לעדכן מסירה כאשר אינו מקבל חבילה" : ""}
+                      onChange={(e) => updateElderly(neighborhood.name, r.id, { delivery: e.target.value })}
+                    >
+                      <option value="נמסר">נמסר</option>
+                      <option value="ממתין למסירה">ממתין למסירה</option>
+                      <option value="לא נמסר">לא נמסר</option>
+                    </select>
+                  );
+                }},
                 { key: "notes", label: "הערות", render: (r) => {
                   const has = !!(r.notes && r.notes.trim());
                   return (
@@ -632,6 +927,7 @@ function ProjectDetail({ project, onBack, onUpdate }) {
           {showAddElderly && (
             <SelectElderlyModal
               neighborhood={neighborhood.name}
+              allElderly={allElderlyResidents}
               excludeIds={(elderlyByNeighborhood[neighborhood.name] || []).map((e) => e.id)}
               onClose={() => setShowAddElderly(false)}
               onAdd={(ids) => { addElderlyToProject(neighborhood.name, ids); setShowAddElderly(false); }}
@@ -652,7 +948,8 @@ function ProjectDetail({ project, onBack, onUpdate }) {
             />
           )}
         </>
-      )}
+        );
+      })()}
 
       {tab === "groups" && !group && (
         <SectionCard
@@ -678,7 +975,16 @@ function ProjectDetail({ project, onBack, onUpdate }) {
 
       {tab === "groups" && group && (() => {
         const selectedIds = projectVolunteers[group.id] || [];
-        const rows = (ALL_VOLUNTEERS_BY_GROUP[group.id] || []).filter((v) => selectedIds.includes(v.id));
+        const rows = (volunteersByGroupId[group.id] || [])
+          .filter((v) => selectedIds.includes(v.id))
+          .map((v) => ({
+            id: v.id,
+            name: volName(v),
+            phone: volPhone(v),
+            email: volEmail(v),
+            status: volStatus(v),
+            notes: volNotes(v),
+          }));
         return (
           <>
             <button className="back-link" onClick={() => setGroup(null)}>→ חזרה לרשימת הקבוצות</button>
@@ -703,6 +1009,7 @@ function ProjectDetail({ project, onBack, onUpdate }) {
             {showAddVolunteer && (
               <SelectVolunteersModal
                 group={group}
+                groupVolunteers={volunteersByGroupId[group.id] || []}
                 excludeIds={selectedIds}
                 onClose={() => setShowAddVolunteer(false)}
                 onAdd={(ids) => { addVolunteersToGroup(group.id, ids); setShowAddVolunteer(false); }}
@@ -718,7 +1025,7 @@ function ProjectDetail({ project, onBack, onUpdate }) {
             columns={[
               { key: "org", label: "שם הגוף / השותף", render: (r) => (
                 r.groupId
-                  ? <button className="cell-link" onClick={() => setPartnerGroup(ALL_GROUPS_IN_SYSTEM.find((g) => g.id === r.groupId))}>{r.org}</button>
+                  ? <button className="cell-link" onClick={() => setPartnerGroup(allGroups.find((g) => g.id === r.groupId))}>{r.org}</button>
                   : <span>{r.org}</span>
               )},
               { key: "contact", label: "איש קשר" },
@@ -733,7 +1040,11 @@ function ProjectDetail({ project, onBack, onUpdate }) {
       )}
 
       {partnerGroup && (
-        <GroupProfileModal group={partnerGroup} onClose={() => setPartnerGroup(null)} />
+        <GroupProfileModal
+          group={partnerGroup}
+          volunteers={volunteersByGroupId[partnerGroup.id] || []}
+          onClose={() => setPartnerGroup(null)}
+        />
       )}
 
       {elderlyProfile && (
@@ -742,9 +1053,21 @@ function ProjectDetail({ project, onBack, onUpdate }) {
 
       {showAddGroup && (
         <SelectGroupsModal
+          allGroups={allGroups}
+          volunteersByGroupId={volunteersByGroupId}
           excludeIds={projectGroupIds}
           onClose={() => setShowAddGroup(false)}
           onAdd={(ids) => { addGroupsToProject(ids); setShowAddGroup(false); }}
+        />
+      )}
+
+      {showAddNeighborhood && (
+        <SelectNeighborhoodsModal
+          allNeighborhoods={allNeighborhoods}
+          excludeNames={projectNeighborhoods}
+          allElderlyResidents={allElderlyResidents}
+          onClose={() => setShowAddNeighborhood(false)}
+          onAdd={(names) => { addNeighborhoodsToProject(names); setShowAddNeighborhood(false); }}
         />
       )}
 
@@ -851,8 +1174,8 @@ function PrintModal({ title, filters = [], onClose }) {
   );
 }
 
-function AddProjectModal({ onClose, onSave }) {
-  const allNeighborhoods = NEIGHBORHOODS_IN_PROJECT.map((n) => n.name);
+function AddProjectModal({ onClose, onSave, allGroups = [], volunteersByGroupId = {} }) {
+  const { allNeighborhoods, loading: areasLoading, isEmpty: areasEmpty } = useAreasAndNeighborhoods();
   const [name, setName] = useState("");
   const [type, setType] = useState(PROJECT_TYPES[0]);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -907,10 +1230,10 @@ function AddProjectModal({ onClose, onSave }) {
         ? "כל השכונות"
         : `${selectedNeighborhoods.length} שכונות נבחרו`;
 
-  const filteredGroups = ALL_GROUPS_IN_SYSTEM.filter((g) =>
-    g.name.toLowerCase().includes(groupSearch.toLowerCase())
+  const filteredGroups = allGroups.filter((g) =>
+    (g.name || "").toLowerCase().includes(groupSearch.toLowerCase())
   );
-  const selectedGroupObjs = ALL_GROUPS_IN_SYSTEM.filter((g) => selectedGroups.includes(g.id));
+  const selectedGroupObjs = allGroups.filter((g) => selectedGroups.includes(g.id));
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -1028,7 +1351,7 @@ function AddProjectModal({ onClose, onSave }) {
                           onChange={() => toggleGroup(g.id)}
                         />
                         <span className="ms-name">{g.name}</span>
-                        <span className="ms-sub">{g.type} • {g.members} מתנדבים</span>
+                        <span className="ms-sub">{g.type} • {groupMembers(g, volunteersByGroupId[g.id])} מתנדבים</span>
                       </label>
                     ))
                   )}
@@ -1103,8 +1426,8 @@ function AddProjectModal({ onClose, onSave }) {
    Selection modals (existing groups / existing volunteers)
 ============================================================ */
 
-function SelectGroupsModal({ excludeIds = [], onClose, onAdd }) {
-  const available = ALL_GROUPS_IN_SYSTEM.filter((g) => !excludeIds.includes(g.id));
+function SelectGroupsModal({ excludeIds = [], onClose, onAdd, allGroups = [], volunteersByGroupId = {} }) {
+  const available = allGroups.filter((g) => !excludeIds.includes(g.id));
   const [selected, setSelected] = useState([]);
   const toggle = (id) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -1147,7 +1470,7 @@ function SelectGroupsModal({ excludeIds = [], onClose, onAdd }) {
                       </td>
                       <td>{g.name}</td>
                       <td>{g.type}</td>
-                      <td>{g.members}</td>
+                      <td>{groupMembers(g, volunteersByGroupId[g.id])}</td>
                       <td>{g.contact}</td>
                       <td>{g.notes}</td>
                     </tr>
@@ -1173,10 +1496,8 @@ function SelectGroupsModal({ excludeIds = [], onClose, onAdd }) {
   );
 }
 
-function SelectVolunteersModal({ group, excludeIds = [], onClose, onAdd }) {
-  const available = (ALL_VOLUNTEERS_BY_GROUP[group.id] || []).filter(
-    (v) => !excludeIds.includes(v.id)
-  );
+function SelectVolunteersModal({ group, groupVolunteers = [], excludeIds = [], onClose, onAdd }) {
+  const available = groupVolunteers.filter((v) => !excludeIds.includes(v.id));
   const [selected, setSelected] = useState([]);
   const toggle = (id) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -1218,11 +1539,11 @@ function SelectVolunteersModal({ group, excludeIds = [], onClose, onAdd }) {
                           onChange={() => toggle(v.id)}
                         />
                       </td>
-                      <td>{v.name}</td>
-                      <td>{v.phone}</td>
-                      <td>{v.email}</td>
-                      <td><span className="badge badge-green">{v.status}</span></td>
-                      <td>{v.notes}</td>
+                      <td>{volName(v)}</td>
+                      <td>{volPhone(v)}</td>
+                      <td>{volEmail(v)}</td>
+                      <td><span className="badge badge-green">{volStatus(v)}</span></td>
+                      <td>{volNotes(v)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1230,6 +1551,7 @@ function SelectVolunteersModal({ group, excludeIds = [], onClose, onAdd }) {
             </div>
           )}
         </div>
+
 
         <div className="modal-actions">
           <button
@@ -1251,13 +1573,17 @@ function SelectVolunteersModal({ group, excludeIds = [], onClose, onAdd }) {
    (filtered by neighborhood, excluding ones already in project)
 ============================================================ */
 
-function SelectElderlyModal({ neighborhood, excludeIds = [], onClose, onAdd }) {
-  const available = (ALL_ELDERLY_BY_NEIGHBORHOOD[neighborhood] || []).filter(
-    (e) => !excludeIds.includes(e.id)
+function SelectElderlyModal({ neighborhood, allElderly = [], excludeIds = [], onClose, onAdd }) {
+  const available = allElderly.filter(
+    (e) => e.neighborhood === neighborhood && !excludeIds.includes(e.id)
   );
   const [selected, setSelected] = useState([]);
   const toggle = (id) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const displayName = (e) =>
+    `${e.firstName || e.first || ""} ${e.lastName || e.last || ""}`.trim();
+  const displayPhone = (e) => e.mobile || e.homePhone || e.phone || "";
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -1271,7 +1597,7 @@ function SelectElderlyModal({ neighborhood, excludeIds = [], onClose, onAdd }) {
           <div style={{ marginBottom: 8, color: "#666" }}>שכונה: {neighborhood}</div>
           {available.length === 0 ? (
             <div style={{ textAlign: "center", color: "#666", padding: "16px" }}>
-              כל האזרחים הוותיקים בשכונה זו כבר נכללים בפרויקט
+              אין אזרחים ותיקים זמינים בשכונה זו להוספה לפרויקט
             </div>
           ) : (
             <div className="table-wrap">
@@ -1297,12 +1623,12 @@ function SelectElderlyModal({ neighborhood, excludeIds = [], onClose, onAdd }) {
                           onChange={() => toggle(e.id)}
                         />
                       </td>
-                      <td>{e.first} {e.last}</td>
-                      <td>{e.phone}</td>
-                      <td>{e.address}</td>
+                      <td>{displayName(e)}</td>
+                      <td>{displayPhone(e)}</td>
+                      <td>{e.address || ""}</td>
                       <td>{neighborhood}</td>
-                      <td><span className="badge badge-green">{e.status}</span></td>
-                      <td>{e.notes}</td>
+                      <td><span className="badge badge-green">{e.status || "פעיל"}</span></td>
+                      <td>{e.notes || ""}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1373,8 +1699,7 @@ function ElderlyNotesModal({ elderly, onClose, onSave, onDelete }) {
    View existing volunteer group profile (read-only)
 ============================================================ */
 
-function GroupProfileModal({ group, onClose }) {
-  const volunteers = ALL_VOLUNTEERS_BY_GROUP[group.id] || [];
+function GroupProfileModal({ group, volunteers = [], onClose }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
@@ -1388,10 +1713,10 @@ function GroupProfileModal({ group, onClose }) {
           <div className="detail-grid">
             <div className="item"><label>שם הקבוצה</label><div>{group.name}</div></div>
             <div className="item"><label>סוג קבוצה</label><div>{group.type}</div></div>
-            <div className="item"><label>איש קשר</label><div>{group.contact}</div></div>
-            <div className="item"><label>טלפון</label><div>{group.phone}</div></div>
-            <div className="item"><label>מייל</label><div>{group.email}</div></div>
-            <div className="item"><label>תפקיד</label><div>{group.role}</div></div>
+            <div className="item"><label>איש קשר</label><div>{groupContact(group) || "—"}</div></div>
+            <div className="item"><label>טלפון</label><div>{groupPhone(group) || "—"}</div></div>
+            <div className="item"><label>מייל</label><div>{groupEmail(group) || "—"}</div></div>
+            <div className="item"><label>תפקיד</label><div>{groupRole(group) || "—"}</div></div>
             <div className="item"><label>מספר מתנדבים</label><div>{volunteers.length}</div></div>
             <div className="item"><label>הערות</label><div>{group.notes || "—"}</div></div>
           </div>
@@ -1415,11 +1740,11 @@ function GroupProfileModal({ group, onClose }) {
                   <tr><td colSpan={5} style={{ textAlign: "center", color: "#666" }}>אין מתנדבים בקבוצה</td></tr>
                 ) : volunteers.map((v) => (
                   <tr key={v.id}>
-                    <td>{v.name}</td>
-                    <td>{v.phone}</td>
-                    <td>{v.email}</td>
-                    <td><span className="badge badge-green">{v.status}</span></td>
-                    <td>{v.notes}</td>
+                    <td>{volName(v)}</td>
+                    <td>{volPhone(v)}</td>
+                    <td>{volEmail(v)}</td>
+                    <td><span className="badge badge-green">{volStatus(v)}</span></td>
+                    <td>{volNotes(v)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1468,6 +1793,109 @@ function ElderlyProfileModal({ elderly, onClose }) {
 
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>סגירה</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Select existing neighborhoods from the database to attach
+   to this project (does NOT create new neighborhoods).
+============================================================ */
+
+function SelectNeighborhoodsModal({
+  allNeighborhoods = [],
+  excludeNames = [],
+  allElderlyResidents = [],
+  onClose,
+  onAdd,
+}) {
+  const available = allNeighborhoods.filter((n) => !excludeNames.includes(n));
+  const [selected, setSelected] = useState([]);
+  const [search, setSearch] = useState("");
+  const toggle = (name) =>
+    setSelected((prev) =>
+      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+    );
+
+  const countByNeighborhood = useMemo(() => {
+    const map = {};
+    allElderlyResidents.forEach((e) => {
+      if (!e.neighborhood) return;
+      map[e.neighborhood] = (map[e.neighborhood] || 0) + 1;
+    });
+    return map;
+  }, [allElderlyResidents]);
+
+  const filtered = available.filter((n) =>
+    n.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>בחירת שכונות קיימות להוספה לפרויקט</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="form-section">
+          <div className="field">
+            <input
+              className="input"
+              placeholder="חיפוש שכונה..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {available.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#666", padding: "16px" }}>
+              כל השכונות הקיימות כבר נוספו לפרויקט
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#666", padding: "16px" }}>
+              לא נמצאו שכונות
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>שכונה</th>
+                    <th>אזרחים ותיקים במאגר</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((n) => (
+                    <tr key={n}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(n)}
+                          onChange={() => toggle(n)}
+                        />
+                      </td>
+                      <td>{n}</td>
+                      <td>{countByNeighborhood[n] || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-actions">
+          <button
+            className="btn btn-primary"
+            disabled={selected.length === 0}
+            onClick={() => onAdd(selected)}
+          >
+            הוספה לפרויקט
+          </button>
+          <button className="btn" onClick={onClose}>ביטול</button>
         </div>
       </div>
     </div>

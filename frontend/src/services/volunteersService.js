@@ -14,8 +14,42 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { getDoc } from "firebase/firestore";
 
 const volunteersCollection = collection(db, "volunteers");
+
+/* =========================
+   Link Firebase Auth user to a volunteer profile
+========================= */
+
+export async function getVolunteerByAuthUid(authUid) {
+  if (!authUid) return null;
+  const q = query(volunteersCollection, where("authUid", "==", authUid));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+export async function getVolunteerById(volunteerId) {
+  if (!volunteerId) return null;
+  const ref = doc(db, "volunteers", volunteerId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() };
+}
+
+export async function linkVolunteerAuthUid(volunteerId, authUid) {
+  if (!volunteerId || !authUid) return;
+  const ref = doc(db, "volunteers", volunteerId);
+  await updateDoc(ref, { authUid, updatedAt: serverTimestamp() });
+}
+
+export async function unlinkVolunteerAuthUid(volunteerId) {
+  if (!volunteerId) return;
+  const ref = doc(db, "volunteers", volunteerId);
+  await updateDoc(ref, { authUid: null, updatedAt: serverTimestamp() });
+}
 const groupsCollection = collection(db, "volunteerGroups");
 
 /* =========================
