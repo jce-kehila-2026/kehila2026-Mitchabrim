@@ -20,6 +20,7 @@ import Media from "./admin/Media.jsx";
 import Links from "./admin/Links.jsx";
 import Financial from "./admin/Financial.jsx";
 import Reports from "./admin/Reports.jsx";
+import VolunteerReports from "./admin/VolunteerReports.jsx";
 import Settings from "./admin/Settings.jsx";
 import SiteContent from "./admin/SiteContent.jsx";
 
@@ -56,6 +57,7 @@ export default function App() {
       <Route path="/admin/links" element={<Admin><Links /></Admin>} />
       <Route path="/admin/financial" element={<Admin><Financial /></Admin>} />
       <Route path="/admin/reports" element={<Admin><Reports /></Admin>} />
+      <Route path="/admin/volunteer-reports" element={<Admin><VolunteerReports /></Admin>} />
       <Route path="/admin/settings" element={<Admin><Settings /></Admin>} />
       <Route path="/admin/site-content" element={<Admin><SiteContent /></Admin>} />
 
