@@ -21,20 +21,31 @@ import {
   deleteVolunteerGroup,
   clearGroupFromVolunteers,
 } from "../services/volunteersService";
+import { getReportsForVolunteer } from "../services/reportsService";
+
+import useAreasAndNeighborhoods from "../hooks/useAreasAndNeighborhoods";
 
 /* =========================
    Options
+   Areas & neighborhoods are loaded from Firestore (settings/general) via the
+   useAreasAndNeighborhoods hook — no hardcoded lists.
 ========================= */
 
-const GROUP_TYPE_OPTIONS = ["סטודנטים", "בית ספר", "חברה", "עמותה", "מתנדבים פרטיים", "אחר"];
+const GROUP_TYPE_OPTIONS = ["סטודנטים", "בית ספר", "חברה", "עמותה", "אחר"];
+const VOLUNTEER_STATUS_OPTIONS = ["משויך לאזרח ותיק", "ממתין לשיבוץ", "בארכיון"];
 
-const GROUP_AREA_OPTIONS = ["מרכז", "דרום", "צפון", "מערב", "מזרח", "גילה", "בית הכרם"];
+/* =========================
+   Validation helpers
+========================= */
+const LETTERS_RE = /^[\u0590-\u05FFa-zA-Z\s'"\-]+$/;
+const NUMBERS_RE = /^\d+$/;
+const isLettersOnly = (v) => LETTERS_RE.test((v || "").trim());
+const isNumbersOnly = (v) => NUMBERS_RE.test((v || "").trim());
+const Req = () => <span style={{ color: "#dc2626", marginInlineStart: 4 }}>*</span>;
+const FieldError = ({ msg }) =>
+  msg ? <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{msg}</div> : null;
 
 const GROUP_STATUS_OPTIONS = ["פעילה", "לא פעילה", "בהקמה"];
-
-const AREA_OPTIONS = ["מרכז", "דרום", "צפון", "מערב", "מזרח", "גילה", "בית הכרם"];
-
-const NEIGHBORHOOD_OPTIONS = ["גילה", "בית הכרם", "קטמון", "רחביה", "רוממה", "ארנונה", "תלפיות"];
 
 const PARLIAMENT_OPTIONS = [
   "ללא פרלמנט",
@@ -45,29 +56,21 @@ const PARLIAMENT_OPTIONS = [
   "פרלמנט רוממה",
 ];
 
-const FILTERS = [
-  { key: "area", label: "אזור", options: ["מרכז", "צפון", "דרום", "מערב"] },
-  {
-    key: "neighborhood",
-    label: "שכונה",
-    options: ["רחביה", "גילה", "בית הכרם", "פסגת זאב"],
-  },
+// Non-area/neighborhood filters kept as static defaults; area & neighborhood
+// are injected dynamically inside the component from the shared hook.
+const BASE_FILTERS = [
   {
     key: "status",
     label: "סטטוס",
-    options: ["פעיל", "ממתין לשיבוץ", "לא פעיל"],
-  },
-  {
-    key: "type",
-    label: "סוג מתנדב",
-    options: ["סטודנט", "תלמיד", "עצמאי", "ארגון", "תרבות"],
+    options: VOLUNTEER_STATUS_OPTIONS,
   },
   { key: "insurance", label: "ביטוח", options: ["כן", "לא"] },
 ];
 
 const REPORTS_SEED = {};
 
-const statusBadge = (s) => (s === "פעיל" ? "badge-green" : s === "ממתין לשיבוץ" ? "badge-orange" : "badge-gray");
+const statusBadge = (s) =>
+  s === "משויך לאזרח ותיק" ? "badge-green" : s === "ממתין לשיבוץ" ? "badge-orange" : "badge-gray";
 
 const insBadge = (i) => (i === "כן" ? "badge-green" : "badge-orange");
 
@@ -92,6 +95,28 @@ export default function Volunteers() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Shared area/neighborhood data — drives both filters and form dropdowns.
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
+  // Filter state (area + neighborhood are wired to actual filtering).
+  const [filterArea, setFilterArea] = useState("");
+  const [filterNeighborhood, setFilterNeighborhood] = useState("");
+
+  // Reset neighborhood when area changes if it's no longer valid for that area.
+  useEffect(() => {
+    if (!filterNeighborhood) return;
+    if (!getNeighborhoods(filterArea).includes(filterNeighborhood)) {
+      setFilterNeighborhood("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterArea]);
 
   /* =========================
      Load Firebase data
@@ -126,6 +151,14 @@ export default function Volunteers() {
   const sorted = useMemo(() => {
     return [...volunteers].sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
   }, [volunteers]);
+
+  const visibleVolunteers = useMemo(() => {
+    return sorted.filter((v) => {
+      if (filterArea && v.area !== filterArea) return false;
+      if (filterNeighborhood && v.neighborhood !== filterNeighborhood) return false;
+      return true;
+    });
+  }, [sorted, filterArea, filterNeighborhood]);
 
   const openVolunteer = sorted.find((v) => v.id === openVolunteerId) || null;
 
@@ -248,16 +281,11 @@ export default function Volunteers() {
 
       if (volunteer.groupId) {
         setGroups((prev) =>
-          prev.map((g) =>
-            g.id === volunteer.groupId ? { ...g, count: Math.max(0, (g.count || 0) - 1) } : g,
-          ),
+          prev.map((g) => (g.id === volunteer.groupId ? { ...g, count: Math.max(0, (g.count || 0) - 1) } : g)),
         );
         try {
           await editVolunteerGroup(volunteer.groupId, {
-            count: Math.max(
-              0,
-              (groups.find((g) => g.id === volunteer.groupId)?.count || 1) - 1,
-            ),
+            count: Math.max(0, (groups.find((g) => g.id === volunteer.groupId)?.count || 1) - 1),
           });
         } catch (e) {
           console.warn("group count update failed", e);
@@ -280,18 +308,12 @@ export default function Volunteers() {
 
       setVolunteers((prev) =>
         prev.map((v) =>
-          v.id === volunteerId
-            ? { ...v, groupId: null, group: "ללא קבוצה", groupRole: "", groupNotes: "" }
-            : v,
+          v.id === volunteerId ? { ...v, groupId: null, group: "ללא קבוצה", groupRole: "", groupNotes: "" } : v,
         ),
       );
 
       if (groupId) {
-        setGroups((prev) =>
-          prev.map((g) =>
-            g.id === groupId ? { ...g, count: Math.max(0, (g.count || 0) - 1) } : g,
-          ),
-        );
+        setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, count: Math.max(0, (g.count || 0) - 1) } : g)));
       }
     } catch (err) {
       console.error(err);
@@ -310,9 +332,7 @@ export default function Volunteers() {
 
       setVolunteers((prev) =>
         prev.map((v) =>
-          v.groupId === group.id
-            ? { ...v, groupId: null, group: "ללא קבוצה", groupRole: "", groupNotes: "" }
-            : v,
+          v.groupId === group.id ? { ...v, groupId: null, group: "ללא קבוצה", groupRole: "", groupNotes: "" } : v,
         ),
       );
       setGroups((prev) => prev.filter((g) => g.id !== group.id));
@@ -353,7 +373,10 @@ export default function Volunteers() {
       {tab === "volunteers" ? (
         <div className="stats-grid">
           <StatsCard title="סה״כ מתנדבים" value={String(volunteers.length)} />
-          <StatsCard title="פעילים" value={String(volunteers.filter((v) => v.status === "פעיל").length)} />
+          <StatsCard
+            title="משויכים לאזרח ותיק"
+            value={String(volunteers.filter((v) => v.status === "משויך לאזרח ותיק").length)}
+          />
           <StatsCard
             title="ממתינים לשיבוץ"
             value={String(volunteers.filter((v) => v.status === "ממתין לשיבוץ").length)}
@@ -380,9 +403,30 @@ export default function Volunteers() {
 
       {tab === "volunteers" && (
         <SectionCard>
+          {areasError && <div style={{ color: "#b91c1c", fontSize: 13, marginBottom: 8 }}>{areasError}</div>}
+          {areasLoading && (
+            <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>טוען אזורים ושכונות...</div>
+          )}
+          {areasEmpty && <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>}
           <SearchFilters
             searchPlaceholder="חיפוש לפי שם, טלפון, קבוצה, שכונה או אזרח ותיק משויך..."
-            filters={FILTERS}
+            filters={[
+              {
+                key: "area",
+                label: "אזור",
+                value: filterArea,
+                onChange: (e) => setFilterArea(e.target.value),
+                options: ["", ...areaNames],
+              },
+              {
+                key: "neighborhood",
+                label: "שכונה",
+                value: filterNeighborhood,
+                onChange: (e) => setFilterNeighborhood(e.target.value),
+                options: ["", ...getNeighborhoods(filterArea)],
+              },
+              ...BASE_FILTERS,
+            ]}
           />
 
           {loading ? (
@@ -406,14 +450,9 @@ export default function Volunteers() {
                   render: (r) => `${r.neighborhood || "—"} / ${r.area || "—"}`,
                 },
                 {
-                  key: "type",
-                  label: "סוג מתנדב",
-                  render: (r) => <span className="badge">{r.type || "—"}</span>,
-                },
-                {
                   key: "group",
                   label: "קבוצה",
-                  render: (r) => r.group || "ללא קבוצה",
+                  render: (r) => r.group || "עצמאי",
                 },
                 {
                   key: "assigned",
@@ -440,7 +479,7 @@ export default function Volunteers() {
                 },
                 { key: "rating", label: "דירוג" },
               ]}
-              data={sorted}
+              data={visibleVolunteers}
             />
           )}
         </SectionCard>
@@ -495,7 +534,6 @@ export default function Volunteers() {
       {openVolunteer && (
         <VolunteerProfileModal
           volunteer={openVolunteer}
-          reports={REPORTS_SEED[openVolunteer.id] || []}
           groups={groups}
           onClose={() => setOpenVolunteerId(null)}
           onSave={handleUpdateVolunteer}
@@ -523,22 +561,58 @@ export default function Volunteers() {
    Volunteer Profile Modal
 ========================= */
 
-function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSave, onDelete }) {
+function VolunteerProfileModal({ volunteer, groups = [], onClose, onSave, onDelete }) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState(volunteer);
+  const [form, setForm] = useState(() => {
+    const firstName = volunteer.firstName || (volunteer.name ? volunteer.name.split(" ")[0] : "");
+    const lastName = volunteer.lastName || (volunteer.name ? volunteer.name.split(" ").slice(1).join(" ") : "");
+    return { ...volunteer, firstName, lastName };
+  });
+  const [errors, setErrors] = useState({});
+  const [reports, setReports] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        setReportsLoading(true);
+        const list = await getReportsForVolunteer(volunteer.id);
+        if (!cancelled) setReports(list);
+      } catch (err) {
+        console.error("getReportsForVolunteer error:", err);
+      } finally {
+        if (!cancelled) setReportsLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [volunteer.id]);
 
   const set = (key) => (e) => {
     const value = e.target.value;
 
     if (key === "groupId") {
       const selectedGroup = groups.find((g) => g.id === value);
-
       setForm({
         ...form,
         groupId: selectedGroup ? selectedGroup.id : null,
-        group: selectedGroup ? selectedGroup.name : "ללא קבוצה",
+        group: selectedGroup ? selectedGroup.name : "עצמאי",
       });
+      return;
+    }
 
+    if (key === "area") {
+      setForm({ ...form, area: value, neighborhood: "" });
       return;
     }
 
@@ -548,8 +622,31 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
     });
   };
 
+  const validate = () => {
+    const e = {};
+    if (!form.firstName?.trim()) e.firstName = "שדה חובה";
+    else if (!isLettersOnly(form.firstName)) e.firstName = "אותיות בלבד";
+
+    if (!form.lastName?.trim()) e.lastName = "שדה חובה";
+    else if (!isLettersOnly(form.lastName)) e.lastName = "אותיות בלבד";
+
+    if (!form.idNumber?.trim()) e.idNumber = "שדה חובה";
+    else if (!isNumbersOnly(form.idNumber)) e.idNumber = "מספרים בלבד";
+
+    if (!form.phone?.trim()) e.phone = "שדה חובה";
+    else if (!isNumbersOnly(form.phone)) e.phone = "מספרים בלבד";
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
   const handleSave = () => {
-    onSave?.(form);
+    if (!validate()) return;
+    const updated = {
+      ...form,
+      name: `${form.firstName || ""} ${form.lastName || ""}`.trim(),
+    };
+    onSave?.(updated);
   };
 
   return (
@@ -579,40 +676,28 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
                 <div>{form.name}</div>
               </div>
               <div className="item">
+                <label>ת.ז</label>
+                <div>{form.idNumber || "—"}</div>
+              </div>
+              <div className="item">
                 <label>טלפון</label>
                 <div>{form.phone}</div>
-              </div>
-              <div className="item">
-                <label>כתובת</label>
-                <div>{form.address}</div>
-              </div>
-              <div className="item">
-                <label>שכונה</label>
-                <div>{form.neighborhood}</div>
               </div>
               <div className="item">
                 <label>אזור</label>
                 <div>{form.area}</div>
               </div>
               <div className="item">
-                <label>סוג מתנדב</label>
-                <div>{form.type}</div>
+                <label>שכונה</label>
+                <div>{form.neighborhood}</div>
+              </div>
+              <div className="item">
+                <label>כתובת</label>
+                <div>{form.address}</div>
               </div>
               <div className="item">
                 <label>קבוצה</label>
-                <div>{form.group || "ללא קבוצה"}</div>
-              </div>
-              <div className="item">
-                <label>אזרח ותיק משויך</label>
-                <div>{form.assigned || "ממתין לשיבוץ"}</div>
-              </div>
-              <div className="item">
-                <label>פרויקט משויך</label>
-                <div>{form.project || "—"}</div>
-              </div>
-              <div className="item">
-                <label>פרלמנט משויך</label>
-                <div>{form.parliament || "ללא פרלמנט"}</div>
+                <div>{form.group || "עצמאי"}</div>
               </div>
               <div className="item">
                 <label>ביטוח</label>
@@ -633,118 +718,158 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
             </div>
           ) : (
             <>
-              <div className="row row-2">
-                <div className="field">
-                  <label>שם מלא</label>
-                  <input className="input" value={form.name || ""} onChange={set("name")} />
-                </div>
+              <div className="form-section">
+                <h4>פרטים אישיים</h4>
+                <div className="row row-2">
+                  <div className="field">
+                    <label>
+                      שם פרטי
+                      <Req />
+                    </label>
+                    <input className="input" value={form.firstName || ""} onChange={set("firstName")} />
+                    <FieldError msg={errors.firstName} />
+                  </div>
 
-                <div className="field">
-                  <label>טלפון</label>
-                  <input className="input" value={form.phone || ""} onChange={set("phone")} />
-                </div>
+                  <div className="field">
+                    <label>
+                      שם משפחה
+                      <Req />
+                    </label>
+                    <input className="input" value={form.lastName || ""} onChange={set("lastName")} />
+                    <FieldError msg={errors.lastName} />
+                  </div>
 
-                <div className="field">
-                  <label>כתובת</label>
-                  <input className="input" value={form.address || ""} onChange={set("address")} />
-                </div>
+                  <div className="field">
+                    <label>
+                      ת.ז
+                      <Req />
+                    </label>
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      value={form.idNumber || ""}
+                      onChange={set("idNumber")}
+                    />
+                    <FieldError msg={errors.idNumber} />
+                  </div>
 
-                <div className="field">
-                  <label>שכונה</label>
-                  <select className="select" value={form.neighborhood || ""} onChange={set("neighborhood")}>
-                    <option value="">בחר שכונה</option>
-                    {NEIGHBORHOOD_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
+                  <div className="field">
+                    <label>
+                      טלפון
+                      <Req />
+                    </label>
+                    <input className="input" inputMode="numeric" value={form.phone || ""} onChange={set("phone")} />
+                    <FieldError msg={errors.phone} />
+                  </div>
+
+                  <div className="field">
+                    <label>אזור</label>
+                    <select
+                      className="select"
+                      value={form.area || ""}
+                      onChange={set("area")}
+                      disabled={areasLoading || areasEmpty}
+                    >
+                      <option value="">
+                        {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
                       </option>
-                    ))}
-                  </select>
-                </div>
+                      {areaNames.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                    {areasError && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 4 }}>{areasError}</div>}
+                  </div>
 
-                <div className="field">
-                  <label>אזור</label>
-                  <select className="select" value={form.area || ""} onChange={set("area")}>
-                    <option value="">בחר אזור</option>
-                    {AREA_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <div className="field">
+                    <label>שכונה</label>
+                    <select
+                      className="select"
+                      value={form.neighborhood || ""}
+                      onChange={set("neighborhood")}
+                      disabled={!form.area}
+                    >
+                      <option value="">{form.area ? "בחר שכונה" : "בחר אזור תחילה"}</option>
+                      {getNeighborhoods(form.area).map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="field">
-                  <label>סוג מתנדב</label>
-                  <select className="select" value={form.type || ""} onChange={set("type")}>
-                    <option>סטודנט</option>
-                    <option>תלמיד</option>
-                    <option>עצמאי</option>
-                    <option>ארגון</option>
-                    <option>תרבות</option>
-                    <option>אחר</option>
-                  </select>
-                </div>
-
-                <div className="field">
-                  <label>קבוצה</label>
-                  <select className="select" value={form.groupId || ""} onChange={set("groupId")}>
-                    <option value="">ללא קבוצה</option>
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="field">
-                  <label>אזרח ותיק משויך</label>
-                  <input className="input" value={form.assigned || ""} onChange={set("assigned")} />
-                </div>
-
-                <div className="field">
-                  <label>פרויקט משויך</label>
-                  <input className="input" value={form.project || ""} onChange={set("project")} />
-                </div>
-
-                <div className="field">
-                  <label>פרלמנט משויך</label>
-                  <select className="select" value={form.parliament || ""} onChange={set("parliament")}>
-                    <option value="">בחר פרלמנט</option>
-                    {PARLIAMENT_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="field">
-                  <label>ביטוח</label>
-                  <select className="select" value={form.insurance || "כן"} onChange={set("insurance")}>
-                    <option>כן</option>
-                    <option>לא</option>
-                  </select>
-                </div>
-
-                <div className="field">
-                  <label>תאריך התחלה</label>
-                  <input className="input" type="date" value={form.start || ""} onChange={set("start")} />
-                </div>
-
-                <div className="field">
-                  <label>סטטוס</label>
-                  <select className="select" value={form.status || ""} onChange={set("status")}>
-                    <option>פעיל</option>
-                    <option>ממתין לשיבוץ</option>
-                    <option>לא פעיל</option>
-                  </select>
+                  <div className="field">
+                    <label>כתובת</label>
+                    <input className="input" value={form.address || ""} onChange={set("address")} />
+                  </div>
                 </div>
               </div>
 
-              <div className="field">
-                <label>הערות</label>
-                <textarea className="textarea" rows={2} value={form.notes || ""} onChange={set("notes")} />
+              <div className="form-section">
+                <h4>פרטי התנדבות</h4>
+                <div className="row row-2">
+                  <div className="field">
+                    <label>סטטוס</label>
+                    <select className="select" value={form.status || ""} onChange={set("status")}>
+                      {VOLUNTEER_STATUS_OPTIONS.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label>תאריך תחילת התנדבות</label>
+                    <input className="input" type="date" value={form.start || ""} onChange={set("start")} />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label>הערות</label>
+                  <textarea className="textarea" rows={2} value={form.notes || ""} onChange={set("notes")} />
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h4>שיוך</h4>
+                <div className="row row-2">
+                  <div className="field">
+                    <label>קבוצה / גוף התנדבות</label>
+                    <select className="select" value={form.groupId || ""} onChange={set("groupId")}>
+                      <option value="">עצמאי</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h4>ביטוח</h4>
+                <div className="row row-2">
+                  <div className="field">
+                    <label>ביטוח</label>
+                    <select className="select" value={form.insurance || "כן"} onChange={set("insurance")}>
+                      <option>כן</option>
+                      <option>לא</option>
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label>תאריך עדכון ביטוח</label>
+                    <input
+                      className="input"
+                      type="date"
+                      value={form.insuranceUpdateDate || ""}
+                      onChange={set("insuranceUpdateDate")}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="modal-actions">
@@ -754,7 +879,11 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
                 <button
                   className="btn"
                   onClick={() => {
-                    setForm(volunteer);
+                    const firstName = volunteer.firstName || (volunteer.name ? volunteer.name.split(" ")[0] : "");
+                    const lastName =
+                      volunteer.lastName || (volunteer.name ? volunteer.name.split(" ").slice(1).join(" ") : "");
+                    setForm({ ...volunteer, firstName, lastName });
+                    setErrors({});
                     setEditing(false);
                   }}
                 >
@@ -782,31 +911,41 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
                   </tr>
                 </thead>
                 <tbody>
-                  {reports.length === 0 ? (
+                  {reportsLoading ? (
                     <tr>
-                      <td
-                        colSpan={7}
-                        style={{
-                          textAlign: "center",
-                          color: "var(--color-text-muted)",
-                          padding: 20,
-                        }}
-                      >
+                      <td colSpan={7} style={{ textAlign: "center", padding: 20 }}>
+                        טוען דוחות...
+                      </td>
+                    </tr>
+                  ) : reports.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: "center", color: "var(--color-text-muted)", padding: 20 }}>
                         אין דוחות להצגה
                       </td>
                     </tr>
                   ) : (
-                    reports.map((r, i) => (
-                      <tr key={i}>
-                        <td>{r.date}</td>
-                        <td>{r.elderly}</td>
-                        <td>{r.type}</td>
-                        <td>{r.status}</td>
-                        <td>{r.followup}</td>
-                        <td>{r.notes}</td>
-                        <td>{r.reportStatus}</td>
-                      </tr>
-                    ))
+                    reports.map((r) => {
+                      const d = r.reportDate || r.createdAt;
+                      const dateStr = !d
+                        ? "—"
+                        : typeof d === "string"
+                          ? d
+                          : d?.seconds
+                            ? new Date(d.seconds * 1000).toLocaleDateString("he-IL")
+                            : new Date(d).toLocaleDateString("he-IL");
+                      const statusLbl = r.status === "reviewed" ? "אושר" : r.status === "rejected" ? "נדחה" : "ממתין";
+                      return (
+                        <tr key={r.id}>
+                          <td>{dateStr}</td>
+                          <td>{r.elderlyName || "—"}</td>
+                          <td>{r.reportType || "—"}</td>
+                          <td>{r.wasMeetingHeld || "—"}</td>
+                          <td>{r.needsFollowUp || "—"}</td>
+                          <td>{r.notes || "—"}</td>
+                          <td>{statusLbl}</td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -833,10 +972,20 @@ function VolunteerProfileModal({ volunteer, reports, groups = [], onClose, onSav
    Group Manage Modal
 ========================= */
 
-function GroupManageModal({ group, volunteers, allVolunteers = [], onClose, onSave, onAddVolunteer, onDeleteGroup, onRemoveVolunteer }) {
+function GroupManageModal({
+  group,
+  volunteers,
+  allVolunteers = [],
+  onClose,
+  onSave,
+  onAddVolunteer,
+  onDeleteGroup,
+  onRemoveVolunteer,
+}) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(group);
   const [showAddVol, setShowAddVol] = useState(false);
+  const { areaNames, loading: areasLoading, isEmpty: areasEmpty } = useAreasAndNeighborhoods();
 
   const set = (key) => (e) => {
     setForm({
@@ -946,9 +1095,16 @@ function GroupManageModal({ group, volunteers, allVolunteers = [], onClose, onSa
 
                 <div className="field">
                   <label>אזור פעילות</label>
-                  <select className="select" value={form.area || ""} onChange={set("area")}>
-                    <option value="">בחר אזור</option>
-                    {GROUP_AREA_OPTIONS.map((o) => (
+                  <select
+                    className="select"
+                    value={form.area || ""}
+                    onChange={set("area")}
+                    disabled={areasLoading || areasEmpty}
+                  >
+                    <option value="">
+                      {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
+                    </option>
+                    {areaNames.map((o) => (
                       <option key={o} value={o}>
                         {o}
                       </option>
@@ -1044,10 +1200,7 @@ function GroupManageModal({ group, volunteers, allVolunteers = [], onClose, onSa
                         </td>
                         <td>
                           {onRemoveVolunteer && (
-                            <button
-                              className="btn btn-danger"
-                              onClick={() => onRemoveVolunteer(v.id, group.id)}
-                            >
+                            <button className="btn btn-danger" onClick={() => onRemoveVolunteer(v.id, group.id)}>
                               הסרה מהקבוצה
                             </button>
                           )}
@@ -1197,6 +1350,7 @@ function AddVolunteerToGroupModal({ allVolunteers, existingIds, onClose, onAdd }
 ========================= */
 
 function CreateGroupModal({ onClose, onSave }) {
+  const { areaNames, loading: areasLoading, isEmpty: areasEmpty } = useAreasAndNeighborhoods();
   const [form, setForm] = useState({
     name: "",
     type: "",
@@ -1208,6 +1362,8 @@ function CreateGroupModal({ onClose, onSave }) {
     notes: "",
   });
 
+  const [errors, setErrors] = useState({});
+
   const set = (key) => (e) => {
     setForm({
       ...form,
@@ -1215,12 +1371,25 @@ function CreateGroupModal({ onClose, onSave }) {
     });
   };
 
-  const handleSave = () => {
-    if (!form.name.trim()) {
-      alert("יש למלא שם קבוצה");
-      return;
-    }
+  const validate = () => {
+    const e = {};
+    if (!form.name.trim()) e.name = "שדה חובה";
+    else if (!isLettersOnly(form.name)) e.name = "אותיות בלבד";
 
+    if (!form.type.trim()) e.type = "שדה חובה";
+
+    if (!form.contact.trim()) e.contact = "שדה חובה";
+    else if (!isLettersOnly(form.contact)) e.contact = "אותיות בלבד";
+
+    if (!form.phone.trim()) e.phone = "שדה חובה";
+    else if (!isNumbersOnly(form.phone)) e.phone = "מספרים בלבד";
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSave = () => {
+    if (!validate()) return;
     onSave?.(form);
   };
 
@@ -1239,32 +1408,46 @@ function CreateGroupModal({ onClose, onSave }) {
 
           <div className="row row-2">
             <div className="field">
-              <label>שם קבוצה</label>
+              <label>
+                שם קבוצה
+                <Req />
+              </label>
               <input className="input" value={form.name} onChange={set("name")} />
+              <FieldError msg={errors.name} />
             </div>
 
             <div className="field">
-              <label>סוג קבוצה</label>
+              <label>
+                סוג קבוצה
+                <Req />
+              </label>
               <select className="select" value={form.type} onChange={set("type")}>
-                <option value="" disabled>
-                  בחר סוג
-                </option>
+                <option value="">בחר סוג</option>
                 {GROUP_TYPE_OPTIONS.map((o) => (
                   <option key={o} value={o}>
                     {o}
                   </option>
                 ))}
               </select>
+              <FieldError msg={errors.type} />
             </div>
 
             <div className="field">
-              <label>איש קשר</label>
+              <label>
+                איש קשר
+                <Req />
+              </label>
               <input className="input" value={form.contact} onChange={set("contact")} />
+              <FieldError msg={errors.contact} />
             </div>
 
             <div className="field">
-              <label>טלפון איש קשר</label>
-              <input className="input" value={form.phone} onChange={set("phone")} />
+              <label>
+                טלפון איש קשר
+                <Req />
+              </label>
+              <input className="input" inputMode="numeric" value={form.phone} onChange={set("phone")} />
+              <FieldError msg={errors.phone} />
             </div>
 
             <div className="field">
@@ -1274,11 +1457,11 @@ function CreateGroupModal({ onClose, onSave }) {
 
             <div className="field">
               <label>אזור פעילות</label>
-              <select className="select" value={form.area} onChange={set("area")}>
+              <select className="select" value={form.area} onChange={set("area")} disabled={areasLoading || areasEmpty}>
                 <option value="" disabled>
-                  בחר אזור
+                  {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
                 </option>
-                {GROUP_AREA_OPTIONS.map((o) => (
+                {areaNames.map((o) => (
                   <option key={o} value={o}>
                     {o}
                   </option>
@@ -1322,6 +1505,14 @@ function CreateGroupModal({ onClose, onSave }) {
 ========================= */
 
 function AddVolunteerModal({ groups = [], onClose, onSave }) {
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -1330,22 +1521,20 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
     address: "",
     neighborhood: "",
     area: "",
-    type: "סטודנט",
-    status: "פעיל",
+    status: "משויך לאזרח ותיק",
     start: "",
-    availability: "",
     notes: "",
     groupId: null,
-    group: "ללא קבוצה",
+    group: "עצמאי",
     groupRole: "",
     assigned: "ממתין לשיבוץ",
     assignedId: null,
-    project: "—",
-    parliament: "ללא פרלמנט",
     insurance: "כן",
     insuranceUpdateDate: "",
     rating: "—",
   });
+
+  const [errors, setErrors] = useState({});
 
   const set = (key) => (e) => {
     const value = e.target.value;
@@ -1356,9 +1545,14 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
       setForm({
         ...form,
         groupId: selectedGroup ? selectedGroup.id : null,
-        group: selectedGroup ? selectedGroup.name : "ללא קבוצה",
+        group: selectedGroup ? selectedGroup.name : "עצמאי",
       });
 
+      return;
+    }
+
+    if (key === "area") {
+      setForm({ ...form, area: value, neighborhood: "" });
       return;
     }
 
@@ -1368,25 +1562,30 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
     });
   };
 
+  const validate = () => {
+    const e = {};
+    if (!form.firstName.trim()) e.firstName = "שדה חובה";
+    else if (!isLettersOnly(form.firstName)) e.firstName = "אותיות בלבד";
+
+    if (!form.lastName.trim()) e.lastName = "שדה חובה";
+    else if (!isLettersOnly(form.lastName)) e.lastName = "אותיות בלבד";
+
+    if (!form.idNumber.trim()) e.idNumber = "שדה חובה";
+    else if (!isNumbersOnly(form.idNumber)) e.idNumber = "מספרים בלבד";
+
+    if (!form.phone.trim()) e.phone = "שדה חובה";
+    else if (!isNumbersOnly(form.phone)) e.phone = "מספרים בלבד";
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
   const handleSave = () => {
-    if (!form.firstName.trim()) {
-      alert("יש למלא שם פרטי");
-      return;
-    }
-
-    if (!form.lastName.trim()) {
-      alert("יש למלא שם משפחה");
-      return;
-    }
-
-    if (!form.phone.trim()) {
-      alert("יש למלא טלפון");
-      return;
-    }
+    if (!validate()) return;
 
     const volunteerToSave = {
       ...form,
-      name: `${form.firstName} ${form.lastName}`,
+      name: `${form.firstName} ${form.lastName}`.trim(),
     };
 
     onSave?.(volunteerToSave);
@@ -1407,56 +1606,71 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
 
           <div className="row row-2">
             <div className="field">
-              <label>שם פרטי</label>
+              <label>
+                שם פרטי
+                <Req />
+              </label>
               <input className="input" value={form.firstName} onChange={set("firstName")} />
+              <FieldError msg={errors.firstName} />
             </div>
 
             <div className="field">
-              <label>שם משפחה</label>
+              <label>
+                שם משפחה
+                <Req />
+              </label>
               <input className="input" value={form.lastName} onChange={set("lastName")} />
+              <FieldError msg={errors.lastName} />
             </div>
 
             <div className="field">
-              <label>ת.ז</label>
-              <input className="input" value={form.idNumber} onChange={set("idNumber")} />
+              <label>
+                ת.ז
+                <Req />
+              </label>
+              <input className="input" inputMode="numeric" value={form.idNumber} onChange={set("idNumber")} />
+              <FieldError msg={errors.idNumber} />
             </div>
 
             <div className="field">
-              <label>טלפון</label>
-              <input className="input" value={form.phone} onChange={set("phone")} />
+              <label>
+                טלפון
+                <Req />
+              </label>
+              <input className="input" inputMode="numeric" value={form.phone} onChange={set("phone")} />
+              <FieldError msg={errors.phone} />
+            </div>
+
+            <div className="field">
+              <label>אזור</label>
+              <select className="select" value={form.area} onChange={set("area")} disabled={areasLoading || areasEmpty}>
+                <option value="">
+                  {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
+                </option>
+                {areaNames.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+              {areasError && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 4 }}>{areasError}</div>}
+            </div>
+
+            <div className="field">
+              <label>שכונה</label>
+              <select className="select" value={form.neighborhood} onChange={set("neighborhood")} disabled={!form.area}>
+                <option value="">{form.area ? "בחר שכונה" : "בחר אזור תחילה"}</option>
+                {getNeighborhoods(form.area).map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="field">
               <label>כתובת</label>
               <input className="input" value={form.address} onChange={set("address")} />
-            </div>
-
-            <div className="field">
-              <label>שכונה</label>
-              <select className="select" value={form.neighborhood} onChange={set("neighborhood")}>
-                <option value="" disabled>
-                  בחר שכונה
-                </option>
-                {NEIGHBORHOOD_OPTIONS.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="field">
-              <label>אזור</label>
-              <select className="select" value={form.area} onChange={set("area")}>
-                <option value="" disabled>
-                  בחר אזור
-                </option>
-                {AREA_OPTIONS.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         </div>
@@ -1466,34 +1680,19 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
 
           <div className="row row-2">
             <div className="field">
-              <label>סוג מתנדב</label>
-              <select className="select" value={form.type} onChange={set("type")}>
-                <option>סטודנט</option>
-                <option>תלמיד</option>
-                <option>עצמאי</option>
-                <option>ארגון</option>
-                <option>תרבות</option>
-                <option>אחר</option>
-              </select>
-            </div>
-
-            <div className="field">
               <label>סטטוס</label>
               <select className="select" value={form.status} onChange={set("status")}>
-                <option>פעיל</option>
-                <option>ממתין לשיבוץ</option>
-                <option>לא פעיל</option>
+                {VOLUNTEER_STATUS_OPTIONS.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="field">
               <label>תאריך תחילת התנדבות</label>
               <input className="input" type="date" value={form.start} onChange={set("start")} />
-            </div>
-
-            <div className="field">
-              <label>זמינות</label>
-              <input className="input" value={form.availability} onChange={set("availability")} />
             </div>
           </div>
 
@@ -1510,31 +1709,10 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
             <div className="field">
               <label>קבוצה / גוף התנדבות</label>
               <select className="select" value={form.groupId || ""} onChange={set("groupId")}>
-                <option value="">ללא קבוצה</option>
+                <option value="">עצמאי</option>
                 {groups.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="field">
-              <label>אזרח ותיק משויך</label>
-              <input className="input" value={form.assigned} onChange={set("assigned")} />
-            </div>
-
-            <div className="field">
-              <label>פרויקט משויך</label>
-              <input className="input" value={form.project} onChange={set("project")} />
-            </div>
-
-            <div className="field">
-              <label>פרלמנט משויך</label>
-              <select className="select" value={form.parliament} onChange={set("parliament")}>
-                {PARLIAMENT_OPTIONS.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
                   </option>
                 ))}
               </select>
@@ -1584,6 +1762,7 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
 ========================= */
 
 function PrintReportModal({ volunteers, onClose }) {
+  const { areaNames, getNeighborhoods } = useAreasAndNeighborhoods();
   const [sel, setSel] = useState({
     area: "",
     neighborhood: "",
@@ -1609,10 +1788,13 @@ function PrintReportModal({ volunteers, onClose }) {
   }, [volunteers, sel]);
 
   const setF = (key) => (e) => {
-    setSel({
-      ...sel,
-      [key]: e.target.value,
-    });
+    const value = e.target.value;
+    if (key === "area") {
+      const validNb = getNeighborhoods(value).includes(sel.neighborhood);
+      setSel({ ...sel, area: value, neighborhood: validNb ? sel.neighborhood : "" });
+      return;
+    }
+    setSel({ ...sel, [key]: value });
   };
 
   const handleDownload = () => {
@@ -1671,9 +1853,11 @@ function PrintReportModal({ volunteers, onClose }) {
               ["insurance", "ביטוח"],
               ["availability", "זמינות"],
             ].map(([key, label]) => {
-              const opts =
-                FILTERS.find((f) => f.key === key)?.options ||
-                (key === "availability" ? ["בוקר", "צהריים", "ערב"] : []);
+              let opts;
+              if (key === "area") opts = areaNames;
+              else if (key === "neighborhood") opts = getNeighborhoods(sel.area);
+              else if (key === "availability") opts = ["בוקר", "צהריים", "ערב"];
+              else opts = BASE_FILTERS.find((f) => f.key === key)?.options || [];
 
               return (
                 <select key={key} className="filter-pill" value={sel[key]} onChange={setF(key)}>

@@ -27,7 +27,7 @@ export default function ActivitiesSection() {
           </div>
 
           {/* LEFT: circle cluster */}
-          <div className="act2-stage mx-0 mr-[30px]" aria-label="תחומי פעילות">
+          <div className="act2-stage" aria-label="תחומי פעילות">
             {/* Decorative dots */}
             <svg className="act2-dots act2-dots-1" viewBox="0 0 200 200" aria-hidden="true">
               <path
@@ -59,7 +59,7 @@ export default function ActivitiesSection() {
             </svg>
 
             {/* פרלמנטים — top center */}
-            <div className="act2-bubble act2-bubble-top mt-[20px] px-0 ml-0 mr-0">
+            <div className="act2-bubble act2-bubble-top">
               <div className="act2-bubble-inner">
                 <svg
                   className="act2-ico"
@@ -87,7 +87,7 @@ export default function ActivitiesSection() {
             </div>
 
             {/* קשר רציף — left middle */}
-            <div className="act2-bubble act2-bubble-bl mx-0 px-0 mt-[30px] mr-[20px]">
+            <div className="act2-bubble act2-bubble-bl">
               <div className="act2-bubble-inner">
                 <svg
                   className="act2-ico"
@@ -114,7 +114,7 @@ export default function ActivitiesSection() {
             </div>
 
             {/* פרויקטי חגים — bottom center */}
-            <div className="act2-bubble act2-bubble-br mx-[80px] my-[50px]">
+            <div className="act2-bubble act2-bubble-br">
               <div className="act2-bubble-inner">
                 <svg
                   className="act2-ico"

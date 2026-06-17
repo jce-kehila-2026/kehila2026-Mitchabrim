@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
@@ -10,10 +10,12 @@ import {
   editElderly,
   deleteElderly,
 } from "@/services/elderlyService.js";
+import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
+import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 
-/* ===== Options (shared with volunteers page) ===== */
-const AREA_OPTIONS = ["מרכז", "דרום", "צפון", "מערב", "מזרח", "גילה", "בית הכרם"];
-const NEIGHBORHOOD_OPTIONS = ["גילה", "בית הכרם", "קטמון", "רחביה", "רוממה", "ארנונה", "תלפיות", "פסגת זאב"];
+/* ===== Options (shared with volunteers page) =====
+   Areas and neighborhoods are loaded from Firestore (settings/general) via the
+   useAreasAndNeighborhoods hook — no hardcoded lists here. */
 const PARLIAMENT_OPTIONS = [
   "ללא פרלמנט",
   "פרלמנט גילה",
@@ -68,6 +70,28 @@ export default function Elderly() {
   const [openId, setOpenId] = useState(null);
   const [openVolunteer, setOpenVolunteer] = useState(null);
 
+  // Area/Neighborhood data — single source of truth from settings/general.
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
+  // Filters (only area/neighborhood are wired to actual filtering).
+  const [filterArea, setFilterArea] = useState("");
+  const [filterNeighborhood, setFilterNeighborhood] = useState("");
+
+  // If the area changes and the previously-selected neighborhood is no longer
+  // valid for the new area, reset it.
+  useEffect(() => {
+    if (!filterNeighborhood) return;
+    const valid = getNeighborhoods(filterArea).includes(filterNeighborhood);
+    if (!valid) setFilterNeighborhood("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterArea]);
+
   // Load elderly from Firestore on mount. Fallback to SEED so the page still works
   // in environments where Firebase isn't configured.
   useEffect(() => {
@@ -96,10 +120,34 @@ export default function Elderly() {
     [data],
   );
 
+  const visible = useMemo(() => {
+    return sorted.filter((e) => {
+      if (filterArea && e.area !== filterArea) return false;
+      if (filterNeighborhood && e.neighborhood !== filterNeighborhood) return false;
+      return true;
+    });
+  }, [sorted, filterArea, filterNeighborhood]);
+
   const openElderly = sorted.find((e) => e.id === openId) || null;
+
+
+  // Recompute a volunteer's status based on current elderly assignments.
+  // If still assigned to at least one elderly → "משויך לאזרח ותיק".
+  // Otherwise → "ממתין לשיבוץ". Only persists string volunteer ids (Firestore docs).
+  const syncVolunteerStatus = async (volunteerId, elderlyList) => {
+    if (!volunteerId || typeof volunteerId !== "string") return;
+    const stillAssigned = elderlyList.some((e) => e.volId === volunteerId);
+    const newStatus = stillAssigned ? "משויך לאזרח ותיק" : "ממתין לשיבוץ";
+    try {
+      await editVolunteer(volunteerId, { status: newStatus });
+    } catch (err) {
+      console.error("syncVolunteerStatus failed:", err);
+    }
+  };
 
   // Update an elderly citizen in Firestore + local state
   const handleEditElderly = async (id, updated) => {
+    const prevVolId = data.find((e) => e.id === id)?.volId || null;
     try {
       // eslint-disable-next-line no-unused-vars
       const { id: _omit, ...payload } = updated;
@@ -108,8 +156,12 @@ export default function Elderly() {
       console.error("editElderly failed:", err);
       alert("שמירה ל-Firebase נכשלה. השינוי נשמר מקומית בלבד.");
     }
-    setData((prev) => prev.map((e) => (e.id === id ? { ...e, ...updated, id } : e)));
+    const nextData = data.map((e) => (e.id === id ? { ...e, ...updated, id } : e));
+    setData(nextData);
     setOpenId(null);
+
+    const affected = new Set([prevVolId, updated.volId].filter(Boolean));
+    for (const vid of affected) await syncVolunteerStatus(vid, nextData);
   };
 
   // Create a new elderly citizen in Firestore + local state
@@ -125,8 +177,11 @@ export default function Elderly() {
       id: Math.max(0, ...data.map((d) => (typeof d.id === "number" ? d.id : 0))) + 1,
       ...entry,
     };
-    setData((prev) => [newRecord, ...prev]);
+    const nextData = [newRecord, ...data];
+    setData(nextData);
     setShowAdd(false);
+
+    if (entry.volId) await syncVolunteerStatus(entry.volId, nextData);
   };
 
   // Delete an elderly citizen from Firestore + local state
@@ -142,9 +197,13 @@ export default function Elderly() {
       console.error("deleteElderly failed:", err);
       alert("מחיקה מ-Firebase נכשלה. הרשומה הוסרה מקומית בלבד.");
     }
-    setData((prev) => prev.filter((e) => e.id !== elderly.id));
+    const nextData = data.filter((e) => e.id !== elderly.id);
+    setData(nextData);
     setOpenId(null);
+
+    if (elderly.volId) await syncVolunteerStatus(elderly.volId, nextData);
   };
+
 
   const connectedCount = data.filter((d) => d.volStatus === "כן" || d.volStatus === "לא מתאים").length;
   const withoutCount = data.length - connectedCount;
@@ -177,11 +236,30 @@ export default function Elderly() {
       </div>
 
       <SectionCard>
+        {areasError && (
+          <div style={{ color: "#b91c1c", fontSize: 13, marginBottom: 8 }}>{areasError}</div>
+        )}
+        {areasLoading && (
+          <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>טוען אזורים ושכונות...</div>
+        )}
+        {areasEmpty && (
+          <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>
+        )}
         <SearchFilters
           searchPlaceholder="חיפוש לפי שם, טלפון, ת.ז, שכונה או הערות..."
           filters={[
-            { label: "אזור", options: AREA_OPTIONS },
-            { label: "שכונה", options: NEIGHBORHOOD_OPTIONS },
+            {
+              label: "אזור",
+              value: filterArea,
+              onChange: (e) => setFilterArea(e.target.value),
+              options: ["", ...areaNames],
+            },
+            {
+              label: "שכונה",
+              value: filterNeighborhood,
+              onChange: (e) => setFilterNeighborhood(e.target.value),
+              options: ["", ...getNeighborhoods(filterArea)],
+            },
             { label: "סטטוס מתנדב", options: VOLUNTEER_STATUS_OPTIONS },
             { label: "מצב משפחתי", options: MARITAL_OPTIONS },
             { label: "סיוע", options: ASSISTANCE_OPTIONS },
@@ -224,8 +302,9 @@ export default function Elderly() {
             },
             { key: "notes", label: "הערות" },
           ]}
-          data={sorted}
+          data={visible}
         />
+
       </SectionCard>
 
       {showAdd && (
@@ -371,11 +450,19 @@ const REQUIRED_LABELS = {
 };
 
 function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave }) {
+  const {
+    areaNames,
+    getNeighborhoods,
+    loading: areasLoading,
+    error: areasError,
+    isEmpty: areasEmpty,
+  } = useAreasAndNeighborhoods();
+
   const [f, setF] = useState(
     initial || {
       firstName: "", lastName: "", idNum: "", birth: "",
       mobile: "", homePhone: "",
-      area: AREA_OPTIONS[0], neighborhood: NEIGHBORHOOD_OPTIONS[0], address: "",
+      area: "", neighborhood: "", address: "",
       contactName: "", contactPhone: "", lastContact: "",
       volStatus: "לא רוצה", volName: "",
       assistance: "", marital: MARITAL_OPTIONS[0],
@@ -388,13 +475,37 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const [missing, setMissing] = useState([]);
   const [idDup, setIdDup] = useState(false);
 
+  // Load volunteers from Firestore for the volunteer-select dropdown.
+  const [volunteers, setVolunteers] = useState([]);
+  const [volLoading, setVolLoading] = useState(true);
+  const [volError, setVolError] = useState("");
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const list = await getVolunteers();
+        if (!mounted) return;
+        setVolunteers(list);
+      } catch (err) {
+        console.error("Failed to load volunteers:", err);
+        if (mounted) setVolError("טעינת רשימת המתנדבים נכשלה");
+      } finally {
+        if (mounted) setVolLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  // Changing area resets neighborhood to avoid stale/invalid pairings.
+  const setArea = (e) => setF({ ...f, area: e.target.value, neighborhood: "" });
   const setDigits = (k) => (e) => {
     const raw = e.target.value;
     const cleaned = raw.replace(/\D/g, "");
     setNumericWarn((w) => ({ ...w, [k]: raw !== cleaned }));
     setF({ ...f, [k]: cleaned });
   };
+
 
   const showVolName = f.volStatus === "כן" || f.volStatus === "לא מתאים";
 
@@ -467,16 +578,27 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
             </div>
             <div className="field">
               <label>אזור</label>
-              <select className="select" value={f.area} onChange={set("area")}>
-                {AREA_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+              <select className="select" value={f.area || ""} onChange={setArea} disabled={areasLoading || areasEmpty}>
+                <option value="">
+                  {areasLoading ? "טוען אזורים..." : areasEmpty ? "לא נמצאו אזורים" : "בחר אזור"}
+                </option>
+                {areaNames.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
+              {areasError && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 4 }}>{areasError}</div>}
             </div>
             <div className="field">
               <label>שכונה</label>
-              <select className="select" value={f.neighborhood} onChange={set("neighborhood")}>
-                {NEIGHBORHOOD_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+              <select
+                className="select"
+                value={f.neighborhood || ""}
+                onChange={set("neighborhood")}
+                disabled={!f.area}
+              >
+                <option value="">{f.area ? "בחר שכונה" : "בחר אזור תחילה"}</option>
+                {getNeighborhoods(f.area).map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
+
             <div className="field"><label>כתובת</label><input className="input" value={f.address} onChange={set("address")} /></div>
           </div>
         </div>
@@ -504,7 +626,23 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               </select>
             </div>
             {showVolName && (
-              <div className="field"><label>שם מתנדב</label><input className="input" value={f.volName} onChange={set("volName")} /></div>
+              <div className="field">
+                <label>שם מתנדב</label>
+                <VolunteerSelect
+                  volunteers={volunteers}
+                  loading={volLoading}
+                  error={volError}
+                  valueId={f.volId}
+                  valueName={f.volName}
+                  onChange={(v) =>
+                    setF({
+                      ...f,
+                      volId: v ? v.id : null,
+                      volName: v ? `${v.firstName || ""} ${v.lastName || ""}`.trim() || v.name || "" : "",
+                    })
+                  }
+                />
+              </div>
             )}
             <div className="field"><label>סיוע</label><input className="input" value={f.assistance} onChange={set("assistance")} placeholder="לדוגמה: קשר חברתי, ליווי לרופא" /></div>
           </div>
@@ -579,6 +717,7 @@ function VolunteerQuickModal({ entry, onClose }) {
 
 /* ===== Print / report modal ===== */
 function PrintReportModal({ items, onClose }) {
+  const { areaNames, getNeighborhoods } = useAreasAndNeighborhoods();
   const [sel, setSel] = useState({ area: "", neighborhood: "", volStatus: "", marital: "", assistance: "" });
   const [showPreview, setShowPreview] = useState(false);
 
@@ -595,7 +734,16 @@ function PrintReportModal({ items, onClose }) {
     [items, sel],
   );
 
-  const setF = (k) => (e) => setSel({ ...sel, [k]: e.target.value });
+  const setF = (k) => (e) => {
+    const value = e.target.value;
+    if (k === "area") {
+      const validNb = getNeighborhoods(value).includes(sel.neighborhood);
+      setSel({ ...sel, area: value, neighborhood: validNb ? sel.neighborhood : "" });
+      return;
+    }
+    setSel({ ...sel, [k]: value });
+  };
+
 
   const handleDownload = () => {
     const headers = ["שם", "ת.ז", "אזור", "שכונה", "טלפון", "סטטוס מתנדב", "מצב משפחתי", "סיוע", "פרלמנט", "סטטוס"];
@@ -618,12 +766,13 @@ function PrintReportModal({ items, onClose }) {
   };
 
   const filterDefs = [
-    ["area", "אזור", AREA_OPTIONS],
-    ["neighborhood", "שכונה", NEIGHBORHOOD_OPTIONS],
+    ["area", "אזור", areaNames],
+    ["neighborhood", "שכונה", getNeighborhoods(sel.area)],
     ["volStatus", "סטטוס מתנדב", VOLUNTEER_STATUS_OPTIONS],
     ["marital", "מצב משפחתי", MARITAL_OPTIONS],
     ["assistance", "סיוע", ASSISTANCE_OPTIONS],
   ];
+
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -684,4 +833,137 @@ function PrintReportModal({ items, onClose }) {
       </div>
     </div>
   );
+}
+
+/* ===== Searchable volunteer dropdown =====
+   Loads from the volunteers collection (passed in via props). Lets the admin
+   search by name/phone/neighborhood and pick "ללא מתנדב" to clear. */
+function VolunteerSelect({ volunteers, loading, error, valueId, valueName, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const vName = (v) => `${v.firstName || ""} ${v.lastName || ""}`.trim() || v.name || "";
+  const vPhone = (v) => v.mobile || v.phone || "";
+  const vArea = (v) => v.neighborhood || v.area || "";
+  const vStatus = (v) => v.status || "";
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return volunteers;
+    return volunteers.filter((v) => {
+      const hay = [vName(v), vPhone(v), vArea(v), vStatus(v)].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }, [volunteers, query]);
+
+  const selected = valueId ? volunteers.find((v) => v.id === valueId) : null;
+  const displayText = selected
+    ? `${vName(selected)}${vPhone(selected) ? " — " + vPhone(selected) : ""}${vArea(selected) ? " — " + vArea(selected) : ""}`
+    : valueName
+      ? `${valueName} (לא ברשימה)`
+      : "בחר/י מתנדב מהרשימה";
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="select"
+        onClick={() => setOpen((o) => !o)}
+        style={{ width: "100%", textAlign: "start", cursor: "pointer", background: "#fff" }}
+      >
+        {loading ? "טוען מתנדבים…" : displayText}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            insetInlineStart: 0,
+            insetInlineEnd: 0,
+            zIndex: 50,
+            background: "#fff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            boxShadow: "0 10px 30px rgba(0,0,0,.12)",
+            maxHeight: 320,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
+            <input
+              className="input"
+              autoFocus
+              placeholder="חיפוש לפי שם, טלפון או שכונה…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+
+          <div style={{ overflowY: "auto", maxHeight: 240 }}>
+            <button
+              type="button"
+              onClick={() => { onChange(null); setOpen(false); setQuery(""); }}
+              style={optionStyle(!valueId)}
+            >
+              ללא מתנדב
+            </button>
+
+            {error && (
+              <div style={{ padding: 12, color: "#b91c1c", fontSize: 13 }}>{error}</div>
+            )}
+            {!error && loading && (
+              <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}>טוען מתנדבים…</div>
+            )}
+            {!error && !loading && filtered.length === 0 && (
+              <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}>
+                {volunteers.length === 0 ? "לא נמצאו מתנדבים במערכת" : "לא נמצאו תוצאות"}
+              </div>
+            )}
+            {!loading && filtered.map((v) => {
+              const isSel = v.id === valueId;
+              const parts = [vName(v), vPhone(v), vArea(v), vStatus(v)].filter(Boolean);
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => { onChange(v); setOpen(false); setQuery(""); }}
+                  style={optionStyle(isSel)}
+                >
+                  <div style={{ fontWeight: 600, color: "#0f172a" }}>{vName(v) || "—"}</div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>
+                    {parts.slice(1).join(" — ") || "—"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function optionStyle(active) {
+  return {
+    display: "block",
+    width: "100%",
+    textAlign: "start",
+    padding: "8px 12px",
+    background: active ? "#eff6ff" : "transparent",
+    border: "none",
+    borderBottom: "1px solid #f8fafc",
+    cursor: "pointer",
+  };
 }

@@ -174,11 +174,14 @@ export const listAllowedUsers = async () => {
  * If the email already exists in Auth, we upsert Firestore (by email) and
  * resend the password-reset email instead of failing.
  */
-export const inviteUser = async ({ email, displayName, role, active = true }) => {
+export const inviteUser = async ({ email, displayName, role, active = true, linkedVolunteerId = null }) => {
   const normalized = normalizeEmail(email);
   if (!normalized) return { success: false, error: "Email required" };
   if (!["admin", "volunteer"].includes(role)) {
     return { success: false, error: "Invalid role" };
+  }
+  if (role === "volunteer" && !linkedVolunteerId) {
+    return { success: false, error: "יש לבחור פרופיל מתנדב לקישור" };
   }
 
   const secondary = getSecondaryAuth();
@@ -218,9 +221,23 @@ export const inviteUser = async ({ email, displayName, role, active = true }) =>
       active,
       updatedAt: serverTimestamp(),
     };
+    if (linkedVolunteerId) data.linkedVolunteerId = linkedVolunteerId;
     const existing = await getDoc(doc(db, COLLECTION, docId));
     if (!existing.exists()) data.createdAt = serverTimestamp();
     await setDoc(doc(db, COLLECTION, docId), data, { merge: true });
+
+    // Link the Firebase Auth uid back onto the volunteer profile so that
+    // volunteers/{volunteerDocId}.authUid == auth.uid (used by the volunteer site).
+    if (role === "volunteer" && linkedVolunteerId && uid) {
+      try {
+        await updateDoc(doc(db, "volunteers", linkedVolunteerId), {
+          authUid: uid,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (e) {
+        console.warn("linkVolunteerAuthUid failed:", e.message);
+      }
+    }
 
     return {
       success: true,

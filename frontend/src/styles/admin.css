@@ -541,3 +541,125 @@
 }
 .image-placeholder.small { min-height: 90px; }
 .image-placeholder img { max-height: 140px; object-fit: contain; }
+
+/* ----- Filter field labels ----- */
+.filter-field { display: inline-flex; flex-direction: column; gap: 4px; }
+.filter-field-label {
+  font-size: 11px; color: var(--color-text-muted);
+  font-weight: 600; letter-spacing: .04em;
+  padding-inline-start: 4px;
+}
+.row-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn-danger { color: #b3261e; }
+.btn-link { background: none; border: 0; color: var(--color-burgundy); font-weight: 600; cursor: pointer; padding: 0; }
+.btn-link:hover { color: var(--color-orange); text-decoration: underline; }
+.cell-link { color: var(--color-burgundy); font-weight: 600; cursor: pointer; background: none; border: 0; padding: 0; font: inherit; text-align: inherit; }
+.cell-link:hover { color: var(--color-orange); text-decoration: underline; }
+.inline-select { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--color-border); background: #fff; font: inherit; }
+
+/* Notes icon button (inline cell action) */
+.note-icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  color: #8a7a5c;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color .15s ease, color .15s ease;
+}
+.note-icon-btn:hover { background: rgba(180,150,100,.12); color: #5a4a2c; }
+.note-icon { position: relative; display: inline-flex; }
+.note-icon.has-note { color: #b9802a; }
+.note-icon .note-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d97706;
+  border: 1.5px solid #fff;
+}
+
+/* ----- Multi-select dropdown (used in Add Project modal) ----- */
+.multi-select { position: relative; }
+.multi-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+  text-align: start;
+}
+.multi-select-trigger:hover:not(:disabled) { border-color: var(--color-accent, #c96b3c); }
+.multi-select-trigger:focus { outline: none; border-color: var(--color-orange, #e07a3c); box-shadow: 0 0 0 3px rgba(224,122,60,.15); }
+.multi-select-trigger:disabled { background: var(--color-cream, #fdf3e6); color: var(--color-text-muted, #7b6f67); cursor: not-allowed; }
+.multi-select-caret { color: var(--color-primary, #9f2f28); font-size: 12px; }
+.multi-select-menu {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md, 0 6px 24px rgba(80,35,25,.12));
+  padding: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.multi-select-search { padding: 4px 4px 8px; border-bottom: 1px solid var(--color-border); margin-bottom: 6px; }
+.multi-select-search .input { width: 100%; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--color-border); font: inherit; font-size: 13px; }
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text);
+  transition: background-color .12s ease;
+}
+.multi-select-option:hover { background: var(--color-cream, #fdf3e6); }
+.multi-select-option input { accent-color: var(--color-primary, #9f2f28); }
+.multi-select-option .ms-name { font-weight: 600; color: var(--color-burgundy, #6b1d1a); }
+.multi-select-option .ms-sub { font-size: 12px; color: var(--color-text-muted, #7b6f67); margin-inline-start: auto; }
+.multi-select-empty { padding: 14px; text-align: center; color: var(--color-text-muted, #7b6f67); font-size: 13px; }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-cream, #fdf3e6);
+  color: var(--color-burgundy, #6b1d1a);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.chip-x {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--color-primary, #9f2f28);
+  padding: 0 2px;
+}
+.chip-x:hover { color: var(--color-orange, #e07a3c); }

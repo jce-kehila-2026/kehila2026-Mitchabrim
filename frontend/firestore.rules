@@ -31,6 +31,19 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Projects — admins only (including subcollections).
+    match /projects/{projectId} {
+      allow read, write: if isAdmin();
+
+      match /elderlyParticipants/{participantId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /projectGroups/{groupId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
     // Default: deny. Add app-specific rules for your other collections.
     match /{document=**} {
       allow read, write: if false;
