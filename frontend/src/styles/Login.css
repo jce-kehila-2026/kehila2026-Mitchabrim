@@ -1,172 +1,297 @@
-/* ========================================================
-   Login page — warm, elegant, consistent with site design
-   ======================================================== */
+/* src/styles/Login.css */
+body {
+    background-color: #ffffff;
+}
+
+* {
+    box-sizing: border-box;
+}
 
 .login-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 40px 20px;
-  background: var(--color-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #fdf8f5 0%, #f5ede8 100%);
 }
 
-.login-card {
-  width: 100%;
-  max-width: 420px;
-  background: var(--color-card);
-  border-radius: var(--radius-lg);
-  padding: 44px 36px 36px 36px;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid var(--color-border);
+.login-container {
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 20px;
 }
 
-/* Header */
-.login-card-header {
-  text-align: center;
-  margin-bottom: 32px;
+.login-box {
+    background: white;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 35px 45px 35px;
+    box-shadow: 0 0 30px #8B0000;
+    
+    border: 2px solid #000000;
+    border-top-width: 3px;
+    border-bottom-width: 3px;
+    
 }
 
-.login-card-header img {
-  width: 96px;
-  height: 96px;
-  object-fit: contain;
-  border-radius: 50%;
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 18px;
+.logo {
+    width: 320px;
+    height: auto;
+    display: block;
+    margin-bottom: 15px;
+    background: transparent;
 }
 
-.login-card-header h1 {
-  font-family: var(--font-display);
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--color-primary-deep);
-  margin: 0 0 8px 0;
+.header-text {
+    text-align: center;
+    margin-bottom: 10px;
 }
 
-.login-card-header p {
-  font-size: 15px;
-  color: var(--color-muted);
-  margin: 0;
+.header-text h1 {
+    font-size: 28px;
+    color: #8B0000;
+    margin: 0;
+    font-weight: bold;
 }
 
-/* Form fields */
-.login-card .field {
-  margin-bottom: 20px;
+.header-text p {
+    font-size: 15px;
+    color: #888;
+    margin: 5px 0 0 0;
 }
 
-.login-card .field label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-soft);
-  margin-bottom: 8px;
+hr {
+    width: 100%;
+    margin: 5px 0 20px 0;  
+    border: none;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #8B0000, #ff6600, #8B0000, transparent);
 }
 
-.login-card .input {
-  width: 100%;
-  padding: 14px 16px;
-  font-size: 16px;
-  font-family: inherit;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius);
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
-  outline: none;
+.login-form {
+    width: 100%;
 }
 
-.login-card .input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px rgba(184, 90, 54, 0.12);
+/* الحقول - الكتابة من اليسار */
+/* الحقول - الكتابة من اليسار */
+.login-input {
+    font-size: 17px;
+    padding: 14px 55px 14px 16px;
+    width: 100%;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    margin-bottom: 18px;
+    text-align: left;
+    direction: ltr;
+    transition: all 0.3s;
+    background: white;
 }
 
-.login-card .input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+
+
+.login-input::placeholder {
+    color: #aaa;
+    font-size: 16px;
+    text-align: left;
 }
 
-/* Button */
-.login-actions {
-  margin-top: 8px;
+.login-input:focus {
+    outline: none;
+    border-color: #8B0000;
+    box-shadow: 0 0 0 3px rgba(139, 0, 0, 0.1);
 }
 
-.login-actions .btn {
-  width: 100%;
-  padding: 14px 24px;
-  font-size: 17px;
-  font-weight: 700;
-  font-family: inherit;
-  border: none;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  transition: background 0.25s ease, transform 0.15s ease;
+/* حقل كلمة السر مع العين على اليمين */
+.password-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 18px;
 }
 
-.login-actions .btn-primary {
-  background: var(--color-primary);
-  color: #fff;
+.password-wrapper .login-input {
+    margin-bottom: 0;
+    padding-right: 55px;
+    padding-left: 16px;
 }
 
-.login-actions .btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  transform: translateY(-1px);
+/* حاوية الأيقونات على اليمين */
+.eye-container {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    z-index: 2;
 }
 
-.login-actions .btn-primary:disabled {
-  background: var(--color-gray);
-  cursor: not-allowed;
-  transform: none;
+.eye-icon {
+    position: absolute;
+    width: 25px;
+    height: 25px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
 }
 
-/* Error message */
-.login-card > div[style*="#fdecec"] {
-  background: var(--color-error-bg) !important;
-  color: var(--color-error) !important;
-  border: 1px solid rgba(179, 56, 47, 0.15);
+.eye-icon.active {
+    opacity: 0.7;
+    transform: translateX(0);
 }
 
-/* Helper text */
-.login-card > p {
-  font-size: 13px;
-  color: var(--color-muted);
-  text-align: center;
-  margin-top: 18px;
+.eye-icon.hidden {
+    opacity: 0;
+    transform: translateX(40px);
+    pointer-events: none;
 }
 
-/* Back link */
-.login-back {
-  text-align: center;
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--color-border);
+.eye-open.hidden {
+    transform: translateX(40px);
 }
 
-.login-back a {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-accent);
-  transition: color 0.2s ease;
+.eye-close.hidden {
+    transform: translateX(40px);
 }
 
-.login-back a:hover {
-  color: var(--color-primary);
-  text-decoration: underline;
+.eye-icon:hover {
+    opacity: 1;
 }
 
-/* Responsive */
-@media (max-width: 520px) {
-  .login-page {
-    padding: 24px 16px;
-  }
-  .login-card {
-    padding: 32px 24px 28px 24px;
-  }
-  .login-card-header img {
-    width: 80px;
-    height: 80px;
-  }
-  .login-card-header h1 {
-    font-size: 24px;
-  }
+.eye-icon.active:hover {
+    transform: scale(1.1);
+}
+
+.error-text {
+    color: #dc2626;
+    font-size: 13px;
+    margin: -10px 0 15px 0;
+    text-align: center;
+    padding: 8px;
+    border-radius: 10px;
+    width: 100%;
+}
+
+.login-options {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin: 5px 0 25px 0;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: #555;
+    font-size: 14px;
+}
+
+.checkbox-label input {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #8B0000;
+}
+
+.forgot-link {
+    color: #8B0000;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.forgot-link:hover {
+    color: #ff6600;
+    text-decoration: underline;
+}
+
+.login-button {
+    transition: 0.3s;
+    background: #8B0000;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    margin-top: 5px;
+}
+
+.login-button:hover {
+    background: #ff6600;
+    transform: scale(1.02);
+}
+
+.login-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* بطاقات اختيار الدور */
+.role-cards {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%;
+}
+
+.role-card {
+    background: white;
+    border-radius: 15px;
+    padding: 25px 20px;
+    text-align: center;
+    text-decoration: none;
+    flex: 1;
+    min-width: 160px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border: 2px solid #eee;
+}
+
+.role-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(139, 0, 0, 0.25);
+    border-color: #8B0000;
+}
+
+.role-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.role-card h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+    color: #8B0000;
+}
+
+.role-card p {
+    font-size: 12px;
+    color: #666;
+}
+
+/* استجابة للشاشات الصغيرة */
+@media (max-width: 560px) {
+    .logo {
+        width: 250px;
+    }
+    .login-box {
+        padding: 30px 25px;
+    }
+    .header-text h1 {
+        font-size: 24px;
+    }
 }

@@ -84,3 +84,8 @@ export const getCurrentUserRole = async () => {
 };
 
 export const onAuthStateChange = (cb) => auth.onAuthStateChanged(cb);
+
+// الحصول على المستخدم الحالي
+export const getCurrentUser = () => {
+  return auth.currentUser;
+};
