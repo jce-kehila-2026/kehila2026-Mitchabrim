@@ -82,13 +82,43 @@ export default function Financial() {
   }, [transactions, filterType, searchTerm]);
 
   const uploadedReceipts = useMemo(() => {
-    return transactions.filter(t => {
-      if (!t.receiptUrl) return false;
-      const searchLower = receiptSearchTerm.toLowerCase();
-      return (t.receiptName && t.receiptName.toLowerCase().includes(searchLower)) ||
-             (t.receipt && t.receipt.toLowerCase().includes(searchLower)) ||
-             (t.source && t.source.toLowerCase().includes(searchLower));
+    let allReceipts = [];
+    
+    transactions.forEach(t => {
+      // 1. الفواتير المستقلة أو القديمة (Legacy)
+      if (t.receiptUrl || t.type === "קבלה_בלבד") {
+          allReceipts.push({
+              ...t,
+              archiveId: t.id + "_legacy",
+              isStandalone: t.type === "קבלה_בלבד",
+              isAttachment: false
+          });
+      }
+      
+      // 2. الفواتير المتعددة الجديدة (Attachments Array)
+      if (t.attachments && t.attachments.length > 0) {
+          t.attachments.forEach(att => {
+              allReceipts.push({
+                  ...t, // نسخ بيانات العملية الأم (المبلغ، المشروع، الخ)
+                  archiveId: t.id + "_" + att.id,
+                  receiptUrl: att.url,
+                  receiptName: att.name,
+                  receipt: att.number,
+                  isStandalone: false,
+                  isAttachment: true,
+                  attachmentId: att.id
+              });
+          });
+      }
     });
+
+    // تطبيق فلتر البحث على المصفوفة المسطحة الجديدة
+    const searchLower = receiptSearchTerm.toLowerCase();
+    return allReceipts.filter(r => 
+      (r.receiptName && r.receiptName.toLowerCase().includes(searchLower)) ||
+      (r.receipt && r.receipt.toLowerCase().includes(searchLower)) ||
+      (r.source && r.source.toLowerCase().includes(searchLower))
+    );
   }, [transactions, receiptSearchTerm]);
 
   // ==========================================
@@ -154,7 +184,21 @@ export default function Financial() {
       const finalReceiptNum = uploadData.receiptNumber.trim() || "ללא מספר";
 
       if (uploadData.transactionId) {
-        await updateDoc(doc(db, "financialTransactions", uploadData.transactionId), { receiptUrl: downloadUrl, receiptName: finalReceiptName, receipt: finalReceiptNum });
+        // تحديث جذري: إضافة الفاتورة كمرفق إضافي بدلاً من استبدال القديمة
+        const tx = transactions.find(t => t.id === uploadData.transactionId);
+        const currentAttachments = tx.attachments || [];
+        
+        const newAttachment = {
+            url: downloadUrl,
+            name: finalReceiptName,
+            number: finalReceiptNum,
+            id: Date.now().toString() // معرف فريد للمرفق
+        };
+
+        await updateDoc(doc(db, "financialTransactions", uploadData.transactionId), { 
+            attachments: [...currentAttachments, newAttachment]
+        });
+
       } else {
         await addDoc(collection(db, "financialTransactions"), {
           type: "קבלה_בלבד", amount: 0, source: "—", project: "—", date: new Date().toISOString().split('T')[0],
@@ -172,7 +216,7 @@ export default function Financial() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const { id, isStandalone, receiptUrl, receiptName, receipt } = editReceiptData;
+      const { id, isStandalone, isAttachment, attachmentId, receiptUrl, receiptName, receipt } = editReceiptData;
       const oldTxId = id;
       const newTxId = uploadData.transactionId; 
 
@@ -182,6 +226,7 @@ export default function Financial() {
         return; 
       }
 
+      // 2. الحذف من الوجهة القديمة
       if (isStandalone) {
         if (newTxId) {
           await updateDoc(doc(db, "financialTransactions", newTxId), { receiptUrl, receiptName, receipt });
@@ -199,6 +244,7 @@ export default function Financial() {
           await updateDoc(doc(db, "financialTransactions", oldTxId), { receiptUrl: "", receiptName: "", receipt: "" });
         }
       }
+      
       setIsEditReceiptModalOpen(false);
       showToast("שיוך הקבלה עודכן בהצלחה!");
     } catch (error) {
@@ -211,8 +257,15 @@ export default function Financial() {
   const handleDeleteReceiptConfirm = async () => {
     if (!deleteReceiptData) return;
     try {
-      if (deleteReceiptData.isStandalone) await deleteDoc(doc(db, "financialTransactions", deleteReceiptData.id));
-      else await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { receiptUrl: "", receiptName: "" });
+      if (deleteReceiptData.isStandalone) {
+          await deleteDoc(doc(db, "financialTransactions", deleteReceiptData.id));
+      } else if (deleteReceiptData.isAttachment) {
+          const tx = transactions.find(t => t.id === deleteReceiptData.id);
+          const updatedAttachments = tx.attachments.filter(a => a.id !== deleteReceiptData.attachmentId);
+          await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { attachments: updatedAttachments });
+      } else {
+          await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { receiptUrl: "", receiptName: "" });
+      }
       setDeleteReceiptData(null);
       showToast("הקבלה הוסרה בהצלחה!");
     } catch (error) { alert("שגיאה במחיקת הקבלה."); }
@@ -221,7 +274,13 @@ export default function Financial() {
   const exportToCSV = () => {
     const BOM = "\uFEFF";
     const header = "סוג,סכום,מקור,פרויקט,תאריך,מספר קבלה,הערות\n";
-    const rows = filteredTransactions.map(t => `"${t.type}","${t.amount}","${t.source}","${t.project}","${t.date}","${t.receipt}","${t.notes}"`).join("\n");
+    const rows = filteredTransactions.map(t => {
+      let receiptText = t.receipt || "";
+      if (t.attachments && t.attachments.length > 0) {
+          receiptText = t.attachments.map(a => a.number || a.name).join(" | ");
+      }
+      return `"${t.type}","${t.amount}","${t.source}","${t.project}","${t.date}","${receiptText}","${t.notes}"`;
+    }).join("\n");
     const blob = new Blob([BOM + header + rows], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -418,14 +477,26 @@ export default function Financial() {
                       <td style={{ color: "#64748b" }}>{item.project || "—"}</td>
                       <td style={{ color: "#64748b" }}>{item.date}</td>
                       <td>
-                        {item.receiptUrl ? (
-                          <a href={item.receiptUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#8b2c2c", fontWeight: "bold", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", backgroundColor: "#fef2f2", padding: "4px 10px", borderRadius: "8px" }} title="צפה בקובץ">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                            {item.receiptName || item.receipt || "מסמך מצורף"}
-                          </a>
-                        ) : item.receipt ? (
-                          <span style={{ fontWeight: "500", color: "#64748b" }}>{item.receipt}</span>
-                        ) : "—"}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          {/* الفاتورة القديمة أو الأولى */}
+                          {item.receiptUrl && (
+                            <a href={item.receiptUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#8b2c2c", fontWeight: "bold", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", backgroundColor: "#fef2f2", padding: "4px 10px", borderRadius: "8px", width: "fit-content" }} title="צפה בקובץ">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                              {item.receiptName || item.receipt || "מסמך מצורף"}
+                            </a>
+                          )}
+                          {/* الفواتير المتعددة المرفقة الجديدة */}
+                          {item.attachments && item.attachments.map(att => (
+                            <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" style={{ color: "#8b2c2c", fontWeight: "bold", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", backgroundColor: "#fef2f2", padding: "4px 10px", borderRadius: "8px", width: "fit-content" }} title="צפה בקובץ">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                              {att.name || att.number || "מסמך מצורף"}
+                            </a>
+                          ))}
+                          
+                          {!item.receiptUrl && (!item.attachments || item.attachments.length === 0) && (
+                            item.receipt ? <span style={{ fontWeight: "500", color: "#64748b" }}>{item.receipt}</span> : "—"
+                          )}
+                        </div>
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <button className="action-icon-btn" onClick={() => setDeleteId(item.id)} title="מחק פעולה זו">
@@ -453,14 +524,14 @@ export default function Financial() {
 
             <div className="receipts-grid">
               {uploadedReceipts.length > 0 ? uploadedReceipts.map(r => (
-                <div key={r.id} className="receipt-card">
+                <div key={r.archiveId} className="receipt-card">
                   <div className="receipt-icon">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                   </div>
                   <div className="receipt-info">
                     <div className="receipt-title" title={r.receiptName || r.receipt}>{r.receiptName || r.receipt || "מסמך ללא שם"}</div>
                     <div className="receipt-sub">מספר קבלה: {r.receipt !== "צורף קובץ" ? r.receipt : "—"}</div>
-                    {r.type === "קבלה_בלבד" ? (
+                    {r.isStandalone ? (
                       <div className="receipt-sub" style={{ marginTop: "4px", color: "#475569", fontWeight: "bold" }}>📄 קבלה עצמאית (ללא שיוך)</div>
                     ) : (
                       <div className="receipt-sub" style={{ marginTop: "4px", color: r.type === "הוצאה" ? "#dc3545" : "#1e6b2c", fontWeight: "600" }}>משויך ל{r.type}: ₪{r.amount}</div>
@@ -471,8 +542,16 @@ export default function Financial() {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </a>
                     <button onClick={() => {
-                        setEditReceiptData({ id: r.id, isStandalone: r.type === "קבלה_בלבד", receiptUrl: r.receiptUrl, receiptName: r.receiptName, receipt: r.receipt });
-                        setUploadData({ ...uploadData, transactionId: r.type === "קבלה_בלבד" ? "" : r.id });
+                        setEditReceiptData({ 
+                            id: r.id, 
+                            isStandalone: r.isStandalone, 
+                            isAttachment: r.isAttachment,
+                            attachmentId: r.attachmentId,
+                            receiptUrl: r.receiptUrl, 
+                            receiptName: r.receiptName, 
+                            receipt: r.receipt 
+                        });
+                        setUploadData({ ...uploadData, transactionId: r.isStandalone ? "" : r.id });
                         setIsEditReceiptModalOpen(true);
                       }} className="action-icon-btn action-icon-edit" title="ערוך שיוך קבלה"
                     >
@@ -687,17 +766,19 @@ export default function Financial() {
         </div>
       )}
 
+      {/* ========================================== */}
       {/* מודל מחיקת פעולה שלמה */}
+      {/* ========================================== */}
       {deleteId && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", padding: "32px", borderRadius: "20px", textAlign: "center", width: "90%", maxWidth: "380px", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
             <div style={{ backgroundColor: "#fdecec", width: "64px", height: "64px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px auto" }}>
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#dc3545" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
             </div>
-            <h4 style={{ color: "#0f172a", fontWeight: "bold", margin: "0 0 12px 0", fontSize: "1.2rem" }}>מחיקת פעולה כספית</h4>
-            <p style={{ color: "#64748b", fontSize: "14px", margin: "0 0 30px 0", lineHeight: "1.5" }}>האם אתה בטוח שברצונך למחוק פעולה זו? לא ניתן יהיה לשחזר את הנתונים לאחר מכן.</p>
+            <h4 style={{ color: "#343a40", fontWeight: "bold", margin: "0 0 12px 0", fontSize: "1.2rem" }}>מחיקת פעולה כספית</h4>
+            <p style={{ color: "#6c757d", fontSize: "14px", margin: "0 0 30px 0", lineHeight: "1.5" }}>האם אתה בטוח שברצונך למחוק פעולה זו? לא ניתן יהיה לשחזר את הנתונים לאחר מכן.</p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button onClick={() => setDeleteId(null)} style={{ flex: 1, padding: "12px", borderRadius: "30px", border: "1px solid #cbd5e1", backgroundColor: "#fff", cursor: "pointer", fontWeight: "600", color: "#475569", transition: "all 0.2s" }}>ביטול</button>
+              <button onClick={() => setDeleteId(null)} style={{ flex: 1, padding: "12px", borderRadius: "30px", border: "1px solid #ced4da", backgroundColor: "#fff", cursor: "pointer", fontWeight: "600", color: "#495057", transition: "all 0.2s" }}>ביטול</button>
               <button onClick={() => handleDeleteTransaction(deleteId)} style={{ flex: 1, padding: "12px", borderRadius: "30px", backgroundColor: "#dc3545", color: "white", border: "none", cursor: "pointer", fontWeight: "600", transition: "all 0.2s", boxShadow: "0 4px 12px rgba(220,53,69,0.2)" }}>כן, מחק לחלוטין</button>
             </div>
           </div>
