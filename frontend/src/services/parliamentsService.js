@@ -5,6 +5,7 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  setDoc,
   serverTimestamp,
   query,
   orderBy,
@@ -45,8 +46,8 @@ export async function deleteParliament(parliamentId) {
 }
 
 /* =========================
-   Participant attendance (מעקב נוכחות)
-   Stored as subcollection: parliaments/{parliamentId}/participants
+   Participants (parliament-wide)
+   parliaments/{pid}/participants
 ========================= */
 
 export async function getParticipants(parliamentId) {
@@ -69,4 +70,105 @@ export async function updateParticipantAttendance(parliamentId, participantId, d
   const ref = doc(db, "parliaments", String(parliamentId), "participants", String(participantId));
   await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
   return { id: participantId, ...data };
+}
+
+export async function removeParticipant(parliamentId, participantId) {
+  const ref = doc(db, "parliaments", String(parliamentId), "participants", String(participantId));
+  await deleteDoc(ref);
+}
+
+/* =========================
+   Meetings (פגישות)
+   parliaments/{pid}/meetings/{meetingId} = { date, startTime, location, notes }
+========================= */
+
+function meetingsCol(pid) {
+  return collection(db, "parliaments", pid, "meetings");
+}
+
+export async function getMeetings(parliamentId) {
+  const snap = await getDocs(meetingsCol(parliamentId));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function addMeeting(parliamentId, data) {
+  const ref = await addDoc(meetingsCol(parliamentId), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return { id: ref.id, ...data };
+}
+
+export async function updateMeeting(parliamentId, meetingId, data) {
+  const ref = doc(db, "parliaments", parliamentId, "meetings", meetingId);
+  await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+  return { id: meetingId, ...data };
+}
+
+export async function deleteMeeting(parliamentId, meetingId) {
+  const ref = doc(db, "parliaments", parliamentId, "meetings", meetingId);
+  await deleteDoc(ref);
+}
+
+/* =========================
+   Per-meeting attendance
+   parliaments/{pid}/meetings/{mid}/attendance/{participantId}
+========================= */
+
+function attendanceCol(pid, mid) {
+  return collection(db, "parliaments", pid, "meetings", mid, "attendance");
+}
+
+export async function getMeetingAttendance(parliamentId, meetingId) {
+  const snap = await getDocs(attendanceCol(parliamentId, meetingId));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function upsertMeetingAttendance(parliamentId, meetingId, participantId, data) {
+  const ref = doc(
+    db, "parliaments", parliamentId, "meetings", meetingId, "attendance", String(participantId)
+  );
+  await setDoc(ref, { ...data, updatedAt: serverTimestamp() }, { merge: true });
+  return { id: participantId, ...data };
+}
+
+/* =========================
+   Per-meeting expenses
+   parliaments/{pid}/meetings/{mid}/expenses/{expenseId}
+========================= */
+
+function expensesCol(pid, mid) {
+  return collection(db, "parliaments", pid, "meetings", mid, "expenses");
+}
+
+export async function getMeetingExpenses(parliamentId, meetingId) {
+  const snap = await getDocs(expensesCol(parliamentId, meetingId));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function addMeetingExpense(parliamentId, meetingId, data) {
+  const ref = await addDoc(expensesCol(parliamentId, meetingId), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return { id: ref.id, ...data };
+}
+
+export async function updateMeetingExpense(parliamentId, meetingId, expenseId, data) {
+  const ref = doc(db, "parliaments", parliamentId, "meetings", meetingId, "expenses", expenseId);
+  await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+  return { id: expenseId, ...data };
+}
+
+export async function deleteMeetingExpense(parliamentId, meetingId, expenseId) {
+  const ref = doc(db, "parliaments", parliamentId, "meetings", meetingId, "expenses", expenseId);
+  await deleteDoc(ref);
+}
+
+/* Sum expenses for a meeting — used by the meetings table column. */
+export async function getMeetingExpenseTotal(parliamentId, meetingId) {
+  const list = await getMeetingExpenses(parliamentId, meetingId);
+  return list.reduce((s, e) => s + (Number(e.amount) || 0), 0);
 }

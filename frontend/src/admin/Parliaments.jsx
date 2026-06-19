@@ -11,6 +11,17 @@ import {
   addParticipant,
   getParticipants,
   updateParticipantAttendance,
+  removeParticipant,
+  getMeetings,
+  addMeeting,
+  updateMeeting,
+  deleteMeeting,
+  getMeetingAttendance,
+  upsertMeetingAttendance,
+  getMeetingExpenses,
+  addMeetingExpense,
+  updateMeetingExpense,
+  deleteMeetingExpense,
 } from "@/services/parliamentsService.js";
 import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers } from "@/services/volunteersService.js";
@@ -354,19 +365,25 @@ export default function Parliaments() {
 function ParliamentDetail({ parl, allParliaments, participants, setParticipants, onBack, onEdit, onDelete, areaOptions, volunteerOptions }) {
   const [tab, setTab] = useState("participants");
   const [showEdit, setShowEdit] = useState(false);
-  const [openParticipant, setOpenParticipant] = useState(null);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [openParticipantInfo, setOpenParticipantInfo] = useState(null);
   const [elderlyList, setElderlyList] = useState([]);
 
-  // Load participants on mount (persistence fix)
+  // Meetings state
+  const [meetings, setMeetings] = useState([]);
+  const [showAddMeeting, setShowAddMeeting] = useState(false);
+  const [editMeeting, setEditMeeting] = useState(null);
+  const [openMeeting, setOpenMeeting] = useState(null);
+  const [meetingArrived, setMeetingArrived] = useState({});
+  const [meetingExpenseTotal, setMeetingExpenseTotal] = useState({});
+
+  // Load participants + elderly on mount
   useEffect(() => {
     (async () => {
       try {
         const parts = await getParticipants(parl.id);
         if (parts && parts.length) setParticipants(parts);
-      } catch (e) {
-        console.warn("Failed to load participants:", e);
-      }
+      } catch (e) { console.warn("Failed to load participants:", e); }
     })();
     (async () => {
       try { setElderlyList(await getElderly()); }
@@ -375,8 +392,31 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parl.id]);
 
-  // Look up phone from elderly collection by participant.elderlyId or by name match
-  const phoneFor = (p) => {
+  // Load meetings + per-meeting aggregates from Firestore.
+  const refreshMeetings = async () => {
+    try {
+      const list = await getMeetings(parl.id);
+      setMeetings(list);
+      const arrived = {};
+      const expTotals = {};
+      await Promise.all(list.map(async (m) => {
+        try {
+          const [att, exps] = await Promise.all([
+            getMeetingAttendance(parl.id, m.id),
+            getMeetingExpenses(parl.id, m.id),
+          ]);
+          arrived[m.id] = att.filter((a) => a.arrived === "כן").length;
+          expTotals[m.id] = exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        } catch (e) { console.warn("meeting agg failed", e); }
+      }));
+      setMeetingArrived(arrived);
+      setMeetingExpenseTotal(expTotals);
+    } catch (e) { console.warn("Failed to load meetings:", e); }
+  };
+  useEffect(() => { refreshMeetings(); /* eslint-disable-next-line */ }, [parl.id]);
+
+  // Look up an elderly record for a participant (by id or by name).
+  const matchElderly = (p) => {
     let match = null;
     if (p.elderlyId) match = elderlyList.find((e) => String(e.id) === String(p.elderlyId));
     if (!match) {
@@ -386,62 +426,106 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
         (e.firstName || "").trim() === fn && (e.lastName || "").trim() === ln,
       );
     }
-    if (match) return match.mobile || match.homePhone || p.phone || "—";
-    return p.phone || "—";
+    return match;
+  };
+  const phoneFor = (p) => {
+    const m = matchElderly(p);
+    return (m && (m.mobile || m.homePhone)) || p.phone || "—";
+  };
+  const homePhoneFor = (p) => {
+    const m = matchElderly(p);
+    return (m && m.homePhone) || "—";
   };
 
   const sortedParticipants = useMemo(
-    () => [...participants].sort((a, b) => (Number(a.n) || 0) - (Number(b.n) || 0)),
+    () => [...participants].sort((a, b) =>
+      `${a.firstName || ""} ${a.lastName || ""}`.localeCompare(`${b.firstName || ""} ${b.lastName || ""}`, "he"),
+    ),
     [participants],
   );
 
-  const confirmed = sortedParticipants.filter((p) => p.confirmed === "כן").length;
-  const notComing = sortedParticipants.filter((p) => p.confirmed === "לא").length;
-  const waiting = sortedParticipants.filter((p) => p.confirmed === "ממתין" || !p.confirmed).length;
+  const sortedMeetings = useMemo(
+    () => [...meetings].sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))),
+    [meetings],
+  );
+
+  const meetingsHeld = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return sortedMeetings.filter((m) => m.date && m.date <= today).length;
+  }, [sortedMeetings]);
 
   const existingNames = allParliaments.filter((p) => p.id !== parl.id).map((p) => p.name);
 
-  const handleAddParticipant = async (data) => {
-    const nextN = sortedParticipants.reduce((m, p) => Math.max(m, Number(p.n) || 0), 0) + 1;
-    const parts = (data.fullName || "").trim().split(/\s+/);
-    const firstName = parts[0] || "";
-    const lastName = parts.slice(1).join(" ");
-    const payload = {
-      n: nextN,
-      firstName,
-      lastName,
-      elderlyId: data.elderlyId || "",
-      phone: data.phone || "",
-      address: data.address || "",
-      neigh: data.neigh || "",
-      area: data.area || "",
-      type: data.type || "",
-      called: "לא",
-      confirmed: "ממתין",
-      arrived: "—",
-      notes: "",
-    };
-    try {
-      const saved = await addParticipant(parl.id, payload);
-      setParticipants((prev) => [...prev, { ...payload, id: saved.id }]);
-    } catch (err) {
-      console.warn("addParticipant failed:", err);
-      setParticipants((prev) => [...prev, { ...payload, id: Date.now() }]);
+  const handleAddParticipants = async (chosenIds) => {
+    const saved = [];
+    for (const id of chosenIds) {
+      const chosen = elderlyList.find((e) => String(e.id) === String(id));
+      if (!chosen) continue;
+      const payload = {
+        firstName: chosen.firstName || "",
+        lastName: chosen.lastName || "",
+        elderlyId: chosen.id,
+        phone: chosen.mobile || chosen.homePhone || chosen.phone || "",
+        address: chosen.address || "",
+        neigh: chosen.neighborhood || "",
+        area: chosen.area || "",
+        type: "קבוע",
+      };
+      try {
+        const s = await addParticipant(parl.id, payload);
+        saved.push({ ...payload, id: s.id });
+      } catch (err) {
+        console.warn("addParticipant failed:", err);
+        saved.push({ ...payload, id: `tmp-${Date.now()}-${Math.random()}` });
+      }
     }
+    setParticipants((prev) => [...prev, ...saved]);
     setShowAddParticipant(false);
   };
 
-  const handleUpdateAttendance = async (updated) => {
-    setParticipants((prev) => prev.map((p) => (p.id === updated.id || p.n === updated.n ? updated : p)));
-    if (updated.id) {
-      try {
-        const { id, ...rest } = updated;
-        await updateParticipantAttendance(parl.id, id, rest);
-      } catch (e) {
-        console.warn("updateParticipantAttendance failed:", e);
-      }
-    }
+  const handleRemoveParticipant = async (p) => {
+    if (!window.confirm(`להסיר את ${p.firstName} ${p.lastName} מהפרלמנט?`)) return;
+    try { await removeParticipant(parl.id, p.id); }
+    catch (e) { console.warn("removeParticipant failed:", e); }
+    setParticipants((prev) => prev.filter((x) => x.id !== p.id));
   };
+
+  const handleAddMeeting = async (data) => {
+    try {
+      const saved = await addMeeting(parl.id, data);
+      setMeetings((prev) => [...prev, saved]);
+      setMeetingArrived((prev) => ({ ...prev, [saved.id]: 0 }));
+      setMeetingExpenseTotal((prev) => ({ ...prev, [saved.id]: 0 }));
+    } catch (e) { console.warn("addMeeting failed:", e); }
+    setShowAddMeeting(false);
+  };
+  const handleUpdateMeeting = async (id, data) => {
+    try { await updateMeeting(parl.id, id, data); }
+    catch (e) { console.warn("updateMeeting failed:", e); }
+    setMeetings((prev) => prev.map((m) => (m.id === id ? { ...m, ...data } : m)));
+    setEditMeeting(null);
+  };
+  const handleDeleteMeeting = async (m) => {
+    if (!window.confirm(`למחוק את הפגישה בתאריך ${m.date || ""}?`)) return;
+    try { await deleteMeeting(parl.id, m.id); }
+    catch (e) { console.warn("deleteMeeting failed:", e); }
+    setMeetings((prev) => prev.filter((x) => x.id !== m.id));
+    setEditMeeting(null);
+  };
+
+  if (openMeeting) {
+    return (
+      <MeetingDetailView
+        parl={parl}
+        meeting={openMeeting}
+        meetingNumber={sortedMeetings.findIndex((m) => m.id === openMeeting.id) + 1}
+        participants={sortedParticipants}
+        phoneFor={phoneFor}
+        homePhoneFor={homePhoneFor}
+        onBack={() => { refreshMeetings(); setOpenMeeting(null); }}
+      />
+    );
+  }
 
   return (
     <AdminLayout
@@ -453,60 +537,63 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
 
       <div className="stats-grid">
         <StatsCard title="משתתפים" value={String(sortedParticipants.length)} />
-        <StatsCard title="אישרו הגעה" value={String(confirmed)} />
-        <StatsCard title="לא יגיעו" value={String(notComing)} />
-        <StatsCard title="ממתינים לאישור" value={String(waiting)} />
+        <StatsCard title="פגישות שהתקיימו" value={`${meetingsHeld} מתוך ${sortedMeetings.length}`} />
       </div>
 
-      {/* Tabs + add-participant button aligned on the same row */}
-      <div className="tabs" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className={tab === "participants" ? "active" : ""} onClick={() => setTab("participants")}>רשימת משתתפים</button>
-          <button className={tab === "attendance" ? "active" : ""} onClick={() => setTab("attendance")}>מעקב נוכחות</button>
-        </div>
-        {tab === "participants" && (
-          <button className="btn btn-primary" onClick={() => setShowAddParticipant(true)}>
-            + הוספת משתתפים
-          </button>
-        )}
+      <div className="tabs">
+        <button className={tab === "participants" ? "active" : ""} onClick={() => setTab("participants")}>רשימת משתתפים</button>
+        <button className={tab === "meetings" ? "active" : ""} onClick={() => setTab("meetings")}>רשימת הפגישות</button>
       </div>
 
       {tab === "participants" && (
-        <SectionCard>
+        <SectionCard
+          title="רשימת משתתפים"
+          actions={<button className="btn btn-primary" onClick={() => setShowAddParticipant(true)}>+ הוספת משתתפים</button>}
+        >
           <DataTable
             columns={[
-              { key: "n", label: "מס׳" },
-              { key: "name", label: "שם", render: (r) => `${r.firstName} ${r.lastName}` },
+              { key: "name", label: "שם", render: (r) => (
+                <button className="cell-link" onClick={() => setOpenParticipantInfo(r)}>
+                  {r.firstName} {r.lastName}
+                </button>
+              )},
               { key: "phone", label: "טלפון", render: (r) => phoneFor(r) },
               { key: "address", label: "כתובת" },
               { key: "neigh", label: "שכונה" },
               { key: "area", label: "אזור" },
               { key: "type", label: "סוג שיבוץ" },
+              { key: "remove", label: "", render: (r) => (
+                <button className="btn-link btn-danger" onClick={() => handleRemoveParticipant(r)}>הסר מהפרלמנט</button>
+              )},
             ]}
             data={sortedParticipants}
           />
         </SectionCard>
       )}
 
-      {tab === "attendance" && (
-        <SectionCard>
+      {tab === "meetings" && (
+        <SectionCard
+          title="רשימת הפגישות"
+          actions={<button className="btn btn-primary" onClick={() => setShowAddMeeting(true)}>+ הוספת פגישה</button>}
+        >
           <DataTable
             columns={[
-              {
-                key: "name",
-                label: "שם אזרח ותיק",
-                render: (r) => (
-                  <button className="link-btn" onClick={() => setOpenParticipant(r)}>
-                    {r.firstName} {r.lastName}
-                  </button>
-                ),
-              },
-              { key: "called", label: "ניסינו להתקשר", render: (r) => r.called || "לא" },
-              { key: "confirmed", label: "אישר הגעה", render: (r) => r.confirmed || "ממתין" },
-              { key: "arrived", label: "הגיע בפועל", render: (r) => r.arrived || "—" },
+              { key: "num", label: "מס׳ הפגישה", render: (r) => (
+                <button className="cell-link" onClick={() => setOpenMeeting(r)}>
+                  {sortedMeetings.findIndex((m) => m.id === r.id) + 1}
+                </button>
+              )},
+              { key: "date", label: "תאריך הפגישה", render: (r) => r.date || "—" },
+              { key: "startTime", label: "זמן התחילה", render: (r) => r.startTime || "—" },
+              { key: "location", label: "מיקום הפגישה", render: (r) => r.location || "—" },
+              { key: "arrived", label: "הגיעו לפגישה", render: (r) => String(meetingArrived[r.id] ?? 0) },
+              { key: "expenses", label: "סכום ההוצאות", render: (r) => `${(meetingExpenseTotal[r.id] ?? 0).toLocaleString()} ₪` },
               { key: "notes", label: "הערות", render: (r) => r.notes || "" },
+              { key: "edit", label: "", render: (r) => (
+                <button className="btn-link" onClick={() => setEditMeeting(r)}>עריכה</button>
+              )},
             ]}
-            data={sortedParticipants}
+            data={sortedMeetings}
           />
         </SectionCard>
       )}
@@ -524,26 +611,240 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
         />
       )}
 
-      {openParticipant && (
-        <ParticipantProfileModal
-          participant={openParticipant}
-          onClose={() => setOpenParticipant(null)}
-          onSave={(updated) => {
-            handleUpdateAttendance(updated);
-            setOpenParticipant(updated);
-          }}
+      {openParticipantInfo && (
+        <ParticipantInfoModal
+          participant={openParticipantInfo}
+          mobile={phoneFor(openParticipantInfo)}
+          homePhone={homePhoneFor(openParticipantInfo)}
+          onClose={() => setOpenParticipantInfo(null)}
         />
       )}
 
       {showAddParticipant && (
         <AddParticipantModal
+          elderlyList={elderlyList}
+          excludeIds={participants.map((p) => String(p.elderlyId))}
           onClose={() => setShowAddParticipant(false)}
-          onSave={handleAddParticipant}
+          onSave={handleAddParticipants}
+        />
+      )}
+
+      {showAddMeeting && (
+        <MeetingFormModal
+          title="הוספת פגישה"
+          onClose={() => setShowAddMeeting(false)}
+          onSave={handleAddMeeting}
+        />
+      )}
+
+      {editMeeting && (
+        <MeetingFormModal
+          title="עריכת פגישה"
+          initial={editMeeting}
+          onClose={() => setEditMeeting(null)}
+          onSave={(data) => handleUpdateMeeting(editMeeting.id, data)}
+          onDelete={() => handleDeleteMeeting(editMeeting)}
         />
       )}
     </AdminLayout>
   );
 }
+
+/* =================== Meeting Detail View (drill-down) =================== */
+function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFor, homePhoneFor, onBack }) {
+  const [subTab, setSubTab] = useState("attendance");
+  const [attendance, setAttendance] = useState({}); // participantId -> { called, confirmed, arrived, notes }
+  const [expenses, setExpenses] = useState([]);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [editExpense, setEditExpense] = useState(null);
+  const [notesEditing, setNotesEditing] = useState(null); // participant for inline notes
+  const [openName, setOpenName] = useState(null); // participant to show name+phone modal
+
+  // Load attendance + expenses for THIS meeting
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await getMeetingAttendance(parl.id, meeting.id);
+        const map = {};
+        list.forEach((a) => { map[a.id] = a; });
+        setAttendance(map);
+      } catch (e) { console.warn("attendance load failed", e); }
+    })();
+    (async () => {
+      try { setExpenses(await getMeetingExpenses(parl.id, meeting.id)); }
+      catch (e) { console.warn("expenses load failed", e); }
+    })();
+  }, [parl.id, meeting.id]);
+
+  const attFor = (pid) => attendance[pid] || { called: "לא", confirmed: "ממתין", arrived: "—", notes: "" };
+
+  const setAttField = (pid, field, value) => {
+    const current = attFor(pid);
+    const next = { ...current, [field]: value };
+    setAttendance((prev) => ({ ...prev, [pid]: next }));
+    upsertMeetingAttendance(parl.id, meeting.id, pid, next).catch((e) =>
+      console.warn("attendance save failed", e),
+    );
+  };
+
+  const confirmed = participants.filter((p) => attFor(p.id).confirmed === "כן").length;
+  const notComing = participants.filter((p) => attFor(p.id).confirmed === "לא").length;
+  const waiting = participants.length - confirmed - notComing;
+
+  const sortedExpenses = useMemo(
+    () => [...expenses].sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))),
+    [expenses],
+  );
+
+  const handleAddExpense = async (data) => {
+    try {
+      const saved = await addMeetingExpense(parl.id, meeting.id, data);
+      setExpenses((prev) => [...prev, saved]);
+    } catch (e) { console.warn("addExpense failed", e); }
+    setShowAddExpense(false);
+  };
+  const handleUpdateExpense = async (id, data) => {
+    try { await updateMeetingExpense(parl.id, meeting.id, id, data); }
+    catch (e) { console.warn("updateExpense failed", e); }
+    setExpenses((prev) => prev.map((x) => (x.id === id ? { ...x, ...data } : x)));
+    setEditExpense(null);
+  };
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm("למחוק את ההוצאה?")) return;
+    try { await deleteMeetingExpense(parl.id, meeting.id, id); }
+    catch (e) { console.warn("deleteExpense failed", e); }
+    setExpenses((prev) => prev.filter((x) => x.id !== id));
+    setEditExpense(null);
+  };
+
+  return (
+    <AdminLayout
+      title={`${parl.name} — פגישה מס׳ ${meetingNumber}`}
+      subtitle={`${meeting.date || ""} ${meeting.startTime ? "• " + meeting.startTime : ""} ${meeting.location ? "• " + meeting.location : ""}`}
+    >
+      <button className="back-link" onClick={onBack}>→ חזרה לרשימת הפגישות</button>
+
+      <div className="stats-grid">
+        <StatsCard title="אישרו הגעה" value={String(confirmed)} />
+        <StatsCard title="לא יגיעו" value={String(notComing)} />
+        <StatsCard title="ממתינים לאישור" value={String(waiting)} />
+      </div>
+
+      <div className="tabs">
+        <button className={subTab === "attendance" ? "active" : ""} onClick={() => setSubTab("attendance")}>נוכחות</button>
+        <button className={subTab === "expenses" ? "active" : ""} onClick={() => setSubTab("expenses")}>הוצאות</button>
+      </div>
+
+      {subTab === "attendance" && (
+        <SectionCard title="נוכחות בפגישה">
+          <DataTable
+            columns={[
+              { key: "name", label: "שם", render: (r) => (
+                <button className="cell-link" onClick={() => setOpenName(r)}>{r.firstName} {r.lastName}</button>
+              )},
+              { key: "called", label: "ניסינו להתקשר", render: (r) => (
+                <select className="inline-select" value={attFor(r.id).called}
+                  onChange={(e) => setAttField(r.id, "called", e.target.value)}>
+                  <option>כן</option><option>לא</option>
+                </select>
+              )},
+              { key: "confirmed", label: "אישר הגעה", render: (r) => (
+                <select className="inline-select" value={attFor(r.id).confirmed}
+                  onChange={(e) => setAttField(r.id, "confirmed", e.target.value)}>
+                  <option>כן</option><option>ממתין</option><option>לא</option>
+                </select>
+              )},
+              { key: "arrived", label: "הגיע בפועל", render: (r) => (
+                <select className="inline-select" value={attFor(r.id).arrived}
+                  onChange={(e) => setAttField(r.id, "arrived", e.target.value)}>
+                  <option>כן</option><option>לא</option><option>—</option>
+                </select>
+              )},
+              { key: "notes", label: "הערות", render: (r) => {
+                const note = attFor(r.id).notes || "";
+                const has = !!note.trim();
+                return (
+                  <button
+                    className="note-icon-btn"
+                    title={has ? "צפייה / עריכת הערה" : "הוספת הערה"}
+                    aria-label="הערות"
+                    onClick={() => setNotesEditing(r)}
+                  >
+                    <span className={`note-icon ${has ? "has-note" : ""}`} aria-hidden="true">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="8" y1="13" x2="16" y2="13"/>
+                        <line x1="8" y1="17" x2="13" y2="17"/>
+                      </svg>
+                      {has && <span className="note-dot" />}
+                    </span>
+                  </button>
+                );
+              }},
+            ]}
+            data={participants}
+          />
+        </SectionCard>
+      )}
+
+      {subTab === "expenses" && (
+        <SectionCard
+          title="הוצאות הפגישה"
+          actions={<button className="btn btn-primary" onClick={() => setShowAddExpense(true)}>+ הוספת הוצאה</button>}
+        >
+          <DataTable
+            columns={[
+              { key: "n", label: "מס׳", render: (r) => r._n },
+              { key: "details", label: "פרטי ההוצאה", render: (r) => (
+                <button className="cell-link" onClick={() => setEditExpense(r)}>{r.details || "—"}</button>
+              )},
+              { key: "amount", label: "סכום", render: (r) => `${Number(r.amount || 0).toLocaleString()} ₪` },
+              { key: "date", label: "תאריך", render: (r) => r.date || "—" },
+            ]}
+            data={sortedExpenses.map((e, i) => ({ ...e, _n: i + 1 }))}
+          />
+        </SectionCard>
+      )}
+
+      {notesEditing && (
+        <AttendanceNotesModal
+          participant={notesEditing}
+          initialText={attFor(notesEditing.id).notes || ""}
+          onClose={() => setNotesEditing(null)}
+          onSave={(text) => { setAttField(notesEditing.id, "notes", text); setNotesEditing(null); }}
+        />
+      )}
+
+      {openName && (
+        <ParticipantPhonesModal
+          participant={openName}
+          mobile={phoneFor(openName)}
+          homePhone={homePhoneFor(openName)}
+          onClose={() => setOpenName(null)}
+        />
+      )}
+
+      {showAddExpense && (
+        <ExpenseFormModal
+          title="הוספת הוצאה"
+          onClose={() => setShowAddExpense(false)}
+          onSave={handleAddExpense}
+        />
+      )}
+      {editExpense && (
+        <ExpenseFormModal
+          title="עריכת הוצאה"
+          initial={editExpense}
+          onClose={() => setEditExpense(null)}
+          onSave={(data) => handleUpdateExpense(editExpense.id, data)}
+          onDelete={() => handleDeleteExpense(editExpense.id)}
+        />
+      )}
+    </AdminLayout>
+  );
+}
+
 
 /* =================== Parliament Form Modal =================== */
 const REQUIRED_LABELS = {
@@ -780,82 +1081,268 @@ function ParticipantProfileModal({ participant, onClose, onSave }) {
   );
 }
 
-/* =================== Add Participant Modal =================== */
-function AddParticipantModal({ onClose, onSave }) {
-  const [elderly, setElderly] = useState([]);
-  const [loadingElderly, setLoadingElderly] = useState(true);
-  const [f, setF] = useState({ elderlyId: "", type: PLACEMENT_OPTIONS[0] });
-  const [err, setErr] = useState("");
+/* =================== Add Participant Modal (multi-select) =================== */
+function AddParticipantModal({ elderlyList = [], excludeIds = [], onClose, onSave }) {
+  const excludeSet = new Set(excludeIds.map(String));
+  const available = elderlyList.filter(
+    (e) => (e.status || "פעיל") === "פעיל" && !excludeSet.has(String(e.id)),
+  );
+  const [selected, setSelected] = useState([]);
+  const [search, setSearch] = useState("");
+  const toggle = (id) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
-  useEffect(() => {
-    (async () => {
-      try { setElderly(await getElderly() || []); }
-      catch (e) { console.warn("Failed to load elderly:", e); }
-      finally { setLoadingElderly(false); }
-    })();
-  }, []);
+  const displayName = (e) =>
+    `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.fullName || e.name || "ללא שם";
+  const displayPhone = (e) => e.mobile || e.homePhone || e.phone || "—";
 
-  const handleSave = () => {
-    if (!f.elderlyId) { setErr("יש לבחור אזרח ותיק"); return; }
-    if (!f.type) { setErr("יש לבחור סוג שיבוץ"); return; }
-    const chosen = elderly.find((e) => String(e.id) === String(f.elderlyId));
-    if (!chosen) { setErr("האזרח שנבחר אינו קיים"); return; }
-    const fullName =
-      chosen.fullName ||
-      [chosen.firstName, chosen.lastName].filter(Boolean).join(" ") ||
-      chosen.name || "";
-    onSave({
-      elderlyId: chosen.id,
-      fullName,
-      phone: chosen.mobile || chosen.homePhone || chosen.phone || "",
-      address: chosen.address || "",
-      neigh: chosen.neighborhood || chosen.neigh || "",
-      area: chosen.area || "",
-      type: f.type,
-    });
-  };
+  const filtered = available.filter((e) => {
+    if (!search.trim()) return true;
+    const hay = `${displayName(e)} ${displayPhone(e)} ${e.neighborhood || ""} ${e.area || ""}`.toLowerCase();
+    return hay.includes(search.toLowerCase());
+  });
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>הוספת משתתפים</h2>
+          <h2>הוספת משתתפים לפרלמנט</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
-        {err && <div className="form-warning">{err}</div>}
-
-        <div className="row row-2">
+        <div className="form-section">
           <div className="field">
-            <label>שם *</label>
-            <select className="select" value={f.elderlyId} disabled={loadingElderly}
-              onChange={(e) => setF({ ...f, elderlyId: e.target.value })}>
-              <option value="">{loadingElderly ? "טוען..." : "בחר אזרח ותיק"}</option>
-              {elderly.map((e) => {
-                const name =
-                  e.fullName ||
-                  [e.firstName, e.lastName].filter(Boolean).join(" ") ||
-                  e.name || "ללא שם";
-                return <option key={e.id} value={e.id}>{name}</option>;
-              })}
-            </select>
+            <input className="input" placeholder="חיפוש לפי שם, טלפון, שכונה..." value={search}
+              onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <div className="field">
-            <label>סוג שיבוץ *</label>
-            <select className="select" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
-              {PLACEMENT_OPTIONS.map((o) => <option key={o}>{o}</option>)}
-            </select>
-          </div>
+          {available.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#666", padding: "16px" }}>
+              אין אזרחים ותיקים פעילים זמינים להוספה לפרלמנט
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#666", padding: "16px" }}>
+              לא נמצאו אזרחים תואמים לחיפוש
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>שם מלא</th>
+                    <th>טלפון</th>
+                    <th>שכונה</th>
+                    <th>אזור</th>
+                    <th>סטטוס</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((e) => (
+                    <tr key={e.id}>
+                      <td>
+                        <input type="checkbox" checked={selected.includes(e.id)}
+                          onChange={() => toggle(e.id)} />
+                      </td>
+                      <td>{displayName(e)}</td>
+                      <td>{displayPhone(e)}</td>
+                      <td>{e.neighborhood || "—"}</td>
+                      <td>{e.area || "—"}</td>
+                      <td><span className="badge badge-green">{e.status || "פעיל"}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="modal-actions">
-          <button className="btn btn-primary" onClick={handleSave}>שמירה</button>
+          <button className="btn btn-primary" disabled={selected.length === 0}
+            onClick={() => onSave(selected)}>הוספה לפרלמנט</button>
           <button className="btn" onClick={onClose}>ביטול</button>
         </div>
       </div>
     </div>
   );
 }
+
+/* =================== Participant Info Modal (participants tab) =================== */
+function ParticipantInfoModal({ participant, mobile, homePhone, onClose }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>פרטי משתתף — {participant.firstName} {participant.lastName}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="form-section">
+          <div className="detail-grid">
+            <div className="item"><label>שם מלא</label><div>{participant.firstName} {participant.lastName}</div></div>
+            <div className="item"><label>טלפון נייד</label><div>{mobile || "—"}</div></div>
+            <div className="item"><label>טלפון בית</label><div>{homePhone || "—"}</div></div>
+            <div className="item"><label>כתובת</label><div>{participant.address || "—"}</div></div>
+            <div className="item"><label>שכונה</label><div>{participant.neigh || "—"}</div></div>
+            <div className="item"><label>אזור</label><div>{participant.area || "—"}</div></div>
+            <div className="item"><label>סוג שיבוץ</label><div>{participant.type || "—"}</div></div>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>סגירה</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =================== Participant Phones Modal (attendance sub-tab) =================== */
+function ParticipantPhonesModal({ participant, mobile, homePhone, onClose }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>פרטי קשר — {participant.firstName} {participant.lastName}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="form-section">
+          <div className="detail-grid">
+            <div className="item"><label>שם מלא</label><div>{participant.firstName} {participant.lastName}</div></div>
+            <div className="item"><label>טלפון נייד</label><div>{mobile || "—"}</div></div>
+            <div className="item"><label>טלפון בית</label><div>{homePhone || "—"}</div></div>
+            <div className="item"><label>סוג שיבוץ</label><div>{participant.type || "—"}</div></div>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>סגירה</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =================== Meeting Form Modal =================== */
+function MeetingFormModal({ title, initial, onClose, onSave, onDelete }) {
+  const [f, setF] = useState(initial || { date: "", startTime: "", location: "", notes: "" });
+  const [err, setErr] = useState("");
+  const handleSave = () => {
+    if (!f.date) { setErr("יש להזין תאריך"); return; }
+    if (!f.startTime) { setErr("יש להזין שעת התחלה"); return; }
+    if (!(f.location || "").trim()) { setErr("יש להזין מיקום"); return; }
+    onSave({
+      date: f.date,
+      startTime: f.startTime,
+      location: f.location.trim(),
+      notes: (f.notes || "").trim(),
+    });
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        {err && <div className="form-warning">{err}</div>}
+        <div className="row row-2">
+          <div className="field"><label>תאריך הפגישה *</label>
+            <input type="date" className="input" value={f.date}
+              onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
+          <div className="field"><label>זמן התחלה *</label>
+            <input type="time" className="input" value={f.startTime}
+              onChange={(e) => setF({ ...f, startTime: e.target.value })} /></div>
+          <div className="field" style={{ gridColumn: "span 2" }}>
+            <label>מיקום הפגישה *</label>
+            <input className="input" value={f.location}
+              onChange={(e) => setF({ ...f, location: e.target.value })} /></div>
+        </div>
+        <div className="field">
+          <label>הערות</label>
+          <textarea className="textarea" rows={3} value={f.notes || ""}
+            onChange={(e) => setF({ ...f, notes: e.target.value })} />
+        </div>
+        <div className="modal-actions" style={{ justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary" onClick={handleSave}>שמירה</button>
+            <button className="btn" onClick={onClose}>ביטול</button>
+          </div>
+          {onDelete && (
+            <button className="btn btn-danger" onClick={onDelete}>מחיקת פגישה</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =================== Expense Form Modal =================== */
+function ExpenseFormModal({ title, initial, onClose, onSave, onDelete }) {
+  const [f, setF] = useState(initial || { details: "", amount: "", date: "" });
+  const [err, setErr] = useState("");
+  const handleSave = () => {
+    if (!(f.details || "").trim()) { setErr("יש להזין פרטי הוצאה"); return; }
+    if (f.amount === "" || isNaN(Number(f.amount))) { setErr("יש להזין סכום תקין"); return; }
+    if (!f.date) { setErr("יש להזין תאריך"); return; }
+    onSave({ details: f.details.trim(), amount: Number(f.amount), date: f.date });
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        {err && <div className="form-warning">{err}</div>}
+        <div className="field"><label>פרטי ההוצאה *</label>
+          <input className="input" value={f.details}
+            onChange={(e) => setF({ ...f, details: e.target.value })} /></div>
+        <div className="row row-2">
+          <div className="field"><label>סכום (₪) *</label>
+            <input type="number" className="input" value={f.amount}
+              onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
+          <div className="field"><label>תאריך *</label>
+            <input type="date" className="input" value={f.date}
+              onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
+        </div>
+        <div className="modal-actions" style={{ justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary" onClick={handleSave}>שמירה</button>
+            <button className="btn" onClick={onClose}>ביטול</button>
+          </div>
+          {onDelete && (
+            <button className="btn btn-danger" onClick={onDelete}>מחיקת הוצאה</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =================== Attendance Notes Modal =================== */
+function AttendanceNotesModal({ participant, initialText = "", onClose, onSave }) {
+  const [text, setText] = useState(initialText);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>הערות נוכחות — {participant.firstName} {participant.lastName}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="form-section">
+          <div className="field">
+            <label>הערה</label>
+            <textarea className="textarea" rows={5} value={text}
+              onChange={(e) => setText(e.target.value)} placeholder="הוספת הערה..." />
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-primary" onClick={() => onSave(text)}>שמירה</button>
+          <button className="btn" onClick={onClose}>ביטול</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 /* =================== Print / Report Modal =================== */
 function PrintReportModal({ parliaments, onClose, areaOptions = [] }) {
