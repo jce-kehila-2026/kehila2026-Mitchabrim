@@ -346,10 +346,10 @@ section.pub-section {
 .circle-img-md-br {
   width: 40%;
   height: 40%;
-  bottom: 0;
-  right: 18%;
+  bottom: -6%;      /* نزلناها لأسفل قليلاً لتبتعد عن المركز */
+  right: 0%;        /* سحبناها لليمين تماماً لتخرج من ظل الدائرة الكبيرة */
   border-color: #f4d7b0;
-  z-index: 3;
+  z-index: 5;       /* رفعنا قوة الطبقة لتكون فوق الدائرة الكبيرة بشكل قاطع */
 }
 
 /* Top-left small circle */
@@ -585,11 +585,10 @@ section.pub-section {
 .act2-bubble-br {
   width: 250px;
   height: 250px;
-  top: 295px;
-  left: 430px;
-  z-index: 2;
+  top: 310px;
+  left: 490px;
+  z-index: 2;   /* أعدناها للخلف لتختبئ جزئياً تحت الدائرة المركزية */
 }
-
 /* ---- Center large circle ---- */
 .act2-center {
   position: absolute;
@@ -608,7 +607,7 @@ section.pub-section {
   justify-content: center;
   text-align: center;
   z-index: 3;
-  overflow: hidden;
+  /* overflow: hidden; تم إزالة المقص من هنا لتتحرر الشارة */
   transition:
     transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.45s ease;
@@ -618,13 +617,11 @@ section.pub-section {
 .act2-center::after {
   content: "";
   position: absolute;
-  left: -10%;
-  right: -10%;
-  bottom: -14%;
-  height: 30%;
+  top: 0; left: 0; right: 0; bottom: 0; /* تغطية الدائرة بالكامل */
+  border-radius: 50%; /* أخذ نفس الشكل الدائري للأم */
   background: rgba(232, 154, 74, 0.12);
-  border-radius: 50% 50% 0 0;
-  transform: rotate(-4deg);
+  /* أداة القص الذكية: تقص كل شيء وتترك فقط موجة مائلة في الأسفل */
+  clip-path: polygon(0 75%, 100% 70%, 100% 100%, 0 100%);
   z-index: 0;
 }
 
@@ -689,8 +686,8 @@ section.pub-section {
 /* ---- Floating badge on center circle ---- */
 .act2-badge {
   position: absolute;
-  top: 18px;
-  right: 26px;
+  top: 18px;       /* إرجاع للرقم الأصلي لتجلس على الحافة العلوية */
+  right: 26px;     /* إرجاع للرقم الأصلي لتجلس على الحافة اليمنى */
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -699,14 +696,15 @@ section.pub-section {
   align-items: center;
   justify-content: center;
   box-shadow: 0 8px 18px rgba(232, 154, 74, 0.3);
-  z-index: 4;
+  z-index: 4;      /* ستبقى تطفو فوق الدائرة الكبيرة */
 }
 
-.act2-badge svg {
-  width: 22px;
-  height: 22px;
-  color: #fff;
-}
+.act2-badge {
+    width: 46px;
+    height: 46px;
+    top: 18px;     /* إرجاع للرقم الأصلي للجوال */
+    right: 24px;   /* إرجاع للرقم الأصلي للجوال */
+  }
 
 /* ---- Hover interaction ---- */
 .act2-stage:hover .act2-bubble {
@@ -798,8 +796,9 @@ section.pub-section {
   .act2-bubble-br {
     width: 275px;
     height: 275px;
-    top: 292px;
-    left: 455px;
+    top: 310px;
+    left: 520px;
+    z-index: 2;   /* تعديل الطبقة هنا أيضاً */
   }
 
   .act2-center {
@@ -863,11 +862,12 @@ section.pub-section {
     left: 110px;
   }
 
-  .act2-bubble-br {
+ .act2-bubble-br {
     width: 305px;
     height: 305px;
-    top: 305px;
-    left: 505px;
+    top: 310px;
+    left: 560px;
+    z-index: 2;   /* تعديل الطبقة هنا أيضاً */
   }
 
   .act2-center {
@@ -929,8 +929,8 @@ section.pub-section {
   .act2-badge {
     width: 46px;
     height: 46px;
-    top: 18px;
-    right: 24px;
+    top: 32px;      /* سحبناها للداخل لكي لا تُقص في الجوال */
+    right: 32px;    /* سحبناها للداخل لكي لا تُقص في الجوال */
   }
 
   .act2-badge svg {
