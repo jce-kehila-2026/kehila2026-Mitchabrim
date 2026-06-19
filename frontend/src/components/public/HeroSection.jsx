@@ -9,6 +9,81 @@ export default function HeroSection() {
 
       <div className="container">
         <div className="hero-grid">
+          {/* RIGHT: text content */}
+          <div className="hero-text">
+            <div className="hero-eyebrow-row">
+              <span className="hero-eyebrow">פרויקט קהילתי בירושלים</span>
+              <svg
+                className="hero-eyebrow-heart"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </div>
+
+            <h1>
+              מתחברים בין אזרחים ותיקים,
+              <br />
+              ותיקים ו
+              <span className="hero-accent">
+                קהילה
+                <svg className="hero-accent-underline" viewBox="0 0 160 14" preserveAspectRatio="none" aria-hidden>
+                  <path
+                    d="M2 8 Q 40 2, 80 8 T 158 6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+            </h1>
+
+            <p className="hero-lead">
+              — חיבור אזרחים בודדים לקהילה בירושלים, דרך קשר אישי, פעילות חברתית וליווי מתמשך.
+            </p>
+
+            <div className="hero-cta">
+              <a href="#join" className="hero-btn">
+                <span>אני רוצה להצטרף</span>
+                <svg
+                  className="hero-btn-arrow"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              </a>
+            </div>
+
+            {/* Stats under button — elegant mini-pills */}
+            <div className="hero-stats-pills">
+              <div className="hero-stat-pill">
+                <span className="hero-stat-pill-num">1,200+</span>
+                <span className="hero-stat-pill-label">אזרחים ותיקים</span>
+              </div>
+              <div className="hero-stat-pill">
+                <span className="hero-stat-pill-num">850+</span>
+                <span className="hero-stat-pill-label">מתנדבים ושותפים</span>
+              </div>
+              <div className="hero-stat-pill">
+                <span className="hero-stat-pill-num">ירושלים</span>
+                <span className="hero-stat-pill-label">קהילה אחת</span>
+              </div>
+            </div>
+          </div>
+
           {/* LEFT: image collage */}
           <div className="hero-collage" aria-hidden>
             {/* Large faint circle behind images */}
@@ -58,88 +133,6 @@ export default function HeroSection() {
                 alt="מתנדבת צעירה"
               />
             </div>
-          </div>
-
-          {/* RIGHT: text content */}
-          <div className="hero-text">
-            <div className="hero-eyebrow-row">
-              <span className="hero-eyebrow">פרויקט קהילתי בירושלים</span>
-              <svg
-                className="hero-eyebrow-heart"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-              </svg>
-            </div>
-
-            <h1>
-              מתחברים בין אזרחים ותיקים,
-              <br />
-              ותיקים ו
-              <span className="hero-accent">
-                קהילה
-                <svg className="hero-accent-underline" viewBox="0 0 160 14" preserveAspectRatio="none" aria-hidden>
-                  <path
-                    d="M2 8 Q 40 2, 80 8 T 158 6"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
-            </h1>
-
-            <p className="hero-lead">
-              — חיבור אזרחים בודדים לקהילה בירושלים,
-              <br />
-              דרך קשר אישי, פעילות חברתית וליווי מתמשך.
-            </p>
-
-            <div className="hero-cta">
-              <a href="#join" className="hero-btn">
-                <span>אני רוצה להצטרף</span>
-                <svg
-                  className="hero-btn-arrow"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M19 12H5M12 19l-7-7 7-7" />
-                </svg>
-              </a>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats bar */}
-        <div className="hero-stats">
-          <div className="hero-stat">
-            <span className="hero-stat-number">1,200+</span>
-            <span className="hero-stat-label">אזרחים ותיקים</span>
-            <span className="hero-stat-sublabel">מחוברים לקהילה</span>
-          </div>
-          <div className="hero-stat-divider" aria-hidden />
-          <div className="hero-stat">
-            <span className="hero-stat-number">850+</span>
-            <span className="hero-stat-label">מתנדבים ושותפים</span>
-            <span className="hero-stat-sublabel">בדרך משותפת</span>
-          </div>
-          <div className="hero-stat-divider" aria-hidden />
-          <div className="hero-stat hero-stat-wide">
-            <span className="hero-stat-number">ירושלים</span>
-            <span className="hero-stat-label">קהילה אחת,</span>
-            <span className="hero-stat-sublabel">אינסוף חיבורים</span>
           </div>
         </div>
       </div>

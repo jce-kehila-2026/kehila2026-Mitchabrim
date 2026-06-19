@@ -6,6 +6,7 @@ import QuoteSection from "@/components/public/QuoteSection.jsx";
 import TeamSection from "@/components/public/TeamSection.jsx";
 import GallerySection from "@/components/public/GallerySection.jsx";
 import JoinRequestSection from "@/components/public/JoinRequestSection.jsx";
+import PressSection from "@/components/public/PressSection.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
 import BackgroundDecorations from "@/components/public/BackgroundDecorations.jsx";
 
@@ -15,11 +16,12 @@ export default function Home() {
       <BackgroundDecorations />
       <PublicNavbar />
       <HeroSection />
-      <ActivitiesSection />
       <AboutSection />
+      <ActivitiesSection />
       <QuoteSection />
       <TeamSection />
       <GallerySection />
+      <PressSection />
       <JoinRequestSection />
       <PublicFooter />
     </div>
