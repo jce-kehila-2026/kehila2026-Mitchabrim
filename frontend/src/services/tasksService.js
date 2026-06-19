@@ -1,0 +1,126 @@
+import {
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  query,
+  where,
+  orderBy,
+} from "firebase/firestore";
+
+import { db } from "../firebase";
+
+const tasksCollection = collection(db, "volunteerTasks");
+
+export async function getAllTasks() {
+  try {
+    const q = query(tasksCollection, orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    const snap = await getDocs(tasksCollection);
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  }
+}
+
+export async function getTasksForVolunteer(volunteerId) {
+  if (!volunteerId) return [];
+  try {
+    const q = query(
+      tasksCollection,
+      where("volunteerId", "==", volunteerId),
+      orderBy("createdAt", "desc"),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    const q = query(tasksCollection, where("volunteerId", "==", volunteerId));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  }
+}
+
+export async function getTasksForAuthUid(authUid) {
+  if (!authUid) return [];
+  try {
+    const q = query(
+      tasksCollection,
+      where("volunteerAuthUid", "==", authUid),
+      orderBy("createdAt", "desc"),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    const q = query(tasksCollection, where("volunteerAuthUid", "==", authUid));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  }
+}
+
+export async function createTask(data, createdBy = null) {
+  const payload = {
+    volunteerId: data.volunteerId || null,
+    volunteerAuthUid: data.volunteerAuthUid || null,
+    volunteerName: data.volunteerName || "",
+    title: data.title || "",
+    description: data.description || "",
+    taskType: data.taskType || "other",
+    elderlyId: data.elderlyId || null,
+    elderlyName: data.elderlyName || "",
+    dueDate: data.dueDate || null,
+    status: data.status || "open",
+    priority: data.priority || "normal",
+    createdBy: createdBy || null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  const docRef = await addDoc(tasksCollection, payload);
+  return { id: docRef.id, ...payload };
+}
+
+export async function updateTask(taskId, patch) {
+  const ref = doc(db, "volunteerTasks", taskId);
+  await updateDoc(ref, { ...patch, updatedAt: serverTimestamp() });
+}
+
+export async function deleteTask(taskId) {
+  const ref = doc(db, "volunteerTasks", taskId);
+  await deleteDoc(ref);
+}
+
+export const TASK_STATUS_OPTIONS = [
+  { value: "open", label: "פתוחה" },
+  { value: "in_progress", label: "בטיפול" },
+  { value: "done", label: "בוצעה" },
+  { value: "cancelled", label: "בוטלה" },
+];
+
+export const TASK_TYPE_OPTIONS = [
+  { value: "visit", label: "ביקור בית" },
+  { value: "call", label: "שיחת טלפון" },
+  { value: "package", label: "חלוקת חבילה" },
+  { value: "event", label: "אירוע" },
+  { value: "other", label: "אחר" },
+];
+
+export const TASK_PRIORITY_OPTIONS = [
+  { value: "low", label: "נמוכה" },
+  { value: "normal", label: "רגילה" },
+  { value: "high", label: "גבוהה" },
+];
+
+export const taskStatusLabel = (s) =>
+  TASK_STATUS_OPTIONS.find((o) => o.value === s)?.label || "פתוחה";
+export const taskTypeLabel = (t) =>
+  TASK_TYPE_OPTIONS.find((o) => o.value === t)?.label || t || "—";
+export const taskStatusBadge = (s) =>
+  s === "done" ? "badge-green" : s === "in_progress" ? "badge-orange" : s === "cancelled" ? "badge-gray" : "badge-orange";
