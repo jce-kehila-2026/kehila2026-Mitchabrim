@@ -396,8 +396,153 @@ export default function Projects() {
 }
 
 /* ============================================================
+   Project assignment cell — group OR another individual volunteer.
+   Stored on the project participant doc (does NOT change the
+   resident's regular volunteer or any global data).
+============================================================ */
+
+function ProjectAssignmentCell({ row, projectGroups = [], allVolunteers = [], onChange }) {
+  const initialMode = row.assignedVolunteerId
+    ? "volunteer"
+    : row.assignedGroupId
+      ? "group"
+      : "none";
+  const [mode, setMode] = useState(initialMode);
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => { setMode(initialMode); }, [initialMode]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const handleModeChange = (m) => {
+    setMode(m);
+    if (m === "none") {
+      onChange?.({ assignedGroupId: null, assignedVolunteerId: null, assignedVolunteerName: null, assignmentType: null });
+    } else if (m === "group") {
+      onChange?.({ assignedVolunteerId: null, assignedVolunteerName: null });
+    } else if (m === "volunteer") {
+      onChange?.({ assignedGroupId: null });
+    }
+  };
+
+  const filteredVolunteers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allVolunteers.slice(0, 30);
+    return allVolunteers.filter((v) => {
+      const name = volName(v).toLowerCase();
+      const first = (v.firstName || v.first || "").toLowerCase();
+      const last = (v.lastName || v.last || "").toLowerCase();
+      const phone = volPhone(v).toLowerCase();
+      const email = volEmail(v).toLowerCase();
+      return name.includes(q) || first.includes(q) || last.includes(q) || phone.includes(q) || email.includes(q);
+    }).slice(0, 30);
+  }, [allVolunteers, search]);
+
+  const selectedVolunteerLabel = row.assignedVolunteerId
+    ? (row.assignedVolunteerName ||
+       volName(allVolunteers.find((v) => v.id === row.assignedVolunteerId) || {}) ||
+       "מתנדב")
+    : "";
+
+  return (
+    <div ref={wrapRef} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 200 }}>
+      <select
+        className="inline-select"
+        value={mode}
+        onChange={(e) => handleModeChange(e.target.value)}
+      >
+        <option value="none">ללא שיבוץ</option>
+        <option value="group">קבוצה מתוך הפרויקט</option>
+        <option value="volunteer">מתנדב אחר</option>
+      </select>
+
+      {mode === "group" && (
+        <select
+          className="inline-select"
+          value={row.assignedGroupId || ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange?.({ assignedGroupId: v || null, assignmentType: v ? "group" : null });
+          }}
+        >
+          <option value="">בחר קבוצה...</option>
+          {projectGroups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+      )}
+
+      {mode === "volunteer" && (
+        <div style={{ position: "relative" }}>
+          <input
+            className="inline-select"
+            type="text"
+            placeholder="חיפוש מתנדב..."
+            value={open ? search : selectedVolunteerLabel || search}
+            onFocus={() => { setOpen(true); setSearch(""); }}
+            onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
+            style={{ width: "100%" }}
+          />
+          {open && (
+            <div
+              style={{
+                position: "absolute", top: "100%", insetInlineStart: 0, zIndex: 20,
+                background: "#fff", border: "1px solid #ddd", borderRadius: 8,
+                width: 280, maxHeight: 220, overflowY: "auto",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.08)", marginTop: 2,
+              }}
+            >
+              {filteredVolunteers.length === 0 ? (
+                <div style={{ padding: 8, color: "#888", fontSize: 13 }}>לא נמצאו מתנדבים</div>
+              ) : filteredVolunteers.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => {
+                    onChange?.({
+                      assignedVolunteerId: v.id,
+                      assignedVolunteerName: volName(v),
+                      assignmentType: "volunteer",
+                      assignedGroupId: null,
+                    });
+                    setOpen(false);
+                    setSearch("");
+                  }}
+                  style={{
+                    display: "block", width: "100%", textAlign: "right",
+                    padding: "6px 10px", border: "none", background: "transparent",
+                    cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f0f0f0",
+                  }}
+                >
+                  <strong>{volName(v) || "—"}</strong>
+                  <span style={{ color: "#666" }}>
+                    {volPhone(v) ? ` — ${volPhone(v)}` : ""}
+                    {` — ${volStatus(v)}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    Groups list view (entry from main page button)
 ============================================================ */
+
+
 
 function GroupsListView({ onBack, allGroups = [], volunteersByGroupId = {} }) {
   const [group, setGroup] = useState(null);
@@ -551,6 +696,8 @@ function ProjectDetail({
   const [projectVolunteers, setProjectVolunteers] = useState({});
   const [showAddGroup, setShowAddGroup] = useState(false);
   const [showAddVolunteer, setShowAddVolunteer] = useState(false);
+  const [showAddElderlyToGroup, setShowAddElderlyToGroup] = useState(false);
+  const [showPrintGroup, setShowPrintGroup] = useState(false);
 
   // Load project groups + selected volunteers from Firestore.
   useEffect(() => {
@@ -570,10 +717,46 @@ function ProjectDetail({
     return () => { cancelled = true; };
   }, [project.id]);
 
+  // Flat list of all elderly participants in this project (across all neighborhoods).
+  const allParticipants = useMemo(
+    () => Object.values(elderlyByNeighborhood).flat(),
+    [elderlyByNeighborhood]
+  );
+
+  // Map: elderlyId -> regular volunteer name (from main elderly database).
+  // This is the resident's daily/routine volunteer — display only inside the project.
+  const regularVolunteerByElderlyId = useMemo(() => {
+    const map = {};
+    allElderlyResidents.forEach((e) => {
+      const name = e.volunteerName || "";
+      if (name && name.trim()) map[e.id] = name.trim();
+    });
+    return map;
+  }, [allElderlyResidents]);
+
+  // Per-group counts inside this project — derived from project participants
+  // with a matching `assignedGroupId`.
+  const elderlyCountByProjectGroup = useMemo(() => {
+    const map = {};
+    allParticipants.forEach((p) => {
+      const gid = p.assignedGroupId;
+      if (!gid) return;
+      if (!map[gid]) map[gid] = { elderly: 0, packages: 0 };
+      map[gid].elderly += 1;
+      if (p.receives === "כן") map[gid].packages += 1;
+    });
+    return map;
+  }, [allParticipants]);
+
   const projectGroups = useMemo(
     () => allGroups.filter((g) => projectGroupIds.includes(g.id))
-      .map((g) => ({ ...g, members: (projectVolunteers[g.id] || []).length })),
-    [allGroups, projectGroupIds, projectVolunteers]
+      .map((g) => ({
+        ...g,
+        members: (projectVolunteers[g.id] || []).length,
+        assignedElderly: elderlyCountByProjectGroup[g.id]?.elderly || 0,
+        assignedPackages: elderlyCountByProjectGroup[g.id]?.packages || 0,
+      })),
+    [allGroups, projectGroupIds, projectVolunteers, elderlyCountByProjectGroup]
   );
 
   const addGroupsToProject = async (ids) => {
@@ -851,6 +1034,20 @@ function ProjectDetail({
                 )},
                 { key: "phone",   label: "טלפון" },
                 { key: "address", label: "כתובת" },
+                { key: "regularVolunteer", label: "מתנדב קבוע", render: (r) => {
+                  const name = regularVolunteerByElderlyId[r.id];
+                  return name
+                    ? <span>{name}</span>
+                    : <span className="muted">אין מתנדב קבוע</span>;
+                }},
+                { key: "assignedGroupId", label: "שיבוץ בפרויקט", render: (r) => (
+                  <ProjectAssignmentCell
+                    row={r}
+                    projectGroups={projectGroups}
+                    allVolunteers={allVolunteers}
+                    onChange={(patch) => updateElderly(neighborhood.name, r.id, patch)}
+                  />
+                )},
                 { key: "receives", label: "מקבל חבילה", render: (r) => (
                   <select
                     className="inline-select"
@@ -953,7 +1150,7 @@ function ProjectDetail({
 
       {tab === "groups" && !group && (
         <SectionCard
-          title="קבוצות מתנדבים בפרויקט"
+          title="קבוצות חלוקה בפרויקט"
           actions={<button className="btn btn-primary" onClick={() => setShowAddGroup(true)}>+ הוספת קבוצה לפרויקט</button>}
         >
           <DataTable
@@ -961,9 +1158,12 @@ function ProjectDetail({
               { key: "name", label: "שם הקבוצה", render: (r) => (
                 <button className="cell-link" onClick={() => setGroup(r)}>{r.name}</button>
               )},
-              { key: "type",    label: "סוג קבוצה" },
-              { key: "members", label: "מספר מתנדבים" },
-              { key: "notes",   label: "הערות" },
+              { key: "assignedElderly", label: "מספר אזרחים ותיקים" },
+              { key: "assignedPackages", label: "כמות חבילות" },
+              { key: "contact", label: "איש קשר", render: (r) => groupContact(r) || "—" },
+              { key: "view", label: "", render: (r) => (
+                <button className="btn-link" onClick={() => setGroup(r)}>צפייה ברשימה</button>
+              )},
               { key: "remove",  label: "", render: (r) => (
                 <button className="btn-link btn-danger" onClick={() => removeGroupFromProject(r.id)}>הסר מהפרויקט</button>
               )},
@@ -974,50 +1174,173 @@ function ProjectDetail({
       )}
 
       {tab === "groups" && group && (() => {
-        const selectedIds = projectVolunteers[group.id] || [];
-        const rows = (volunteersByGroupId[group.id] || [])
-          .filter((v) => selectedIds.includes(v.id))
-          .map((v) => ({
-            id: v.id,
-            name: volName(v),
-            phone: volPhone(v),
-            email: volEmail(v),
-            status: volStatus(v),
-            notes: volNotes(v),
-          }));
+        const rows = allParticipants
+          .filter((p) => p.assignedGroupId === group.id)
+          .map((p, i) => ({ ...p, n: i + 1 }));
+        const inGroupIds = rows.map((r) => r.id);
         return (
           <>
             <button className="back-link" onClick={() => setGroup(null)}>→ חזרה לרשימת הקבוצות</button>
+            <div className="stats-grid">
+              <StatsCard icon="👥" title="מתנדבים בקבוצה" value={(projectVolunteers[group.id] || []).length} />
+              <StatsCard icon="👵" title="אזרחים ותיקים בקבוצה" value={rows.length} />
+              <StatsCard icon="🎁" title="כמות חבילות" value={rows.filter((r) => r.receives === "כן").length} />
+              <StatsCard icon="📦" title="נמסרו" value={rows.filter((r) => r.delivery === "נמסר").length} />
+            </div>
+            <SectionCard title={`מתנדבים בקבוצה — ${group.name}`}>
+              <DataTable
+                columns={[
+                  { key: "name",   label: "שם מלא" },
+                  { key: "phone",  label: "טלפון" },
+                  { key: "email",  label: "אימייל" },
+                  { key: "status", label: "סטטוס", render: (r) => <span className={`badge ${r.status === "פעיל" ? "badge-green" : "badge-gray"}`}>{r.status || "—"}</span> },
+                  { key: "notes",  label: "הערות" },
+                ]}
+                data={(projectVolunteers[group.id] || [])
+                  .map((vid) => allVolunteers.find((v) => v.id === vid))
+                  .filter(Boolean)
+                  .map((v) => ({
+                    id: v.id,
+                    name: volName(v),
+                    phone: volPhone(v),
+                    email: volEmail(v),
+                    status: volStatus(v),
+                    notes: volNotes(v),
+                  }))}
+              />
+            </SectionCard>
             <SectionCard
-              title={`מתנדבים בקבוצה: ${group.name}`}
-              actions={<button className="btn btn-primary" onClick={() => setShowAddVolunteer(true)}>+ הוספת מתנדב לפרויקט</button>}
+              title={`רשימת אזרחים ותיקים — ${group.name}`}
+              actions={
+                <>
+                  <button className="btn btn-primary" onClick={() => setShowAddElderlyToGroup(true)}>+ הוספת אזרחים ותיקים לקבוצה</button>
+                  <button className="btn" onClick={() => setShowPrintGroup(true)}>הדפסת רשימה</button>
+                </>
+              }
             >
               <DataTable
                 columns={[
-                  { key: "name",   label: "שם מתנדב" },
-                  { key: "phone",  label: "טלפון" },
-                  { key: "email",  label: "מייל" },
-                  { key: "status", label: "סטטוס בפרויקט", render: (r) => <span className="badge badge-green">{r.status}</span> },
-                  { key: "notes",  label: "הערות" },
+                  { key: "n", label: "מס׳" },
+                  { key: "fullName", label: "שם מלא", render: (r) => (
+                    <button className="cell-link" onClick={() => setElderlyProfile(r)}>{`${r.first} ${r.last}`}</button>
+                  )},
+                  { key: "phone",        label: "טלפון" },
+                  { key: "address",      label: "כתובת" },
+                  { key: "neighborhood", label: "שכונה" },
+                  { key: "notes", label: "הערות מיוחדות", render: (r) => (
+                    <button
+                      className="note-icon-btn"
+                      title={r.notes ? "צפייה / עריכת הערה" : "הוספת הערה"}
+                      aria-label="הערות"
+                      onClick={() => setNotesEditing({ neighName: r.neighborhood, elderly: r })}
+                    >
+                      <span className={`note-icon ${r.notes ? "has-note" : ""}`} aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                          <line x1="8" y1="13" x2="16" y2="13"/>
+                          <line x1="8" y1="17" x2="13" y2="17"/>
+                        </svg>
+                        {r.notes && <span className="note-dot" />}
+                      </span>
+                    </button>
+                  )},
                   { key: "remove", label: "", render: (r) => (
-                    <button className="btn-link btn-danger" onClick={() => removeVolunteerFromGroup(group.id, r.id)}>הסרת מתנדב מהפרויקט</button>
+                    <button
+                      className="btn-link btn-danger"
+                      onClick={() => {
+                        if (!confirm("להסיר את האזרח הוותיק מהקבוצה? (לא יימחק מהפרויקט ולא מהמערכת)")) return;
+                        updateElderly(r.neighborhood, r.id, { assignedGroupId: null });
+                      }}
+                    >
+                      הסר מהקבוצה
+                    </button>
                   )},
                 ]}
                 data={rows}
               />
             </SectionCard>
-            {showAddVolunteer && (
-              <SelectVolunteersModal
+            {showAddElderlyToGroup && (
+              <SelectElderlyForGroupModal
                 group={group}
-                groupVolunteers={volunteersByGroupId[group.id] || []}
-                excludeIds={selectedIds}
-                onClose={() => setShowAddVolunteer(false)}
-                onAdd={(ids) => { addVolunteersToGroup(group.id, ids); setShowAddVolunteer(false); }}
+                allElderly={allElderlyResidents}
+                projectParticipants={allParticipants}
+                excludeIds={inGroupIds}
+                onClose={() => setShowAddElderlyToGroup(false)}
+                onAdd={async (ids) => {
+                  // Split: those already in project just get their assignedGroupId updated;
+                  // those not yet in project are added as participants in this group.
+                  const inProjectIds = new Set(allParticipants.map((p) => p.id));
+                  const toUpdate = ids.filter((id) => inProjectIds.has(id));
+                  const toAdd = ids.filter((id) => !inProjectIds.has(id));
+
+                  // 1) Update existing participants — keep their neighborhood unchanged.
+                  toUpdate.forEach((id) => {
+                    const part = allParticipants.find((p) => p.id === id);
+                    if (!part) return;
+                    updateElderly(part.neighborhood, id, { assignedGroupId: group.id });
+                  });
+
+                  // 2) Add new participants for residents who aren't in this project yet.
+                  if (toAdd.length > 0) {
+                    const newOnes = allElderlyResidents
+                      .filter((m) => toAdd.includes(m.id))
+                      .map((m) => ({
+                        elderlyId: m.id,
+                        neighborhood: m.neighborhood || "ללא שכונה",
+                        first: m.firstName || m.first || "",
+                        last: m.lastName || m.last || "",
+                        phone: m.mobile || m.homePhone || m.phone || "",
+                        address: m.address || "",
+                        receives: "כן",
+                        delivery: "ממתין למסירה",
+                        notes: "",
+                        assignedGroupId: group.id,
+                      }));
+                    setElderlyByNeighborhood((prev) => {
+                      const next = { ...prev };
+                      newOnes.forEach((p) => {
+                        const list = next[p.neighborhood] || [];
+                        list.push({ ...p, id: p.elderlyId, n: list.length + 1 });
+                        next[p.neighborhood] = list;
+                      });
+                      return next;
+                    });
+                    try { await addElderlyParticipants(project.id, newOnes); }
+                    catch (err) { console.error("Failed to add elderly to group", err); }
+                  }
+                  setShowAddElderlyToGroup(false);
+                }}
+              />
+            )}
+            {showPrintGroup && (
+              <PrintModal
+                title={`הדפסת רשימה — ${group.name}`}
+                filters={[
+                  { label: "מקבל חבילה",  options: ["הכול", "כן", "לא"] },
+                  { label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
+                ]}
+                onClose={() => setShowPrintGroup(false)}
+              />
+            )}
+            {notesEditing && notesEditing.elderly && inGroupIds.includes(notesEditing.elderly.id) && (
+              <ElderlyNotesModal
+                elderly={notesEditing.elderly}
+                onClose={() => setNotesEditing(null)}
+                onSave={(text) => {
+                  updateElderly(notesEditing.neighName, notesEditing.elderly.id, { notes: text });
+                  setNotesEditing(null);
+                }}
+                onDelete={() => {
+                  updateElderly(notesEditing.neighName, notesEditing.elderly.id, { notes: "" });
+                  setNotesEditing(null);
+                }}
               />
             )}
           </>
         );
       })()}
+
 
       {tab === "partners" && (
         <SectionCard title="שותפים ואנשי קשר">
@@ -1894,6 +2217,134 @@ function SelectNeighborhoodsModal({
             onClick={() => onAdd(selected)}
           >
             הוספה לפרויקט
+          </button>
+          <button className="btn" onClick={onClose}>ביטול</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Select existing elderly residents to add to a project group.
+   - Shows all elderly residents in the system, excluding ones
+     already assigned to this group.
+   - Indicates which residents are already in the project (their
+     assignedGroupId will be updated) vs. residents that are not
+     yet in the project (they'll be added with assignedGroupId set).
+============================================================ */
+
+function SelectElderlyForGroupModal({
+  group,
+  allElderly = [],
+  projectParticipants = [],
+  excludeIds = [],
+  onClose,
+  onAdd,
+}) {
+  const inProjectIds = new Set(projectParticipants.map((p) => p.id));
+  const groupAssignmentByElderlyId = {};
+  projectParticipants.forEach((p) => {
+    if (p.assignedGroupId) groupAssignmentByElderlyId[p.id] = p.assignedGroupId;
+  });
+
+  const available = allElderly.filter((e) => !excludeIds.includes(e.id));
+  const [selected, setSelected] = useState([]);
+  const [search, setSearch] = useState("");
+  const toggle = (id) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const displayName = (e) =>
+    `${e.firstName || e.first || ""} ${e.lastName || e.last || ""}`.trim();
+  const displayPhone = (e) => e.mobile || e.homePhone || e.phone || "";
+
+  const filtered = available.filter((e) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (
+      displayName(e).toLowerCase().includes(s) ||
+      (e.neighborhood || "").toLowerCase().includes(s) ||
+      (e.address || "").toLowerCase().includes(s)
+    );
+  });
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>הוספת אזרחים ותיקים לקבוצה: {group.name}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="form-section">
+          <div className="field">
+            <input
+              className="input"
+              placeholder="חיפוש לפי שם, שכונה או כתובת..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#666", padding: "16px" }}>
+              אין אזרחים ותיקים זמינים להוספה לקבוצה זו
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>שם מלא</th>
+                    <th>טלפון</th>
+                    <th>שכונה</th>
+                    <th>כתובת</th>
+                    <th>סטטוס בפרויקט</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((e) => {
+                    const inProject = inProjectIds.has(e.id);
+                    const otherGroupId = groupAssignmentByElderlyId[e.id];
+                    const inOtherGroup = otherGroupId && otherGroupId !== group.id;
+                    return (
+                      <tr key={e.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(e.id)}
+                            onChange={() => toggle(e.id)}
+                          />
+                        </td>
+                        <td>{displayName(e)}</td>
+                        <td>{displayPhone(e)}</td>
+                        <td>{e.neighborhood || "—"}</td>
+                        <td>{e.address || "—"}</td>
+                        <td>
+                          {inOtherGroup ? (
+                            <span className="badge badge-orange">משובץ בקבוצה אחרת</span>
+                          ) : inProject ? (
+                            <span className="badge badge-gray">בפרויקט — ללא שיבוץ</span>
+                          ) : (
+                            <span className="badge badge-green">אינו בפרויקט — יתווסף</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-actions">
+          <button
+            className="btn btn-primary"
+            disabled={selected.length === 0}
+            onClick={() => onAdd(selected)}
+          >
+            הוספה לקבוצה
           </button>
           <button className="btn" onClick={onClose}>ביטול</button>
         </div>

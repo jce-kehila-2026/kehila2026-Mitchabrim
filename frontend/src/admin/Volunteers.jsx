@@ -22,6 +22,7 @@ import {
   clearGroupFromVolunteers,
 } from "../services/volunteersService";
 import { getReportsForVolunteer } from "../services/reportsService";
+import { getTasksForVolunteer, taskStatusLabel, taskTypeLabel, taskStatusBadge } from "../services/tasksService";
 
 import useAreasAndNeighborhoods from "../hooks/useAreasAndNeighborhoods";
 
@@ -571,6 +572,8 @@ function VolunteerProfileModal({ volunteer, groups = [], onClose, onSave, onDele
   const [errors, setErrors] = useState({});
   const [reports, setReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
+  const [tasks, setTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
   const {
     areaNames,
     getNeighborhoods,
@@ -584,12 +587,22 @@ function VolunteerProfileModal({ volunteer, groups = [], onClose, onSave, onDele
     async function load() {
       try {
         setReportsLoading(true);
-        const list = await getReportsForVolunteer(volunteer.id);
-        if (!cancelled) setReports(list);
+        setTasksLoading(true);
+        const [r, t] = await Promise.all([
+          getReportsForVolunteer(volunteer.id),
+          getTasksForVolunteer(volunteer.id),
+        ]);
+        if (!cancelled) {
+          setReports(r);
+          setTasks(t);
+        }
       } catch (err) {
-        console.error("getReportsForVolunteer error:", err);
+        console.error("load volunteer data error:", err);
       } finally {
-        if (!cancelled) setReportsLoading(false);
+        if (!cancelled) {
+          setReportsLoading(false);
+          setTasksLoading(false);
+        }
       }
     }
     load();
@@ -952,6 +965,47 @@ function VolunteerProfileModal({ volunteer, groups = [], onClose, onSave, onDele
             </div>
           </div>
         )}
+
+        {!editing && (
+          <div className="form-section">
+            <h4>משימות המתנדב</h4>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>כותרת</th>
+                    <th>סוג</th>
+                    <th>אזרח ותיק</th>
+                    <th>תאריך יעד</th>
+                    <th>סטטוס</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasksLoading ? (
+                    <tr><td colSpan={5} style={{ textAlign: "center", padding: 20 }}>טוען משימות...</td></tr>
+                  ) : tasks.length === 0 ? (
+                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--color-text-muted)", padding: 20 }}>אין משימות להצגה</td></tr>
+                  ) : (
+                    tasks.map((t) => {
+                      const d = t.dueDate;
+                      const dateStr = !d ? "—" : typeof d === "string" ? d : d?.seconds ? new Date(d.seconds * 1000).toLocaleDateString("he-IL") : new Date(d).toLocaleDateString("he-IL");
+                      return (
+                        <tr key={t.id}>
+                          <td>{t.title || "—"}</td>
+                          <td>{taskTypeLabel(t.taskType)}</td>
+                          <td>{t.elderlyName || "—"}</td>
+                          <td>{dateStr}</td>
+                          <td><span className={`badge ${taskStatusBadge(t.status)}`}>{taskStatusLabel(t.status)}</span></td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
 
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>
