@@ -89,6 +89,7 @@ export default function VolunteerReportForm() {
       volunteerId: volunteer.id,
       volunteerAuthUid: user?.uid || null,
       volunteerName: volunteerFullName(volunteer),
+      volunteerEmail: user?.email || null,
       elderlyId: selectedElderly.id,
       elderlyName: elderlyFullName(selectedElderly),
       reportDate: form.date,
