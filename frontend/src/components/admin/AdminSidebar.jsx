@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import logo from "@/assets/logo.jpeg";
+import logo from "@/assets/logo.png";
 
 const LINKS = [
   { to: "/admin", label: "לוח בקרה", icon: "📊", end: true },
