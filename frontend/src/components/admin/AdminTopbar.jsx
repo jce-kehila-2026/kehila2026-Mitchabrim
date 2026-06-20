@@ -145,6 +145,9 @@ export default function AdminTopbar() {
     if (n.type === "profile_update_request" && n.requestId) {
       setNotifOpen(false);
       navigate(`/admin/profile-update-requests?id=${n.requestId}`);
+    } else if (n.type === "join_request") {
+      setNotifOpen(false);
+      navigate("/admin");
     }
   };
 
