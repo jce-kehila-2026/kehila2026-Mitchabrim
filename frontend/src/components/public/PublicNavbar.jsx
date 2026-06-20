@@ -11,6 +11,7 @@ export default function PublicNavbar() {
         <nav className="pub-nav-links">
           <a href="#about">אודות</a>
           <a href="#activities">העשייה שלנו</a>
+          <a href="#partners">שותפים</a>
           <a href="#team">הצוות</a>
           <a href="#join">הצטרפות</a>
         </nav>

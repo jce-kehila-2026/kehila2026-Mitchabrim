@@ -1,95 +1,59 @@
 import React from "react";
+import useSiteContent from "@/hooks/useSiteContent";
 
 export default function HeroSection() {
+  const { content } = useSiteContent();
+  const h = content.hero;
   return (
     <section className="hero">
-      {/* Decorative background shapes */}
       <div className="hero-bg-shape hero-bg-shape-1" aria-hidden />
       <div className="hero-bg-shape hero-bg-shape-2" aria-hidden />
 
       <div className="container">
         <div className="hero-grid">
-          {/* RIGHT: text content */}
           <div className="hero-text">
             <div className="hero-eyebrow-row">
-              <span className="hero-eyebrow">פרויקט קהילתי בירושלים</span>
-              <svg
-                className="hero-eyebrow-heart"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
+              <span className="hero-eyebrow">{h.eyebrow}</span>
+              <svg className="hero-eyebrow-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
               </svg>
             </div>
 
             <h1>
-              מתחברים בין אזרחים ותיקים,
+              {h.titleLine1}
               <br />
-              ותיקים ו
+              {h.titleLine2}
               <span className="hero-accent">
-                קהילה
+                {h.titleAccent}
                 <svg className="hero-accent-underline" viewBox="0 0 160 14" preserveAspectRatio="none" aria-hidden>
-                  <path
-                    d="M2 8 Q 40 2, 80 8 T 158 6"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                  />
+                  <path d="M2 8 Q 40 2, 80 8 T 158 6" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
                 </svg>
               </span>
             </h1>
 
-            <p className="hero-lead">
-              — חיבור אזרחים בודדים לקהילה בירושלים, דרך קשר אישי, פעילות חברתית וליווי מתמשך.
-            </p>
+            <p className="hero-lead">{h.lead}</p>
 
             <div className="hero-cta">
               <a href="#join" className="hero-btn">
-                <span>אני רוצה להצטרף</span>
-                <svg
-                  className="hero-btn-arrow"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
+                <span>{h.ctaText}</span>
+                <svg className="hero-btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M19 12H5M12 19l-7-7 7-7" />
                 </svg>
               </a>
             </div>
 
-            {/* Stats under button — elegant mini-pills */}
             <div className="hero-stats-pills">
-              <div className="hero-stat-pill">
-                <span className="hero-stat-pill-num">1,200+</span>
-                <span className="hero-stat-pill-label">אזרחים ותיקים</span>
-              </div>
-              <div className="hero-stat-pill">
-                <span className="hero-stat-pill-num">850+</span>
-                <span className="hero-stat-pill-label">מתנדבים ושותפים</span>
-              </div>
-              <div className="hero-stat-pill">
-                <span className="hero-stat-pill-num">ירושלים</span>
-                <span className="hero-stat-pill-label">קהילה אחת</span>
-              </div>
+              {(h.stats || []).map((s, i) => (
+                <div className="hero-stat-pill" key={i}>
+                  <span className="hero-stat-pill-num">{s.num}</span>
+                  <span className="hero-stat-pill-label">{s.label}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* LEFT: image collage */}
           <div className="hero-collage" aria-hidden>
-            {/* Large faint circle behind images */}
             <div className="hero-collage-ring" />
-
-            {/* Decorative dots */}
             <svg className="hero-dot-cluster hero-dot-cluster-1" viewBox="0 0 120 80" fill="none" aria-hidden>
               <circle cx="10" cy="12" r="3" fill="#d9a86c" opacity="0.45" />
               <circle cx="28" cy="6" r="2.2" fill="#d9a86c" opacity="0.35" />
@@ -101,8 +65,6 @@ export default function HeroSection() {
               <circle cx="92" cy="24" r="2.2" fill="#d9a86c" opacity="0.35" />
               <circle cx="78" cy="30" r="1.8" fill="#d9a86c" opacity="0.3" />
             </svg>
-
-            {/* Leaf decoration on far left */}
             <svg className="hero-leaf" viewBox="0 0 60 140" fill="none" aria-hidden>
               <path d="M30 130 Q 28 75 10 35" stroke="#c9a35a" strokeWidth="1.3" opacity="0.45" fill="none" />
               <path d="M22 95 Q 10 82 6 68" stroke="#c9a35a" strokeWidth="1.3" opacity="0.4" fill="none" />
@@ -110,28 +72,14 @@ export default function HeroSection() {
               <path d="M24 110 Q 14 100 12 88" stroke="#c9a35a" strokeWidth="1.3" opacity="0.35" fill="none" />
             </svg>
 
-            {/* Main large circle — woman */}
             <div className="circle-img circle-img-lg">
-              <img
-                src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=900&q=80"
-                alt="מתנדבת מחייכת"
-              />
+              {h.imageMain && <img src={h.imageMain} alt="" />}
             </div>
-
-            {/* Top-left small circle — cooking / community */}
             <div className="circle-img circle-img-sm circle-img-sm-tl">
-              <img
-                src="https://images.unsplash.com/photo-1521146764736-56c929d59c83?auto=format&fit=crop&w=600&q=80"
-                alt="פעילות קהילתית"
-              />
+              {h.imageTopLeft && <img src={h.imageTopLeft} alt="" />}
             </div>
-
-            {/* Bottom small circle — young woman */}
             <div className="circle-img circle-img-md circle-img-md-br">
-              <img
-                src="https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=500&q=80"
-                alt="מתנדבת צעירה"
-              />
+              {h.imageBottom && <img src={h.imageBottom} alt="" />}
             </div>
           </div>
         </div>

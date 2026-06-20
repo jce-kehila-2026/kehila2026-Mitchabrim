@@ -1,39 +1,36 @@
+import useSiteContent from "@/hooks/useSiteContent";
+
 export default function AboutSection() {
+  const { content } = useSiteContent();
+  const a = content.about;
   return (
     <section id="about" className="pub-section about-section">
       <div className="container about-grid-clean">
         <div className="about-visual">
           <div className="about-main-img">
-            <img
-              src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=1100&q=80"
-              alt="הקהילה של מתחברים"
-            />
+            {a.image && <img src={a.image} alt={a.headlineLine1 || "אודות"} />}
           </div>
           <div className="about-img-badge">
-            <span className="badge-num">+150</span>
-            <span className="badge-label">מתנדבים פעילים</span>
+            <span className="badge-num">{a.badgeNum}</span>
+            <span className="badge-label">{a.badgeLabel}</span>
           </div>
         </div>
 
         <div className="about-content">
-          <span className="section-eyebrow">הכירו את מתחברים</span>
+          <span className="section-eyebrow">{a.eyebrow}</span>
           <h2 className="about-headline">
-            אנחנו מאמינים שאף אזרח ותיק
+            {a.headlineLine1}
             <br />
-            לא צריך להרגיש <span className="hero-accent">לבד</span>
+            {a.headlineLine2}<span className="hero-accent">{a.headlineAccent}</span>
           </h2>
           <div className="about-body">
-            <p>
-              מתחברים נועד ליצור קשרים משמעותיים בין אזרחים ותיקים, מתנדבים
-              והקהילה. דרך ביקורים, שיחות, פעילויות ופרלמנטים קהילתיים,
-              אנחנו מחזקים תחושת שייכות, ביטחון וחום אנושי.
-            </p>
-            <p>
-              כל חיבור הוא הזדמנות לשנות יום שלם – ולבנות יחד קהילה ירושלמית
-              חזקה, חמה ותומכת.
-            </p>
+            {(a.body || "").split(/\n\n+/).map((p, i) => (
+              <p key={i}>{p.split("\n").map((line, j, arr) => (
+                <span key={j}>{line}{j < arr.length - 1 && <br />}</span>
+              ))}</p>
+            ))}
           </div>
-          <a href="#join" className="btn btn-primary btn-lg">הצטרפו אלינו</a>
+          <a href="#join" className="btn btn-primary btn-lg">{a.ctaText}</a>
         </div>
       </div>
     </section>
