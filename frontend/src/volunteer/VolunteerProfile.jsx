@@ -1,125 +1,233 @@
 import { useEffect, useState } from "react";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "@/context/AuthContext";
+import {
+  addDoc,
+  collection,
+  serverTimestamp,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+} from "firebase/firestore";
 import { db } from "@/firebase";
-import { User, Phone, MapPin, Mail, MessageSquare, Save, UserCircle2 } from "lucide-react";
+import {
+  User, Phone, Mail, MapPin, IdCard, Home, Users, Activity, Pencil, X, Send,
+} from "lucide-react";
 
 export default function VolunteerProfile() {
   const { volunteer, loading, error } = useCurrentVolunteer();
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [form, setForm] = useState({ phone: "", address: "", email: "", notes: "" });
+  const { user } = useAuth();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [requests, setRequests] = useState([]);
 
   useEffect(() => {
-    if (volunteer) {
-      setForm({
-        phone: volunteer.phone || "",
-        address: volunteer.address || "",
-        email: volunteer.email || "",
-        notes: volunteer.notes || "",
-      });
-    }
-  }, [volunteer]);
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, "profileUpdateRequests"),
+      where("volunteerAuthUid", "==", user.uid),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => setRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (err) => console.warn("requests listen:", err.message)
+    );
+    return () => unsub();
+  }, [user?.uid]);
 
   const fullName =
     volunteer?.name ||
     [volunteer?.firstName, volunteer?.lastName].filter(Boolean).join(" ") ||
     "";
 
-  const set = (k) => (e) => {
-    setForm({ ...form, [k]: e.target.value });
-    setSaved(false);
-  };
+  const fields = volunteer
+    ? [
+        { icon: <User size={14} />, label: "שם פרטי", value: volunteer.firstName || fullName.split(" ")[0] || "—" },
+        { icon: <User size={14} />, label: "שם משפחה", value: volunteer.lastName || fullName.split(" ").slice(1).join(" ") || "—" },
+        { icon: <IdCard size={14} />, label: "ת.ז", value: volunteer.idNumber || "—" },
+        { icon: <Phone size={14} />, label: "טלפון", value: volunteer.phone || "—" },
+        { icon: <Mail size={14} />, label: "אימייל", value: volunteer.email || "—" },
+        { icon: <Home size={14} />, label: "כתובת", value: volunteer.address || "—" },
+        { icon: <MapPin size={14} />, label: "אזור", value: volunteer.area || "—" },
+        { icon: <MapPin size={14} />, label: "שכונה", value: volunteer.neighborhood || "—" },
+        { icon: <Users size={14} />, label: "קבוצה", value: volunteer.group || "ללא קבוצה" },
+        { icon: <Activity size={14} />, label: "סטטוס", value: volunteer.status || "פעיל" },
+      ]
+    : [];
 
-  const handleSubmit = async (e) => {
+  return (
+    <VolunteerLayout title="הפרטים שלי" subtitle="צפייה בלבד — לעדכון פרטים יש לשלוח בקשה למנהל">
+      <div className="vol-profile-readonly">
+        {loading && <p>טוען פרטים...</p>}
+        {!loading && error && <div className="vol-alert-error">{error}</div>}
+        {!loading && !error && volunteer && (
+          <>
+            <div className="vol-profile-readonly-grid">
+              {fields.map((f) => (
+                <div key={f.label} className="vol-readonly-field">
+                  <div className="vol-readonly-label">
+                    <span className="vol-readonly-icon">{f.icon}</span>
+                    {f.label}
+                  </div>
+                  <div className="vol-readonly-value">{f.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="vol-profile-action">
+              <button className="vol-btn vol-btn-primary" onClick={() => setModalOpen(true)}>
+                <Pencil size={16} />
+                בקשה לעדכון פרטים
+              </button>
+              <span className="vol-profile-note">
+                לא ניתן לערוך פרטים ישירות. כל בקשת עדכון נשלחת לאישור המנהל.
+              </span>
+            </div>
+
+            {requests.length > 0 && (
+              <div className="vol-requests-history">
+                <h3>היסטוריית בקשות</h3>
+                <div className="vol-requests-list">
+                  {requests.map((r) => (
+                    <RequestRow key={r.id} request={r} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {modalOpen && volunteer && (
+        <RequestModal
+          volunteer={volunteer}
+          user={user}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
+    </VolunteerLayout>
+  );
+}
+
+function RequestRow({ request }) {
+  const statusMap = {
+    pending: { label: "ממתין לטיפול", cls: "pending" },
+    approved: { label: "אושר", cls: "approved" },
+    rejected: { label: "נדחה", cls: "rejected" },
+  };
+  const s = statusMap[request.status] || statusMap.pending;
+  const d = request.createdAt?.toDate ? request.createdAt.toDate() : null;
+  return (
+    <div className="vol-request-row">
+      <div className="vol-request-row-head">
+        <span className={`vol-status-badge ${s.cls}`}>{s.label}</span>
+        {d && <span className="vol-request-date">{d.toLocaleDateString("he-IL")}</span>}
+      </div>
+      <div className="vol-request-message">{request.message}</div>
+      {request.adminResponse && (
+        <div className="vol-request-response">
+          <strong>תגובת המנהל:</strong> {request.adminResponse}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestModal({ volunteer, user, onClose }) {
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState("");
+  const [sent, setSent] = useState(false);
+
+  const volunteerName =
+    volunteer.name ||
+    [volunteer.firstName, volunteer.lastName].filter(Boolean).join(" ") ||
+    user?.displayName ||
+    user?.email ||
+    "מתנדב";
+
+  const submit = async (e) => {
     e.preventDefault();
-    if (!volunteer?.id) return;
+    const trimmed = message.trim();
+    if (!trimmed) { setErr("יש לכתוב הודעה"); return; }
+    if (trimmed.length > 1000) { setErr("ההודעה ארוכה מדי (מקסימום 1000 תווים)"); return; }
+    if (!user?.uid) { setErr("יש להתחבר מחדש"); return; }
     try {
-      setSaving(true);
-      setSaveError("");
-      const ref = doc(db, "volunteers", volunteer.id);
-      await updateDoc(ref, {
-        phone: form.phone,
-        address: form.address,
-        email: form.email,
-        updatedAt: serverTimestamp(),
+      setSending(true);
+      setErr("");
+      const reqRef = await addDoc(collection(db, "profileUpdateRequests"), {
+        volunteerId: volunteer.id,
+        volunteerAuthUid: user.uid,
+        volunteerName,
+        message: trimmed,
+        status: "pending",
+        createdAt: serverTimestamp(),
+        reviewedAt: null,
+        reviewedBy: null,
+        adminResponse: "",
       });
-      setSaved(true);
-    } catch (err) {
-      console.error("update volunteer error:", err);
-      setSaveError("שגיאה בשמירת הפרטים. נסי שוב.");
+      await addDoc(collection(db, "notifications"), {
+        audience: "admin",
+        type: "profile_update_request",
+        title: "בקשה חדשה לעדכון פרטי מתנדב",
+        message: `${volunteerName} שלח/ה בקשה לעדכון פרטים`,
+        requestId: reqRef.id,
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+      setSent(true);
+      setTimeout(onClose, 1400);
+    } catch (e2) {
+      console.error("submit request error:", e2);
+      setErr("שגיאה בשליחת הבקשה. נסה שוב.");
     } finally {
-      setSaving(false);
+      setSending(false);
     }
   };
 
-  const L = ({ icon: Icon, children }) => (
-    <label><Icon size={15} />{children}</label>
-  );
-
   return (
-    <VolunteerLayout title="" subtitle="">
-      <div className="vol-profile-container">
-        {loading && <div className="vol-card vol-card-pad"><p>טוען פרטים...</p></div>}
-        {!loading && error && <div className="vol-alert-error">{error}</div>}
-        {!loading && !error && volunteer && (
-          <div className="vol-profile-card">
-            <div className="vol-profile-head">
-              <div className="text">
-                <h2>הפרופיל שלי</h2>
-                <p>עדכון פרטי קשר בסיסיים</p>
-              </div>
-              <div className="avatar"><UserCircle2 size={36} /></div>
-            </div>
-
-            <form onSubmit={handleSubmit}>
-              <div className="vol-profile-body">
-                {saved && <div className="vol-alert-success">הפרטים נשמרו בהצלחה</div>}
-                {saveError && <div className="vol-alert-error">{saveError}</div>}
-
-                <div className="vol-form-grid">
-                  <div className="vol-field">
-                    <L icon={Phone}>טלפון</L>
-                    <input className="input" value={form.phone} onChange={set("phone")} />
-                  </div>
-                  <div className="vol-field">
-                    <L icon={User}>שם מלא</L>
-                    <input className="input" value={fullName} readOnly disabled />
-                  </div>
-                  <div className="vol-field">
-                    <L icon={MapPin}>כתובת</L>
-                    <input className="input" value={form.address} onChange={set("address")} />
-                  </div>
-                  <div className="vol-field">
-                    <L icon={Mail}>אימייל</L>
-                    <input className="input" type="email" value={form.email} onChange={set("email")} />
-                  </div>
-                  <div className="vol-field col-span-full">
-                    <L icon={MessageSquare}>הערות</L>
-                    <textarea className="textarea" rows={3} value={form.notes} readOnly disabled />
-                  </div>
-                </div>
-              </div>
-
-              <div className="vol-profile-foot">
-                <button type="button" className="vol-btn vol-btn-outline" onClick={() => volunteer && setForm({
-                  phone: volunteer.phone || "",
-                  address: volunteer.address || "",
-                  email: volunteer.email || "",
-                  notes: volunteer.notes || "",
-                })}>
-                  ביטול
-                </button>
-                <button type="submit" className="vol-btn vol-btn-primary" disabled={saving}>
-                  <Save size={16} /> {saving ? "שומר..." : "שמירת שינויים"}
-                </button>
-              </div>
-            </form>
+    <div className="vol-modal-overlay" onClick={onClose}>
+      <div className="vol-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="vol-modal-header">
+          <div>
+            <h3>בקשה לעדכון פרטים</h3>
+            <p>אנא מלא את הפרטים החדשים שתרצה/י לעדכן. הבקשה תישלח למנהל לאישור.</p>
           </div>
+          <button type="button" className="vol-modal-close" onClick={onClose} aria-label="סגירה">
+            <X size={18} />
+          </button>
+        </div>
+        {sent ? (
+          <div className="vol-alert-success">הבקשה נשלחה בהצלחה</div>
+        ) : (
+          <form onSubmit={submit} className="vol-modal-body">
+            <div className="vol-field">
+              <label>הודעה למנהל</label>
+              <textarea
+                className="textarea vol-modal-textarea"
+                rows={5}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                maxLength={1000}
+                placeholder="לדוגמה: ברצוני לעדכן את מספר הטלפון שלי ל..."
+              />
+              <div className="vol-modal-counter">{message.length}/1000</div>
+            </div>
+            {err && <div className="vol-alert-error" style={{ marginTop: 8 }}>{err}</div>}
+            <div className="vol-modal-footer">
+              <button type="button" className="vol-btn vol-btn-outline" onClick={onClose} disabled={sending}>
+                ביטול
+              </button>
+              <button type="submit" className="vol-btn vol-btn-primary" disabled={sending}>
+                <Send size={16} />
+                {sending ? "שולח..." : "שליחה"}
+              </button>
+            </div>
+          </form>
         )}
       </div>
-    </VolunteerLayout>
+    </div>
   );
 }

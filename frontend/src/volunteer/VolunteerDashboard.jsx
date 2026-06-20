@@ -7,6 +7,7 @@ import { getReportsForVolunteer, getReportsForAuthUid } from "@/services/reports
 import { getTasksForVolunteer, getTasksForAuthUid } from "@/services/tasksService";
 import {
   Handshake, Send, CheckCircle2, FilePlus, ClipboardList, ListChecks, UserCog,
+  User, MapPin, UserCheck, ListTodo,
 } from "lucide-react";
 
 export default function VolunteerDashboard() {
@@ -57,15 +58,47 @@ export default function VolunteerDashboard() {
     { to: "/volunteer/report/new", icon: <FilePlus size={26} />, title: "הגשת דוח מפגש", subtitle: "דווח/י על מפגש התנדבות שבוצע" },
     { to: "/volunteer/reports", icon: <ClipboardList size={26} />, title: "הדוחות שלי", subtitle: "צפייה בדוחות שכבר נשלחו" },
     { to: "/volunteer/tasks", icon: <ListChecks size={26} />, title: "המשימות שלי", subtitle: "מפגשים ומשימות שהוקצו לך" },
-    { to: "/volunteer/profile", icon: <UserCog size={26} />, title: "עדכון פרטים אישיים", subtitle: "עדכון פרטי קשר בסיסיים" },
+    { to: "/volunteer/profile", icon: <UserCog size={26} />, title: "הפרטים שלי", subtitle: "צפייה ובקשה לעדכון פרטים" },
+  ];
+
+  const infoItems = [
+    { icon: <User size={16} />, label: "שם", value: fullName || "—" },
+    { icon: <MapPin size={16} />, label: "אזור פעילות", value: volunteer?.area || volunteer?.neighborhood || "—" },
+    { icon: <UserCheck size={16} />, label: "רכזת אחראית", value: volunteer?.coordinator || volunteer?.group || "—" },
+    { icon: <ListTodo size={16} />, label: "משימות פתוחות", value: String(openTasks) },
   ];
 
   return (
     <VolunteerLayout
-      title={fullName ? `שלום ${fullName}, ברוכ/ה הבא/ה` : "שלום, ברוכ/ה הבא/ה"}
+      title={fullName ? `שלום ${fullName}` : "שלום, ברוכ/ה הבא/ה"}
       subtitle="כאן תוכל/י לדווח על מפגשים, לראות משימות ולעקוב אחרי הדוחות שלך"
     >
       {error && <div className="vol-alert-error">{error}</div>}
+
+      <div className="vol-info-banner">
+        {infoItems.map((it, i) => (
+          <div key={i} className="vol-info-item">
+            <span className="vol-info-icon">{it.icon}</span>
+            <div>
+              <div className="vol-info-label">{it.label}</div>
+              <div className="vol-info-value">{it.value}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <h3 className="vol-section-title">פעולות מהירות</h3>
+      <div className="vol-nav-cards" style={{ marginBottom: 28 }}>
+        {navCards.map((c) => (
+          <Link to={c.to} key={c.to} className="vol-nav-card">
+            <div className="icon">{c.icon}</div>
+            <div className="text">
+              <h4>{c.title}</h4>
+              <p>{c.subtitle}</p>
+            </div>
+          </Link>
+        ))}
+      </div>
 
       <h3 className="vol-section-title">סיכום</h3>
       <div className="vol-summary-grid">
@@ -77,19 +110,6 @@ export default function VolunteerDashboard() {
             </div>
             <div className="icon-bubble">{s.icon}</div>
           </div>
-        ))}
-      </div>
-
-      <h3 className="vol-section-title">פעולות מהירות</h3>
-      <div className="vol-nav-cards">
-        {navCards.map((c) => (
-          <Link to={c.to} key={c.to} className="vol-nav-card">
-            <div className="icon">{c.icon}</div>
-            <div className="text">
-              <h4>{c.title}</h4>
-              <p>{c.subtitle}</p>
-            </div>
-          </Link>
         ))}
       </div>
     </VolunteerLayout>
