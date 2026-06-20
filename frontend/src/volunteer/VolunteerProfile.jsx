@@ -3,6 +3,7 @@ import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/firebase";
+import { User, Phone, MapPin, Mail, MessageSquare, Save, UserCircle2 } from "lucide-react";
 
 export default function VolunteerProfile() {
   const { volunteer, loading, error } = useCurrentVolunteer();
@@ -54,43 +55,69 @@ export default function VolunteerProfile() {
     }
   };
 
+  const L = ({ icon: Icon, children }) => (
+    <label><Icon size={15} />{children}</label>
+  );
+
   return (
-    <VolunteerLayout title="הפרטים שלי" subtitle="עדכון פרטי קשר בסיסיים">
-      <div className="card">
-        {loading && <p>טוען פרטים...</p>}
-        {!loading && error && <div style={{ color: "#dc2626", marginBottom: 12 }}>{error}</div>}
+    <VolunteerLayout title="" subtitle="">
+      <div className="vol-profile-container">
+        {loading && <div className="vol-card vol-card-pad"><p>טוען פרטים...</p></div>}
+        {!loading && error && <div className="vol-alert-error">{error}</div>}
         {!loading && !error && volunteer && (
-          <>
-            {saved && <div className="join-success" style={{ marginBottom: 16 }}>הפרטים נשמרו בהצלחה</div>}
-            {saveError && <div style={{ color: "#dc2626", marginBottom: 12 }}>{saveError}</div>}
+          <div className="vol-profile-card">
+            <div className="vol-profile-head">
+              <div className="text">
+                <h2>הפרופיל שלי</h2>
+                <p>עדכון פרטי קשר בסיסיים</p>
+              </div>
+              <div className="avatar"><UserCircle2 size={36} /></div>
+            </div>
+
             <form onSubmit={handleSubmit}>
-              <div className="row row-2">
-                <div className="field">
-                  <label>שם מלא</label>
-                  <input className="input" value={fullName} readOnly disabled />
-                </div>
-                <div className="field">
-                  <label>טלפון</label>
-                  <input className="input" value={form.phone} onChange={set("phone")} />
-                </div>
-                <div className="field">
-                  <label>כתובת</label>
-                  <input className="input" value={form.address} onChange={set("address")} />
-                </div>
-                <div className="field">
-                  <label>אימייל</label>
-                  <input className="input" type="email" value={form.email} onChange={set("email")} />
+              <div className="vol-profile-body">
+                {saved && <div className="vol-alert-success">הפרטים נשמרו בהצלחה</div>}
+                {saveError && <div className="vol-alert-error">{saveError}</div>}
+
+                <div className="vol-form-grid">
+                  <div className="vol-field">
+                    <L icon={Phone}>טלפון</L>
+                    <input className="input" value={form.phone} onChange={set("phone")} />
+                  </div>
+                  <div className="vol-field">
+                    <L icon={User}>שם מלא</L>
+                    <input className="input" value={fullName} readOnly disabled />
+                  </div>
+                  <div className="vol-field">
+                    <L icon={MapPin}>כתובת</L>
+                    <input className="input" value={form.address} onChange={set("address")} />
+                  </div>
+                  <div className="vol-field">
+                    <L icon={Mail}>אימייל</L>
+                    <input className="input" type="email" value={form.email} onChange={set("email")} />
+                  </div>
+                  <div className="vol-field col-span-full">
+                    <L icon={MessageSquare}>הערות</L>
+                    <textarea className="textarea" rows={3} value={form.notes} readOnly disabled />
+                  </div>
                 </div>
               </div>
-              <div className="field">
-                <label>הערות</label>
-                <textarea className="textarea" rows={3} value={form.notes} readOnly disabled />
+
+              <div className="vol-profile-foot">
+                <button type="button" className="vol-btn vol-btn-outline" onClick={() => volunteer && setForm({
+                  phone: volunteer.phone || "",
+                  address: volunteer.address || "",
+                  email: volunteer.email || "",
+                  notes: volunteer.notes || "",
+                })}>
+                  ביטול
+                </button>
+                <button type="submit" className="vol-btn vol-btn-primary" disabled={saving}>
+                  <Save size={16} /> {saving ? "שומר..." : "שמירת שינויים"}
+                </button>
               </div>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? "שומר..." : "שמירת שינויים"}
-              </button>
             </form>
-          </>
+          </div>
         )}
       </div>
     </VolunteerLayout>

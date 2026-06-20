@@ -1,12 +1,13 @@
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
-import VolunteerInfoBar from "@/components/volunteer/VolunteerInfoBar.jsx";
-import VolunteerNavCard from "@/components/volunteer/VolunteerNavCard.jsx";
-import StatsCard from "@/components/admin/StatsCard.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { getReportsForVolunteer, getReportsForAuthUid } from "@/services/reportsService";
 import { getTasksForVolunteer, getTasksForAuthUid } from "@/services/tasksService";
+import {
+  Handshake, Send, CheckCircle2, FilePlus, ClipboardList, ListChecks, UserCog,
+} from "lucide-react";
 
 export default function VolunteerDashboard() {
   const { user } = useAuth();
@@ -46,32 +47,50 @@ export default function VolunteerDashboard() {
   const openTasks = tasks.filter((t) => !t.status || t.status === "open" || t.status === "in_progress").length;
   const meetingsDone = reports.filter((r) => r.wasMeetingHeld === "כן" || r.wasMeetingHeld === true).length || reports.length;
 
+  const summary = [
+    { icon: <Handshake size={22} />, label: "מפגשים שבוצעו", value: meetingsDone },
+    { icon: <Send size={22} />, label: "דוחות שנשלחו", value: reports.length },
+    { icon: <CheckCircle2 size={22} />, label: "משימות פתוחות", value: openTasks },
+  ];
+
+  const navCards = [
+    { to: "/volunteer/report/new", icon: <FilePlus size={26} />, title: "הגשת דוח מפגש", subtitle: "דווח/י על מפגש התנדבות שבוצע" },
+    { to: "/volunteer/reports", icon: <ClipboardList size={26} />, title: "הדוחות שלי", subtitle: "צפייה בדוחות שכבר נשלחו" },
+    { to: "/volunteer/tasks", icon: <ListChecks size={26} />, title: "המשימות שלי", subtitle: "מפגשים ומשימות שהוקצו לך" },
+    { to: "/volunteer/profile", icon: <UserCog size={26} />, title: "עדכון פרטים אישיים", subtitle: "עדכון פרטי קשר בסיסיים" },
+  ];
+
   return (
     <VolunteerLayout
       title={fullName ? `שלום ${fullName}, ברוכ/ה הבא/ה` : "שלום, ברוכ/ה הבא/ה"}
       subtitle="כאן תוכל/י לדווח על מפגשים, לראות משימות ולעקוב אחרי הדוחות שלך"
     >
-      {error && <div style={{ color: "#dc2626", marginBottom: 12 }}>{error}</div>}
-      <VolunteerInfoBar
-        name={fullName || "—"}
-        area={volunteer?.area || "—"}
-        coordinator={volunteer?.coordinator || "—"}
-        tasks={openTasks}
-      />
+      {error && <div className="vol-alert-error">{error}</div>}
 
-      <div className="vol-nav-cards">
-        <VolunteerNavCard to="/volunteer/report/new" icon="📝" title="הגשת דוח מפגש" subtitle="דווח/י על מפגש התנדבות שבוצע" />
-        <VolunteerNavCard to="/volunteer/reports" icon="📋" title="הדוחות שלי" subtitle="צפייה בדוחות שכבר נשלחו" />
-        <VolunteerNavCard to="/volunteer/tasks" icon="✅" title="המשימות שלי" subtitle="מפגשים ומשימות שהוקצו לך" />
-        <VolunteerNavCard to="/volunteer/profile" icon="👤" title="עדכון פרטים אישיים" subtitle="עדכון פרטי קשר בסיסיים" />
+      <h3 className="vol-section-title">סיכום</h3>
+      <div className="vol-summary-grid">
+        {summary.map((s, i) => (
+          <div key={i} className="vol-summary-card">
+            <div className="meta">
+              <div className="label">{s.label}</div>
+              <div className="value">{String(s.value)}</div>
+            </div>
+            <div className="icon-bubble">{s.icon}</div>
+          </div>
+        ))}
       </div>
 
-      <div style={{ height: 24 }} />
-      <h3 style={{ marginBottom: 12, fontSize: 18 }}>סיכום</h3>
-      <div className="stats-grid">
-        <StatsCard icon="🤝" title="מפגשים שבוצעו" value={String(meetingsDone)} />
-        <StatsCard icon="📨" title="דוחות שנשלחו" value={String(reports.length)} />
-        <StatsCard icon="✅" title="משימות פתוחות" value={String(openTasks)} />
+      <h3 className="vol-section-title">פעולות מהירות</h3>
+      <div className="vol-nav-cards">
+        {navCards.map((c) => (
+          <Link to={c.to} key={c.to} className="vol-nav-card">
+            <div className="icon">{c.icon}</div>
+            <div className="text">
+              <h4>{c.title}</h4>
+              <p>{c.subtitle}</p>
+            </div>
+          </Link>
+        ))}
       </div>
     </VolunteerLayout>
   );

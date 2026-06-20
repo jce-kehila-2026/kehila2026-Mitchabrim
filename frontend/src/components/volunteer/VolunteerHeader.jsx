@@ -1,13 +1,14 @@
 import { NavLink, Link, useNavigate } from "react-router-dom";
+import { LogOut } from "lucide-react";
 import logo from "@/assets/logo.jpeg";
 import { useAuth } from "@/context/AuthContext";
 
 const LINKS = [
-  { to: "/volunteer", label: "אזור אישי", end: true },
+  { to: "/volunteer", label: "דף הבית", end: true },
   { to: "/volunteer/report/new", label: "הגשת דוח" },
   { to: "/volunteer/reports", label: "הדוחות שלי" },
   { to: "/volunteer/tasks", label: "המשימות שלי" },
-  { to: "/volunteer/profile", label: "הפרטים שלי" },
+  { to: "/volunteer/profile", label: "פרטים אישיים" },
 ];
 
 export default function VolunteerHeader() {
@@ -38,10 +39,12 @@ export default function VolunteerHeader() {
         <div className="vol-user">
           <div className="vol-user-avatar">{initial}</div>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{displayName}</div>
-            <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>מתנדבת</div>
+            <div className="vol-user-name">שלום, {displayName}</div>
+            <div className="vol-user-role">מתנדב/ת</div>
           </div>
-          <button onClick={handleLogout} className="btn" style={{ marginInlineStart: 10 }}>יציאה</button>
+          <button onClick={handleLogout} className="vol-logout-btn" title="יציאה" aria-label="יציאה">
+            <LogOut size={18} />
+          </button>
         </div>
       </div>
     </header>
