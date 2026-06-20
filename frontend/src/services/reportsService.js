@@ -3,6 +3,7 @@ import {
   addDoc,
   getDocs,
   updateDoc,
+  deleteDoc,
   doc,
   serverTimestamp,
   query,
@@ -88,4 +89,9 @@ export async function updateReportReview(reportId, { status, adminNote, reviewed
   }
   if (typeof adminNote === "string") patch.adminNote = adminNote;
   await updateDoc(ref, patch);
+}
+
+export async function deleteVolunteerReport(reportId) {
+  const ref = doc(db, "volunteerReports", reportId);
+  await deleteDoc(ref);
 }
