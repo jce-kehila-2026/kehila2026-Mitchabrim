@@ -535,17 +535,17 @@ export default function Settings() {
   const safePhones = Array.isArray(phones) ? phones : [""];
 
   return (
-    <AdminLayout title="הגדרות" subtitle="ניהול הגדרות המערכת">
+    <AdminLayout title="הגדרות" subtitle="ניהול הגדרות מערכת, אזורים, שכונות והרשאות">
       
       {toastMessage && (
-        <div style={{ position: "fixed", top: "30px", left: "50%", transform: "translateX(-50%)", backgroundColor: "#fff", color: "#495057", padding: "12px 24px", borderRadius: "8px", boxShadow: "0 4px 15px rgba(0,0,0,0.15)", borderRight: "4px solid #8b2c2c", zIndex: 2000, fontWeight: "bold", animation: "fadeInDown 0.3s ease-out", direction: "rtl", display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ color: "#8b2c2c", fontSize: "18px" }}>✓</span> {toastMessage}
+        <div className="admin-toast">
+          <span className="admin-toast-check">✓</span> {toastMessage}
         </div>
       )}
 
       {/* --- Section 1: Organization Details --- */}
       <SectionCard>
-        <h3 style={{ margin: "0 0 20px 0", color: "#8b2c2c", fontWeight: "bold", fontSize: "1.2rem", borderBottom: "2px solid #f6ecdc", paddingBottom: "10px", direction: "rtl" }}>פרטי הארגון</h3>
+        <h3 className="settings-section-title">פרטי הארגון</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px", direction: "rtl" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
             <div><label style={labelStyle}>שם הארגון</label><input type="text" value={orgName || ""} onChange={(e) => setOrgName(e.target.value)} style={inputStyle} /></div>
@@ -780,7 +780,7 @@ export default function Settings() {
 
       {/* --- Section 5: Backup --- */}
       <SectionCard>
-        <h3 style={{ margin: "0 0 16px 0", color: "#8b2c2c", fontWeight: "bold", fontSize: "1.2rem", borderBottom: "2px solid #f6ecdc", paddingBottom: "10px", direction: "rtl" }}>גיבוי נתונים</h3>
+        <h3 className="settings-section-title">גיבוי נתונים</h3>
         <div style={{ direction: "rtl" }}>
           <p style={{ color: "#495057", margin: "0 0 12px 0" }}>גיבוי אחרון: 28.05.2026 • הצליח</p>
           <button className="btn btn-primary" style={{ padding: "8px 24px", borderRadius: "8px", backgroundColor: "#8b2c2c", color: "white", border: "none", fontWeight: "bold" }}>הפעל גיבוי</button>

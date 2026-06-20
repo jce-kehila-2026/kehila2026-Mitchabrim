@@ -205,14 +205,13 @@ export default function Media() {
 
   return (
     <AdminLayout
-      title="מאגר תמונות"
-      subtitle="ניהול תמונות לפי נושאים"
+      title="ניהול תמונות"
+      subtitle="ניהול תמונות האתר, גלריות ותמונות מוצגות"
       actions={
-        <>
-          <button style={{ background: "linear-gradient(135deg, #8b2c2c 0%, #6e1f1f 100%)", color: "white", padding: "10px 24px", borderRadius: "30px", fontWeight: "600", border: "none", cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 12px rgba(139,44,44,0.25)" }} onClick={handleOpenModal}>
-            + העלאת תמונה
-          </button>
-        </>
+        <button className="action-btn-primary" onClick={handleOpenModal}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          העלאת תמונה
+        </button>
       }
     >
       <style>{`
@@ -262,14 +261,8 @@ export default function Media() {
       `}</style>
 
       {toastMessage && (
-        <div style={{
-          position: "fixed", top: "30px", left: "50%", transform: "translateX(-50%)",
-          backgroundColor: "#fff", color: "#495057", padding: "12px 24px",
-          borderRadius: "8px", boxShadow: "0 4px 15px rgba(0,0,0,0.15)",
-          borderRight: "4px solid #8b2c2c", zIndex: 5000, fontWeight: "bold",
-          animation: "fadeInDown 0.3s ease-out", direction: "rtl", display: "flex", alignItems: "center", gap: "10px"
-        }}>
-          <span style={{ color: "#8b2c2c", fontSize: "18px" }}>✓</span>
+        <div className="admin-toast">
+          <span className="admin-toast-check">✓</span>
           {toastMessage}
         </div>
       )}

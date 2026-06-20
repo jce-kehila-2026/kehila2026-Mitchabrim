@@ -16,14 +16,6 @@ import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 /* ===== Options (shared with volunteers page) =====
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
    useAreasAndNeighborhoods hook — no hardcoded lists here. */
-const PARLIAMENT_OPTIONS = [
-  "ללא פרלמנט",
-  "פרלמנט גילה",
-  "פרלמנט קטמון",
-  "פרלמנט רחביה",
-  "פרלמנט בית הכרם",
-  "פרלמנט רוממה",
-];
 const VOLUNTEER_STATUS_OPTIONS = ["כן", "לא מתאים", "לא רוצה"];
 const MARITAL_OPTIONS = ["רווק/ה", "נשוי/אה", "גרוש/ה", "אלמן/ה"];
 const LANGUAGE_OPTIONS = ["עברית", "ערבית", "אנגלית", "ספרדית", "צרפתית", "רוסית", "סינית", "יפנית"];
@@ -211,7 +203,7 @@ export default function Elderly() {
   return (
     <AdminLayout
       title="ניהול אזרחים ותיקים"
-      subtitle="ניהול רשימת האזרחים הוותיקים, שיוך לאזורים ושכונות, סטטוס התנדבות, פרלמנטים ופרטים אישיים."
+      subtitle="ניהול רשימת האזרחים הוותיקים, שיוך לאזורים ושכונות, סטטוס התנדבות ופרטים אישיים."
       actions={
         <>
           <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ הוספת אזרח ותיק</button>
@@ -229,10 +221,9 @@ export default function Elderly() {
         <div style={{ padding: "10px 0", color: "#6b7280", fontSize: 14 }}>טוען נתונים…</div>
       )}
       <div className="stats-grid">
-        <StatsCard title="סה״כ אזרחים ותיקים" value={String(data.length)} />
-        <StatsCard title="מחוברים למתנדב" value={String(connectedCount)} />
-        <StatsCard title="ללא מתנדב" value={String(withoutCount)} />
-        <StatsCard title="משתתפים בפרלמנט" value={String(data.filter((d) => d.parliament && d.parliament !== "ללא פרלמנט").length)} />
+        <StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value={String(data.length)} />
+        <StatsCard icon="🤝" title="מחוברים למתנדב" value={String(connectedCount)} />
+        <StatsCard icon="🚫" title="ללא מתנדב" value={String(withoutCount)} />
       </div>
 
       <SectionCard>
@@ -264,7 +255,6 @@ export default function Elderly() {
             { label: "מצב משפחתי", options: MARITAL_OPTIONS },
             { label: "סיוע", options: ASSISTANCE_OPTIONS },
             { label: "סטטוס", options: STATUS_OPTIONS },
-            { label: "פרלמנט", options: PARLIAMENT_OPTIONS },
           ]}
         />
         <DataTable
@@ -294,7 +284,7 @@ export default function Elderly() {
                   "—"
                 ),
             },
-            { key: "parliament", label: "פרלמנט" },
+            
             {
               key: "status",
               label: "מצב",
@@ -413,7 +403,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
           <div className="detail-grid">
             <D label="ארץ לידה" value={entry.country} />
             <D label="שפת דיבור" value={entry.language} />
-            <D label="פרלמנט" value={entry.parliament} />
+            
             <D label="סטטוס" value={<span className={`badge ${statusBadge(entry.status)}`}>{entry.status}</span>} />
           </div>
           <div className="field" style={{ marginTop: 10 }}>
@@ -442,11 +432,10 @@ const NUMERIC_FIELDS = ["idNum", "mobile", "homePhone", "contactPhone"];
 const REQUIRED_LABELS = {
   firstName: "שם פרטי", lastName: "שם משפחה", idNum: "ת.ז", birth: "תאריך לידה",
   marital: "מצב משפחתי", mobile: "טלפון נייד", homePhone: "טלפון בית",
-  area: "אזור", neighborhood: "שכונה", address: "כתובת",
+  area: "אזור", neighborhood: "שכונה",
   contactName: "שם איש קשר", contactPhone: "טלפון איש קשר", lastContact: "תאריך יצירת קשר אחרונה",
-  volStatus: "סטטוס מתנדב", volName: "שם מתנדב", assistance: "סיוע",
-  country: "ארץ לידה", language: "שפת דיבור", parliament: "פרלמנט", status: "סטטוס",
-  bio: "פירוט חיים אישיים",
+  volStatus: "סטטוס מתנדב", volName: "שם מתנדב",
+  country: "ארץ לידה", language: "שפת דיבור", status: "סטטוס",
 };
 
 function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave }) {
@@ -467,7 +456,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
       volStatus: "לא רוצה", volName: "",
       assistance: "", marital: MARITAL_OPTIONS[0],
       country: "ישראל", language: "עברית",
-      bio: "", parliament: PARLIAMENT_OPTIONS[0],
+      bio: "",
       status: "פעיל", notes: "",
     },
   );
@@ -553,7 +542,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               <input className="input" value={f.idNum} onChange={setDigits("idNum")} inputMode="numeric" />
               <NumericMsg k="idNum" />
             </div>
-            <div className="field"><label>תאריך לידה</label><input className="input" type="date" value={f.birth} onChange={set("birth")} /></div>
+            <div className="field"><label>תאריך לידה</label><input className="input" type="text" value={f.birth} onChange={set("birth")} placeholder="DD/MM/YYYY" /></div>
             <div className="field">
               <label>מצב משפחתי</label>
               <select className="select" value={f.marital} onChange={set("marital")}>
@@ -664,12 +653,6 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               </select>
             </div>
             <div className="field">
-              <label>פרלמנט</label>
-              <select className="select" value={f.parliament} onChange={set("parliament")}>
-                {PARLIAMENT_OPTIONS.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-            <div className="field">
               <label>סטטוס</label>
               <select className="select" value={f.status} onChange={set("status")}>
                 {STATUS_OPTIONS.map((o) => <option key={o}>{o}</option>)}
@@ -746,10 +729,10 @@ function PrintReportModal({ items, onClose }) {
 
 
   const handleDownload = () => {
-    const headers = ["שם", "ת.ז", "אזור", "שכונה", "טלפון", "סטטוס מתנדב", "מצב משפחתי", "סיוע", "פרלמנט", "סטטוס"];
+    const headers = ["שם", "ת.ז", "אזור", "שכונה", "טלפון", "סטטוס מתנדב", "מצב משפחתי", "סיוע", "סטטוס"];
     const rows = filtered.map((e) => [
       fullName(e), e.idNum, e.area, e.neighborhood,
-      e.mobile || e.homePhone, e.volStatus, e.marital, e.assistance, e.parliament, e.status,
+      e.mobile || e.homePhone, e.volStatus, e.marital, e.assistance, e.status,
     ]);
     const csv =
       "\uFEFF" +
@@ -802,7 +785,7 @@ function PrintReportModal({ items, onClose }) {
                 <thead>
                   <tr>
                     <th>שם</th><th>אזור</th><th>שכונה</th><th>טלפון</th>
-                    <th>סטטוס מתנדב</th><th>מצב משפחתי</th><th>סיוע</th><th>פרלמנט</th>
+                    <th>סטטוס מתנדב</th><th>מצב משפחתי</th><th>סיוע</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -815,7 +798,6 @@ function PrintReportModal({ items, onClose }) {
                       <td>{e.volStatus}</td>
                       <td>{e.marital}</td>
                       <td>{e.assistance || "—"}</td>
-                      <td>{e.parliament}</td>
                     </tr>
                   ))}
                 </tbody>

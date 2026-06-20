@@ -298,7 +298,7 @@ export default function Financial() {
   };
 
   return (
-    <AdminLayout title="ניהול כספי" subtitle="הכנסות, הוצאות, תרומות וקבלות" actions={
+    <AdminLayout title="ניהול כספי" subtitle="מעקב אחר הכנסות, הוצאות ודוחות כספיים" actions={
       <div style={{ display: "flex", gap: "14px", direction: "rtl", alignItems: "center" }}>
         <button onClick={() => setIsAddModalOpen(true)} className="action-btn-primary">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -320,12 +320,7 @@ export default function Financial() {
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; transition: background 0.2s; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-        .action-btn-primary { background: linear-gradient(135deg, #8b2c2c 0%, #6e1f1f 100%); color: white; padding: 10px 24px; border-radius: 30px; font-weight: 600; border: none; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-direction: row-reverse; gap: 8px; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(139,44,44,0.25); }
-        .action-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(139,44,44,0.35); background: #7a2626; }
-        .action-btn-secondary { background: #fff; color: #475569; border: 1px solid #cbd5e1; padding: 10px 24px; border-radius: 30px; font-weight: 600; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-direction: row-reverse; gap: 8px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-        .action-btn-secondary:hover { background: #f8fafc; border-color: #94a3b8; color: #0f172a; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-        .action-btn-tertiary { background: #fff; color: #64748b; border: 1px solid #e2e8f0; padding: 10px 20px; border-radius: 30px; font-weight: 600; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-direction: row-reverse; gap: 8px; transition: all 0.3s ease; }
-        .action-btn-tertiary:hover { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+        /* action-btn-primary/secondary/tertiary are now defined globally in admin.css */
 
         .fin-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 24px; direction: rtl; }
         .fin-stat-card { background: #fff; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 10px rgba(0,0,0,0.02); display: flex; justify-content: space-between; align-items: flex-start; transition: all 0.2s; }

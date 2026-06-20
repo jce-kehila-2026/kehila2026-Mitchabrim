@@ -26,15 +26,30 @@ export default function JoinRequestSection() {
     setIsSubmitting(true); // تفعيل وضع التحميل وقفل الأزرار الحقول
 
     try {
-      // إرسال وحفظ كائن البيانات (Object) داخل جدول joinRequests في قاعدة البيانات
-      await addDoc(collection(db, "joinRequests"), {
+      // إرسال وحفظ كائن البيانات (Object) داخل جدול joinRequests في قاعدة البيانات
+      const reqRef = await addDoc(collection(db, "joinRequests"), {
         fullName: form.fullName.trim(),
         phone: form.phone.trim(),
-        // دمج نوع الطلب مع الرسالة لكي تظهر واضحة ومنظمة للمدير في لوحة التحكم
-        note: `${form.type} - ${form.message}`.trim(), 
+        // دמج نوع الطلب مع الرسالة لكي تظهر واضحة ومنظمة للمدير في لوحة التحكم
+        note: `${form.type} - ${form.message}`.trim(),
         type: form.type,
         createdAt: serverTimestamp() // إضافة ختم الوقت الرسمي من سيرفر جوجل للترتيب الزمني
       });
+
+      // Notify admins (no duplicates — single notification per request)
+      try {
+        await addDoc(collection(db, "notifications"), {
+          audience: "admin",
+          type: "join_request",
+          title: "בקשת הצטרפות חדשה התקבלה",
+          message: `${form.fullName.trim()} שלח/ה בקשת הצטרפות (${form.type})`,
+          requestId: reqRef.id,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch (notifErr) {
+        console.warn("create admin notification failed:", notifErr?.message);
+      }
 
       // إذا نجحت العملية، نغير حالة sent إلى true لتظهر الكبسولة الخضراء للمستخدم
       setSent(true);
