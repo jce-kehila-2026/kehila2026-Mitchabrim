@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
-import logo from "@/assets/logo.jpeg";
+import logo from "@/assets/logo.png";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/firebase";
 import {
@@ -15,11 +14,11 @@ import {
 } from "firebase/firestore";
 
 const LINKS = [
-  { to: "/volunteer", label: "דף הבית", end: true },
+  { to: "/volunteer", label: "אזור אישי", end: true },
   { to: "/volunteer/report/new", label: "הגשת דוח" },
   { to: "/volunteer/reports", label: "הדוחות שלי" },
   { to: "/volunteer/tasks", label: "המשימות שלי" },
-  { to: "/volunteer/profile", label: "פרטים אישיים" },
+  { to: "/volunteer/profile", label: "הפרטים שלי" },
 ];
 
 export default function VolunteerHeader() {
@@ -154,12 +153,10 @@ export default function VolunteerHeader() {
           </div>
           <div className="vol-user-avatar">{initial}</div>
           <div>
-            <div className="vol-user-name">שלום, {displayName}</div>
-            <div className="vol-user-role">מתנדב/ת</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{displayName}</div>
+            <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>מתנדבת</div>
           </div>
-          <button onClick={handleLogout} className="vol-logout-btn" title="יציאה" aria-label="יציאה">
-            <LogOut size={18} />
-          </button>
+          <button onClick={handleLogout} className="btn" style={{ marginInlineStart: 10 }}>יציאה</button>
         </div>
       </div>
     </header>
