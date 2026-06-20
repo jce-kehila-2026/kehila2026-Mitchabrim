@@ -23,6 +23,7 @@ import Reports from "./admin/Reports.jsx";
 import VolunteerReports from "./admin/VolunteerReports.jsx";
 import Settings from "./admin/Settings.jsx";
 import SiteContent from "./admin/SiteContent.jsx";
+import ProfileUpdateRequests from "./admin/ProfileUpdateRequests.jsx";
 
 import VolunteerDashboard from "./volunteer/VolunteerDashboard.jsx";
 import VolunteerReportForm from "./volunteer/VolunteerReportForm.jsx";
@@ -60,6 +61,7 @@ export default function App() {
       <Route path="/admin/volunteer-reports" element={<Admin><VolunteerReports /></Admin>} />
       <Route path="/admin/settings" element={<Admin><Settings /></Admin>} />
       <Route path="/admin/site-content" element={<Admin><SiteContent /></Admin>} />
+      <Route path="/admin/profile-update-requests" element={<Admin><ProfileUpdateRequests /></Admin>} />
 
       <Route path="/volunteer" element={<Vol><VolunteerDashboard /></Vol>} />
       <Route path="/volunteer/report/new" element={<Vol><VolunteerReportForm /></Vol>} />
