@@ -799,7 +799,7 @@ function ProjectDetail({
     catch (err) { console.error("Failed to update volunteers", err); }
   };
   const removeVolunteerFromGroup = async (gid, vid) => {
-    if (!confirm("להסיר את המתנדב מהפרויקט? (המתנדב לא יימחק מהמערכת ולא מהקבוצה)")) return;
+    if (!confirm("האם אתה בטוח שברצונך להסיר את המתנדב מהקבוצה?")) return;
     const next = (projectVolunteers[gid] || []).filter((v) => v !== vid);
     setProjectVolunteers((prev) => ({ ...prev, [gid]: next }));
     try { await setProjectGroupVolunteers(project.id, gid, next); }
@@ -1195,6 +1195,14 @@ function ProjectDetail({
                   { key: "email",  label: "אימייל" },
                   { key: "status", label: "סטטוס", render: (r) => <span className={`badge ${r.status === "פעיל" ? "badge-green" : "badge-gray"}`}>{r.status || "—"}</span> },
                   { key: "notes",  label: "הערות" },
+                  { key: "actions", label: "פעולות", render: (r) => (
+                    <button
+                      className="btn-link btn-danger"
+                      onClick={() => removeVolunteerFromGroup(group.id, r.id)}
+                    >
+                      הסר מהקבוצה
+                    </button>
+                  )},
                 ]}
                 data={(projectVolunteers[group.id] || [])
                   .map((vid) => allVolunteers.find((v) => v.id === vid))

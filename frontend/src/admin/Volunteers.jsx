@@ -23,6 +23,7 @@ import {
 } from "../services/volunteersService";
 import { getReportsForVolunteer } from "../services/reportsService";
 import { getTasksForVolunteer, taskStatusLabel, taskTypeLabel, taskStatusBadge } from "../services/tasksService";
+import { getElderly } from "../services/elderlyService";
 
 import useAreasAndNeighborhoods from "../hooks/useAreasAndNeighborhoods";
 
@@ -123,17 +124,23 @@ export default function Volunteers() {
      Load Firebase data
   ========================= */
 
+  const [elderlyList, setElderlyList] = useState([]);
+
   useEffect(() => {
     async function loadData() {
       try {
         setLoading(true);
         setError("");
 
-        const volunteersData = await getVolunteers();
-        const groupsData = await getVolunteerGroups();
+        const [volunteersData, groupsData, elderlyData] = await Promise.all([
+          getVolunteers(),
+          getVolunteerGroups(),
+          getElderly().catch(() => []),
+        ]);
 
         setVolunteers(volunteersData);
         setGroups(groupsData);
+        setElderlyList(elderlyData);
       } catch (err) {
         console.error(err);
         setError("שגיאה בטעינת הנתונים מ-Firebase");
@@ -144,6 +151,19 @@ export default function Volunteers() {
 
     loadData();
   }, []);
+
+  // Build a map: volunteerId -> [elderly names] using real DB relationships.
+  const elderlyByVolunteer = useMemo(() => {
+    const map = new Map();
+    for (const e of elderlyList) {
+      if (!e.volId) continue;
+      const name = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "אזרח ותיק";
+      const arr = map.get(e.volId) || [];
+      arr.push({ id: e.id, name });
+      map.set(e.volId, arr);
+    }
+    return map;
+  }, [elderlyList]);
 
   /* =========================
      Derived data
@@ -373,23 +393,25 @@ export default function Volunteers() {
 
       {tab === "volunteers" ? (
         <div className="stats-grid">
-          <StatsCard title="סה״כ מתנדבים" value={String(volunteers.length)} />
+          <StatsCard icon="👥" title="סה״כ מתנדבים" value={String(volunteers.length)} />
           <StatsCard
+            icon="🤝"
             title="משויכים לאזרח ותיק"
             value={String(volunteers.filter((v) => v.status === "משויך לאזרח ותיק").length)}
           />
           <StatsCard
+            icon="⏳"
             title="ממתינים לשיבוץ"
             value={String(volunteers.filter((v) => v.status === "ממתין לשיבוץ").length)}
           />
-          <StatsCard title="קבוצות פעילות" value={String(activeGroupsCount)} />
+          <StatsCard icon="🟢" title="קבוצות פעילות" value={String(activeGroupsCount)} />
         </div>
       ) : (
         <div className="stats-grid">
-          <StatsCard title="סה״כ קבוצות" value={String(groups.length)} />
-          <StatsCard title="מתנדבים בקבוצות" value={String(volunteersInGroups)} />
-          <StatsCard title="קבוצות פעילות" value={String(activeGroupsCount)} />
-          <StatsCard title="קבוצות בהקמה" value={String(groups.filter((g) => g.status === "בהקמה").length)} />
+          <StatsCard icon="🗂️" title="סה״כ קבוצות" value={String(groups.length)} />
+          <StatsCard icon="👥" title="מתנדבים בקבוצות" value={String(volunteersInGroups)} />
+          <StatsCard icon="🟢" title="קבוצות פעילות" value={String(activeGroupsCount)} />
+          <StatsCard icon="🟡" title="קבוצות בהקמה" value={String(groups.filter((g) => g.status === "בהקמה").length)} />
         </div>
       )}
 
@@ -458,14 +480,20 @@ export default function Volunteers() {
                 {
                   key: "assigned",
                   label: "משויך ל",
-                  render: (r) =>
-                    r.assignedId ? (
-                      <Link className="link-btn" to={`/admin/elderly/${r.assignedId}`}>
-                        {r.assigned}
+                  render: (r) => {
+                    const list = elderlyByVolunteer.get(r.id) || [];
+                    if (list.length === 0) {
+                      return <span style={{ color: "#6b7280" }}>לא משויך</span>;
+                    }
+                    const first = list[0];
+                    const extra = list.length - 1;
+                    return (
+                      <Link className="link-btn" to={`/admin/elderly/${first.id}`} title={list.map((e) => e.name).join(", ")}>
+                        {first.name}
+                        {extra > 0 ? ` + ${extra} נוספים` : ""}
                       </Link>
-                    ) : (
-                      r.assigned || "ממתין לשיבוץ"
-                    ),
+                    );
+                  },
                 },
                 {
                   key: "insurance",

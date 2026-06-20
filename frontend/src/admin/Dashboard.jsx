@@ -5,17 +5,19 @@ import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
 import { db } from "../firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   
   const [stats, setStats] = useState({ elderly: "-", volunteers: "-", projects: "-", requests: "-", parliaments: "-" });
   const [requests, setRequests] = useState([]);
+  const [profileRequests, setProfileRequests] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [deleteId, setDeleteId] = useState(null);
+  const [deleteProfileId, setDeleteProfileId] = useState(null);
 
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
   const [weather, setWeather] = useState({ temp: "--", text: "טוען...", emoji: "⏳" });
@@ -69,6 +71,17 @@ export default function Dashboard() {
     };
 
     fetchDashboardData();
+  }, []);
+
+  // Live subscription to profile update requests
+  useEffect(() => {
+    const q = query(collection(db, "profileUpdateRequests"), orderBy("createdAt", "desc"), limit(50));
+    const unsub = onSnapshot(
+      q,
+      (snap) => setProfileRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (err) => console.warn("profileUpdateRequests listen:", err.message)
+    );
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -180,6 +193,18 @@ export default function Dashboard() {
     }
   };
 
+  const executeDeleteProfileRequest = async (id) => {
+    try {
+      await deleteDoc(doc(db, "profileUpdateRequests", id));
+      setProfileRequests((prev) => prev.filter((r) => r.id !== id));
+      setDeleteProfileId(null);
+      showToast("הבקשה נמחקה בהצלחה");
+    } catch (error) {
+      console.error("Error deleting profile update request:", error);
+      showToast("שגיאה במחיקת הבקשה");
+    }
+  };
+
   const executeDeleteRequest = async (requestId) => {
     try {
       await deleteDoc(doc(db, "joinRequests", requestId));
@@ -242,8 +267,7 @@ export default function Dashboard() {
       )}
 
       <style>{`
-        .compact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 14px; }
-        .dashboard-card-wrapper { transition: all 0.2s ease-in-out; cursor: pointer; border-radius: 12px; overflow: hidden; }
+        .dashboard-card-wrapper { transition: all 0.2s ease-in-out; cursor: pointer; border-radius: 12px; overflow: hidden; height: 100%; }
         .dashboard-card-wrapper:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(139,44,44,0.1); }
         .interactive-row { transition: 0.2s; border: 1px solid #e9ecef; border-radius: 10px; flex-shrink: 0; }
         .interactive-row:hover { border-color: #8b2c2c !important; background-color: #fcfbf9; }
@@ -256,7 +280,7 @@ export default function Dashboard() {
       `}</style>
 
       {/* --- Row 1 --- */}
-      <div className="compact-grid">
+      <div className="stats-grid">
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/elderly")}><StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value={stats.elderly} subtitle="מעבר לניהול אזרחים" /></div>
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/volunteers")}><StatsCard icon="🤝" title="מתנדבים פעילים" value={stats.volunteers} subtitle="מעבר לניהול מתנדבים" /></div>
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/projects")}><StatsCard icon="🎁" title="פרויקטים פעילים" value={stats.projects} subtitle="מעבר לפרויקטים" /></div>
@@ -264,7 +288,7 @@ export default function Dashboard() {
       </div>
 
       {/* --- Row 2 --- */}
-      <div className="compact-grid" style={{ marginBottom: "24px" }}>
+      <div className="stats-grid">
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/parliaments")}><StatsCard icon="🏛️" title="מפגשי פרלמנט השבוע" value={stats.parliaments} subtitle="פרלמנטים פעילים" /></div>
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/media")}><StatsCard icon="🖼️" title="מאגר תמונות" value="←" subtitle="עריכת גלריית תמונות" /></div>
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/links")}><StatsCard icon="🔗" title="מאגר קישורים" value="←" subtitle="טפסים ומסמכי מערכת" /></div>
@@ -275,9 +299,9 @@ export default function Dashboard() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", direction: "rtl" }}>
         
         {/* Requests Scrollbox */}
-        <div id="requests-section">
+        <div id="requests-section" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <SectionCard title="בקשות הצטרפות אחרונות">
-            <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "320px", overflowY: "auto", paddingLeft: "6px" }}>
+            <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "220px", overflowY: "auto", paddingLeft: "6px" }}>
               {requests.length > 0 ? requests.map((r) => (
                 <div key={r.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", borderRadius: "10px", backgroundColor: "#fff" }}>
                   <div>
@@ -288,6 +312,56 @@ export default function Dashboard() {
                 </div>
               )) : (
                 <div style={{ padding: "20px", textAlign: "center", color: "#adb5bd", fontSize: "14px" }}>אין בקשות חדשות כרגע 🎉</div>
+              )}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="בקשות עדכון פרטים">
+            <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "220px", overflowY: "auto", paddingLeft: "6px" }}>
+              {profileRequests.length > 0 ? profileRequests.map((r) => {
+                const d = r.createdAt?.toDate ? r.createdAt.toDate() : null;
+                const statusMap = {
+                  pending: { label: "ממתין", bg: "#fff3cd", color: "#856404", border: "#ffeeba" },
+                  approved: { label: "אושר", bg: "#e8f5e9", color: "#1e6b2c", border: "#c3e6cb" },
+                  rejected: { label: "נדחה", bg: "#fdecec", color: "#dc3545", border: "#f5c6cb" },
+                };
+                const s = statusMap[r.status] || statusMap.pending;
+                const preview = (r.message || "").length > 60 ? (r.message || "").slice(0, 60) + "…" : (r.message || "");
+                return (
+                  <div key={r.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", borderRadius: "10px", backgroundColor: "#fff", gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: "bold", color: "#343a40", fontSize: "14px" }}>{r.volunteerName || "מתנדב"}</span>
+                        <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 10.5, fontWeight: "bold", backgroundColor: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{s.label}</span>
+                        {d && (
+                          <span style={{ color: "#9e8a7a", fontSize: 11 }}>
+                            {d.toLocaleDateString("he-IL")}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ color: "#6c757d", fontSize: "12px", marginTop: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview || "ללא הודעה"}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <button
+                        onClick={() => navigate(`/admin/profile-update-requests?id=${r.id}`)}
+                        style={{ padding: "6px 12px", borderRadius: "6px", backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: "12px" }}
+                      >
+                        צפייה
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteProfileId(r.id)}
+                        className="icon-btn-danger"
+                        title="מחיקה"
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: "bold", padding: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div style={{ padding: "16px", textAlign: "center", color: "#adb5bd", fontSize: "13px" }}>אין בקשות עדכון פרטים כרגע</div>
               )}
             </div>
           </SectionCard>
@@ -367,6 +441,25 @@ export default function Dashboard() {
             <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
               <button onClick={() => setDeleteId(null)} style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "1px solid #ced4da", backgroundColor: "#fff", cursor: "pointer", fontWeight: "bold", color: "#495057" }}>ביטול</button>
               <button onClick={() => executeDeleteRequest(deleteId)} style={{ flex: 1, padding: "10px", borderRadius: "8px", backgroundColor: "#dc3545", color: "#fff", border: "none", cursor: "pointer", fontWeight: "bold" }}>כן, מחק פנייה</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- Delete Profile Request Confirmation Modal --- */}
+      {deleteProfileId && (
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl" }}>
+          <div style={{ backgroundColor: "#fff", padding: "24px", borderRadius: "16px", textAlign: "center", width: "90%", maxWidth: "350px", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
+            <div style={{ backgroundColor: "#fdecec", width: "60px", height: "60px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px auto" }}>
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#dc3545" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </div>
+            <h4 style={{ color: "#343a40", fontWeight: "bold", margin: "0 0 8px 0" }}>האם למחוק את הבקשה?</h4>
+            <p style={{ color: "#6c757d", fontSize: "14px", margin: "0 0 24px 0" }}>פעולה זו תמחק את בקשת עדכון הפרטים לצמיתות.</p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+              <button onClick={() => setDeleteProfileId(null)} style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "1px solid #ced4da", backgroundColor: "#fff", cursor: "pointer", fontWeight: "bold", color: "#495057" }}>ביטול</button>
+              <button onClick={() => executeDeleteProfileRequest(deleteProfileId)} style={{ flex: 1, padding: "10px", borderRadius: "8px", backgroundColor: "#dc3545", color: "#fff", border: "none", cursor: "pointer", fontWeight: "bold" }}>כן, מחק</button>
             </div>
           </div>
         </div>

@@ -264,10 +264,10 @@ export default function Parliaments() {
       {loadError && <div className="form-warning">{loadError}</div>}
 
       <div className="stats-grid">
-        <StatsCard title="פרלמנטים פעילים" value={String(active)} />
-        <StatsCard title="פרלמנטים השבוע" value={String(thisWeek)} />
-        <StatsCard title="משתתפים רשומים" value={String(totalParticipants)} />
-        <StatsCard title='סה"כ פרלמנטים' value={String(decorated.length)} />
+        <StatsCard icon="🏛️" title="פרלמנטים פעילים" value={String(active)} />
+        <StatsCard icon="📅" title="פרלמנטים השבוע" value={String(thisWeek)} />
+        <StatsCard icon="👥" title="משתתפים רשומים" value={String(totalParticipants)} />
+        <StatsCard icon="📊" title='סה"כ פרלמנטים' value={String(decorated.length)} />
       </div>
 
       <SectionCard title="רשימת פרלמנטים">
@@ -536,8 +536,8 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
       <button className="back-link" onClick={onBack}>→ חזרה לפרלמנטים</button>
 
       <div className="stats-grid">
-        <StatsCard title="משתתפים" value={String(sortedParticipants.length)} />
-        <StatsCard title="פגישות שהתקיימו" value={`${meetingsHeld} מתוך ${sortedMeetings.length}`} />
+        <StatsCard icon="👥" title="משתתפים" value={String(sortedParticipants.length)} />
+        <StatsCard icon="📅" title="פגישות שהתקיימו" value={`${meetingsHeld} מתוך ${sortedMeetings.length}`} />
       </div>
 
       <div className="tabs">
@@ -725,9 +725,9 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
       <button className="back-link" onClick={onBack}>→ חזרה לרשימת הפגישות</button>
 
       <div className="stats-grid">
-        <StatsCard title="אישרו הגעה" value={String(confirmed)} />
-        <StatsCard title="לא יגיעו" value={String(notComing)} />
-        <StatsCard title="ממתינים לאישור" value={String(waiting)} />
+        <StatsCard icon="✅" title="אישרו הגעה" value={String(confirmed)} />
+        <StatsCard icon="❌" title="לא יגיעו" value={String(notComing)} />
+        <StatsCard icon="⏳" title="ממתינים לאישור" value={String(waiting)} />
       </div>
 
       <div className="tabs">

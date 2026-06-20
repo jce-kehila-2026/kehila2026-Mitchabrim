@@ -3,7 +3,7 @@ import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
-import { getAllVolunteerReports, updateReportReview } from "@/services/reportsService.js";
+import { getAllVolunteerReports, updateReportReview, deleteVolunteerReport } from "@/services/reportsService.js";
 import {
   getAllTasks,
   createTask,
@@ -118,15 +118,26 @@ function ReportsTab({ user }) {
     }
   };
 
+  const handleDeleteReport = async (id) => {
+    if (!window.confirm("האם אתה בטוח שברצונך למחוק את הדוח?")) return;
+    try {
+      await deleteVolunteerReport(id);
+      setReports((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      console.error(err);
+      alert("שגיאה במחיקת הדוח");
+    }
+  };
+
   return (
     <>
       {error && <SectionCard><p style={{ color: "red" }}>{error}</p></SectionCard>}
 
       <div className="stats-grid">
-        <StatsCard title="סה״כ דוחות" value={String(totals.total)} />
-        <StatsCard title="ממתינים" value={String(totals.pending)} />
-        <StatsCard title="אושרו" value={String(totals.reviewed)} />
-        <StatsCard title="נדחו" value={String(totals.rejected)} />
+        <StatsCard icon="📋" title="סה״כ דוחות" value={String(totals.total)} />
+        <StatsCard icon="⏳" title="ממתינים" value={String(totals.pending)} />
+        <StatsCard icon="✅" title="אושרו" value={String(totals.reviewed)} />
+        <StatsCard icon="❌" title="נדחו" value={String(totals.rejected)} />
       </div>
 
       <SectionCard>
@@ -156,7 +167,10 @@ function ReportsTab({ user }) {
                 key: "actions",
                 label: "פעולות",
                 render: (r) => (
-                  <button className="btn" onClick={() => setOpenId(r.id)}>צפייה בפרטים</button>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button className="btn" onClick={() => setOpenId(r.id)}>צפייה בפרטים</button>
+                    <button className="btn btn-danger" onClick={() => handleDeleteReport(r.id)}>מחיקה</button>
+                  </div>
                 ),
               },
             ]}
@@ -316,10 +330,10 @@ function TasksTab({ user }) {
       {error && <SectionCard><p style={{ color: "red" }}>{error}</p></SectionCard>}
 
       <div className="stats-grid">
-        <StatsCard title="סה״כ משימות" value={String(totals.total)} />
-        <StatsCard title="פתוחות" value={String(totals.open)} />
-        <StatsCard title="בטיפול" value={String(totals.inProgress)} />
-        <StatsCard title="בוצעו" value={String(totals.done)} />
+        <StatsCard icon="📝" title="סה״כ משימות" value={String(totals.total)} />
+        <StatsCard icon="🔓" title="פתוחות" value={String(totals.open)} />
+        <StatsCard icon="🔧" title="בטיפול" value={String(totals.inProgress)} />
+        <StatsCard icon="✅" title="בוצעו" value={String(totals.done)} />
       </div>
 
       <SectionCard>

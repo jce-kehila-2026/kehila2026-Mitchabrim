@@ -55,12 +55,6 @@ export default function ElderlyProfile() {
         </div>
       </SectionCard>
 
-      <SectionCard title="השתתפות בפרלמנט">
-        <div className="detail-grid">
-          <Detail label="פרלמנט" value="פרלמנט רחביה" />
-          <Detail label="מפגש אחרון" value="20.05.2026" />
-        </div>
-      </SectionCard>
 
       <SectionCard title="היסטוריית פרויקטי חגים">
         <div className="list-item">
