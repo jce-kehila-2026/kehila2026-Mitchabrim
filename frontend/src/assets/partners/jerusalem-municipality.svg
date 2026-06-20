@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C9A227" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#C9A227" stop-opacity="0.55"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="24" fill="url(#g)"/>
+  <circle cx="100" cy="80" r="34" fill="#fff" fill-opacity="0.92"/>
+  <text x="100" y="88" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" fill="#C9A227">ע</text>
+  <text x="100" y="148" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="600" fill="#fff" direction="rtl">עיריית ירושלים</text>
+</svg>
