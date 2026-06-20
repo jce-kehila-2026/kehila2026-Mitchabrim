@@ -1,6 +1,9 @@
-import logo from "@/assets/logo.jpeg";
+import logo from "@/assets/logo.png";
+import useSiteContent from "@/hooks/useSiteContent";
 
 export default function PublicFooter() {
+  const { content } = useSiteContent();
+  const f = content.footer;
   return (
     <footer className="pub-footer">
       <svg className="footer-wave" viewBox="0 0 1440 90" preserveAspectRatio="none" aria-hidden>
@@ -11,16 +14,13 @@ export default function PublicFooter() {
         <div className="footer-grid-4">
           <div className="footer-col">
             <div className="footer-brand">
-              <img src={logo} alt="מתחברים" />
+              <img src={logo} alt={f.orgName} />
               <div>
-                <div className="footer-brand-name">מתחברים</div>
-                <div className="footer-brand-sub">חיבור אזרחים בודדים לקהילה</div>
+                <div className="footer-brand-name">{f.orgName}</div>
+                <div className="footer-brand-sub">{f.tagline}</div>
               </div>
             </div>
-            <p className="footer-desc">
-              מתחברים – חיבור אזרחים בודדים לקהילה דרך מתנדבים,
-              פעילויות וליווי קהילתי בירושלים.
-            </p>
+            <p className="footer-desc">{f.description}</p>
           </div>
 
           <div className="footer-col">
@@ -38,9 +38,9 @@ export default function PublicFooter() {
           <div className="footer-col">
             <h4>יצירת קשר</h4>
             <ul className="footer-contact">
-              <li><span className="f-ico">📞</span> 02 - 000 - 0000</li>
-              <li><span className="f-ico">✉</span> info@mitchabrim.org</li>
-              <li><span className="f-ico">📍</span> ירושלים</li>
+              <li><span className="f-ico">📞</span> {f.phone}</li>
+              <li><span className="f-ico">✉</span> {f.email}</li>
+              <li><span className="f-ico">📍</span> {f.address}</li>
             </ul>
           </div>
 
@@ -55,7 +55,7 @@ export default function PublicFooter() {
           </div>
         </div>
 
-        <div className="footer-bottom">© 2026 מתחברים | כל הזכויות שמורות</div>
+        <div className="footer-bottom">© 2026 {f.orgName} | כל הזכויות שמורות</div>
       </div>
     </footer>
   );

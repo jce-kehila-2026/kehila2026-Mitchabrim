@@ -1,9 +1,11 @@
 import { useState } from "react";
-// هذا هو المسار الدقيق والصحيح لملف الفايربيس الخاص بك:
-import { db } from "../../firebase"; 
+import { db } from "../../firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import useSiteContent from "@/hooks/useSiteContent";
 
 export default function JoinRequestSection() {
+  const { content } = useSiteContent();
+  const j = content.join;
   // إنشاء ذاكرة حية (State) لحفظ القيم التي يكتبها المستخدم في الفورم
   const [form, setForm] = useState({ fullName: "", phone: "", type: "", message: "" });
   // حالة لمعرفة هل تم إرسال الطلب بنجاح لإظهار الرسالة الخضراء
@@ -54,9 +56,10 @@ export default function JoinRequestSection() {
     <section id="join" className="pub-section join-section">
       <div className="container join-grid">
         <div className="join-info">
-          <span className="section-eyebrow">הצטרפות</span>
-          <h2 className="section-title">רוצים להצטרף או לקבל פרטים?</h2>
-          <p className="section-sub">השאירו פרטים ונחזור אליכם בהקדם ונשמח לעזור.</p>
+          <span className="section-eyebrow">{j.eyebrow}</span>
+          <h2 className="section-title">{j.title}</h2>
+          <p className="section-sub">{j.subtitle}</p>
+
 
           <ul className="join-points-clean">
             <li>
@@ -98,9 +101,8 @@ export default function JoinRequestSection() {
           </ul>
         </div>
 
-        {/* نموذج إدخال البيانات - مرتبط بدالة الـ submit عند الضغط على الزر */}
         <form className="join-card" onSubmit={submit}>
-          {sent && <div className="join-success">הבקשה נשלחה בהצלחה. ניצור איתך קשר בהקדם.</div>}
+          {sent && <div className="join-success">{j.successText}</div>}
           <div className="field">
             <label>שם מלא</label>
             <input className="input" value={form.fullName} onChange={update("fullName")} required disabled={isSubmitting} />
@@ -125,9 +127,9 @@ export default function JoinRequestSection() {
             <textarea className="textarea" rows={4} value={form.message} onChange={update("message")} disabled={isSubmitting} />
           </div>
           <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={isSubmitting}>
-            {isSubmitting ? "שולח..." : "שליחת פנייה"}
+            {isSubmitting ? "שולח..." : (j.buttonText || "שליחת פנייה")}
           </button>
-          <p className="join-note">נחזור אליך בהקדם ונשמח לעזור.</p>
+          <p className="join-note">{j.note}</p>
         </form>
       </div>
     </section>

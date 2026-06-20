@@ -1,16 +1,10 @@
-import VolunteerHeader from "./VolunteerHeader.jsx";
-
-export default function VolunteerLayout({ title, subtitle, children }) {
+export default function VolunteerInfoBar({ name = "—", area = "—", coordinator = "—", tasks = 0 }) {
   return (
-    <div className="vol-shell">
-      <VolunteerHeader />
-      <div className="vol-content">
-        <div className="container">
-          {title && <h1 style={{ fontSize: 28, marginBottom: 4 }}>{title}</h1>}
-          {subtitle && <p style={{ color: "var(--color-text-muted)", marginBottom: 24 }}>{subtitle}</p>}
-          {children}
-        </div>
-      </div>
+    <div className="vol-info-bar">
+      <div className="vol-info-item"><label>שם מתנדב/ת</label><div>{name}</div></div>
+      <div className="vol-info-item"><label>אזור פעילות</label><div>{area}</div></div>
+      <div className="vol-info-item"><label>רכז/ת אחראי/ת</label><div>{coordinator}</div></div>
+      <div className="vol-info-item"><label>משימות פעילות</label><div>{tasks}</div></div>
     </div>
   );
 }
