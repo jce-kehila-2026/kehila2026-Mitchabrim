@@ -13,6 +13,7 @@ const LINKS = [
   { to: "/admin/financial", label: "ניהול כספי", icon: "💰" },
   { to: "/admin/reports", label: "דוחות", icon: "📈" },
   { to: "/admin/volunteer-reports", label: "דוחות ומשימות המתנדבים", icon: "📨" },
+  { to: "/admin/profile-update-requests", label: "בקשות עדכון פרטים", icon: "✉️" },
   { to: "/admin/settings", label: "הגדרות", icon: "⚙️" },
 ];
 
