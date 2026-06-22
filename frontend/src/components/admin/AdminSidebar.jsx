@@ -3,17 +3,18 @@ import logo from "@/assets/logo.png";
 
 const LINKS = [
   { to: "/admin", label: "לוח בקרה", icon: "📊", end: true },
-  { to: "/admin/elderly", label: "ניהול אזרחים ותיקים", icon: "👵" },
-  { to: "/admin/volunteers", label: "ניהול מתנדבים", icon: "🤝" },
-  { to: "/admin/projects", label: "פרויקטי חגים", icon: "🎁" },
-  { to: "/admin/parliaments", label: "פרלמנטים", icon: "🏛️" },
-  { to: "/admin/site-content", label: "ניהול אתר ראשי", icon: "🌐" },
-  { to: "/admin/media", label: "מאגר תמונות", icon: "🖼️" },
-  { to: "/admin/links", label: "מאגר קישורים", icon: "🔗" },
-  { to: "/admin/financial", label: "ניהול כספי", icon: "💰" },
+  { to: "/admin/elderly", label: "אזרחים ותיקים", icon: "👵" },
+  { to: "/admin/volunteers", label: "מתנדבים", icon: "🤝" },
+  { to: "/admin/projects", label: "פרויקטים", icon: "🎁" },
+  { to: "/admin/parliaments", label: "פרלמינטים", icon: "🏛️" },
+  { to: "/admin/financial", label: "ניהול כספים", icon: "💰" },
   { to: "/admin/reports", label: "דוחות", icon: "📈" },
+  { to: "/admin/links", label: "מאגר קישורים", icon: "🔗" },
+  { to: "/admin/media", label: "מאגר תמונות", icon: "🖼️" },
+  { to: "/admin/organizations-contacts", label: "ארגונים ואנשי קשר", icon: "🏢" },
+  { to: "/admin/elderly-contacts", label: "אנשי קשר לאזרחים ותיקים", icon: "📇" },
   { to: "/admin/volunteer-reports", label: "דוחות ומשימות המתנדבים", icon: "📨" },
-  
+  { to: "/admin/site-content", label: "ניהול אתר ראשי", icon: "🌐" },
   { to: "/admin/settings", label: "הגדרות", icon: "⚙️" },
 ];
 
