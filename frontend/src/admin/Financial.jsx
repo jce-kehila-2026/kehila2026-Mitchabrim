@@ -5,10 +5,22 @@ import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimest
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export default function Financial() {
+  // ==========================================
+  // STATE MANAGEMENT
+  // ==========================================
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState("transactions"); 
+  
+  // Basic Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all"); 
+  
+  // Advanced Filters (New)
+  const [filterFundingSource, setFilterFundingSource] = useState("all");
+  const [filterProject, setFilterProject] = useState("");
+  const [filterMinAmount, setFilterMinAmount] = useState("");
+  const [filterMaxAmount, setFilterMaxAmount] = useState("");
+
   const [receiptSearchTerm, setReceiptSearchTerm] = useState("");
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -21,7 +33,6 @@ export default function Financial() {
   const [deleteId, setDeleteId] = useState(null); 
   const [deleteReceiptData, setDeleteReceiptData] = useState(null); 
 
-  // --- التعديل 1: إضافة fundingSource إلى الـ State ---
   const [formData, setFormData] = useState({
     type: "תרומה", amount: "", fundingSource: "כללי", source: "", project: "", date: new Date().toISOString().split('T')[0], receipt: "", notes: "", paymentMethod: "העברה בנקאית", otherPaymentMethod: ""
   });
@@ -30,6 +41,9 @@ export default function Financial() {
   const [uploadData, setUploadData] = useState({ receiptName: "", receiptNumber: "", transactionId: "" });
   const [editReceiptData, setEditReceiptData] = useState(null);
 
+  // ==========================================
+  // FIREBASE DATA FETCHING
+  // ==========================================
   useEffect(() => {
     const q = query(collection(db, "financialTransactions"), orderBy("date", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -41,6 +55,9 @@ export default function Financial() {
     return () => unsubscribe();
   }, []);
 
+  // ==========================================
+  // CALCULATIONS & FILTERING
+  // ==========================================
   const globalTotals = useMemo(() => {
     let income = 0; let expenses = 0; let donations = 0;
     transactions.forEach(item => {
@@ -53,21 +70,44 @@ export default function Financial() {
     return { income, expenses, donations, balance: income - expenses };
   }, [transactions]);
 
+  // Extract unique sources for Auto-Complete
+  const uniqueSources = useMemo(() => {
+    const sourcesList = transactions.filter(t => t.type !== "קבלה_בלבד" && t.source).map(t => t.source.trim());
+    return [...new Set(sourcesList)];
+  }, [transactions]);
+
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       if (t.type === "קבלה_בלבד") return false; 
+      
+      // Type Filter
       const matchesType = filterType === "all" || t.type === filterType;
+      
+      // Funding Source Filter
+      const matchesFundingSource = filterFundingSource === "all" || t.fundingSource === filterFundingSource;
+      
+      // Project Filter
+      const matchesProject = !filterProject || (t.project && t.project.toLowerCase().includes(filterProject.toLowerCase()));
+      
+      // Amount Filter
+      const amt = parseFloat(t.amount) || 0;
+      const min = parseFloat(filterMinAmount);
+      const max = parseFloat(filterMaxAmount);
+      const matchesMin = isNaN(min) || amt >= min;
+      const matchesMax = isNaN(max) || amt <= max;
+
+      // Global Search Filter (שם/ספק, הערות, מספר קבלה)
       const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
+      const matchesSearch = !searchTerm || (
         (t.source && t.source.toLowerCase().includes(searchLower)) ||
-        (t.fundingSource && t.fundingSource.toLowerCase().includes(searchLower)) || // شمل المصدر في البحث العام
-        (t.project && t.project.toLowerCase().includes(searchLower)) ||
         (t.receipt && t.receipt.toLowerCase().includes(searchLower)) ||
         (t.notes && t.notes.toLowerCase().includes(searchLower)) ||
-        (t.receiptName && t.receiptName.toLowerCase().includes(searchLower));
-      return matchesType && matchesSearch;
+        (t.receiptName && t.receiptName.toLowerCase().includes(searchLower))
+      );
+
+      return matchesType && matchesFundingSource && matchesProject && matchesMin && matchesMax && matchesSearch;
     });
-  }, [transactions, filterType, searchTerm]);
+  }, [transactions, filterType, filterFundingSource, filterProject, filterMinAmount, filterMaxAmount, searchTerm]);
 
   const uploadedReceipts = useMemo(() => {
     let allReceipts = [];
@@ -89,6 +129,9 @@ export default function Financial() {
     );
   }, [transactions, receiptSearchTerm]);
 
+  // ==========================================
+  // CRUD & UPLOAD OPERATIONS
+  // ==========================================
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(""), 3000);
@@ -102,7 +145,7 @@ export default function Financial() {
       const newTransaction = {
         type: formData.type, 
         amount: parseFloat(formData.amount), 
-        fundingSource: formData.fundingSource, // --- التعديل 2: حفظ المصدر الجديد ---
+        fundingSource: formData.fundingSource,
         source: formData.source.trim(), 
         project: formData.project.trim(),
         date: formData.date, 
@@ -212,7 +255,6 @@ export default function Financial() {
 
   const exportToCSV = () => {
     const BOM = "\uFEFF";
-    // --- التعديل 3: تحديث ترويسة ملف الإكسل ---
     const header = "סוג,סכום,מקור,שם/ספק,פרויקט,תאריך,מספר קבלה,הערות\n";
     const rows = filteredTransactions.map(t => {
       let receiptText = t.receipt || "";
@@ -273,7 +315,10 @@ export default function Financial() {
         .segment-btn.active { background: #fff; color: #8b2c2c; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
         .segment-btn:hover:not(.active) { color: #334155; }
 
-        .filter-section { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .filter-section { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; flex-direction: column; gap: 16px; }
+        .filter-row-1 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .filter-row-2 { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: #fff; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0; }
+        
         .filter-pills-container { display: flex; gap: 6px; background: #fff; border: 1px solid #e2e8f0; padding: 6px; border-radius: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
         .filter-btn { padding: 8px 24px; border-radius: 30px; font-weight: 600; font-size: 13.5px; cursor: pointer; border: none; background: transparent; color: #64748b; transition: all 0.2s; }
         .filter-btn:hover:not(.active) { color: #0f172a; background: #f1f5f9; }
@@ -283,6 +328,11 @@ export default function Financial() {
         .search-input { width: 100%; padding: 12px 40px 12px 16px; border-radius: 30px; border: 1px solid #cbd5e1; outline: none; font-size: 14px; transition: all 0.2s; box-sizing: border-box; background: #fff; }
         .search-input:focus { border-color: #8b2c2c; box-shadow: 0 0 0 3px rgba(139,44,44,0.1); }
         .search-icon { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+
+        .adv-filter-group { display: flex; align-items: center; gap: 8px; }
+        .adv-filter-label { font-size: 13px; font-weight: 600; color: #475569; white-space: nowrap; }
+        .adv-filter-input { padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; outline: none; transition: 0.2s; background: #f8fafc; }
+        .adv-filter-input:focus { border-color: #8b2c2c; background: #fff; }
 
         .fin-table { width: 100%; border-collapse: collapse; }
         .fin-table th { background: #f1f5f9; padding: 16px 24px; text-align: right; color: #475569; font-size: 13.5px; font-weight: bold; border-bottom: 2px solid #cbd5e1; }
@@ -370,22 +420,47 @@ export default function Financial() {
         {activeTab === 'transactions' && (
           <>
             <div className="filter-section">
-              <div className="filter-pills-container">
-                <button className={`filter-btn ${filterType === "all" ? "active" : ""}`} onClick={() => setFilterType("all")}>הכל</button>
-                <button className={`filter-btn ${filterType === "תרומה" ? "active" : ""}`} onClick={() => setFilterType("תרומה")}>תרומות</button>
-                <button className={`filter-btn ${filterType === "הכנסה" ? "active" : ""}`} onClick={() => setFilterType("הכנסה")}>הכנסות כלליות</button>
-                <button className={`filter-btn ${filterType === "הוצאה" ? "active" : ""}`} onClick={() => setFilterType("הוצאה")}>הוצאות</button>
+              {/* Row 1: Type Pills and Global Search */}
+              <div className="filter-row-1">
+                <div className="filter-pills-container">
+                  <button className={`filter-btn ${filterType === "all" ? "active" : ""}`} onClick={() => setFilterType("all")}>הכל</button>
+                  <button className={`filter-btn ${filterType === "תרומה" ? "active" : ""}`} onClick={() => setFilterType("תרומה")}>תרומות</button>
+                  <button className={`filter-btn ${filterType === "הכנסה" ? "active" : ""}`} onClick={() => setFilterType("הכנסה")}>הכנסות כלליות</button>
+                  <button className={`filter-btn ${filterType === "הוצאה" ? "active" : ""}`} onClick={() => setFilterType("הוצאה")}>הוצאות</button>
+                </div>
+                <div className="search-input-wrapper">
+                  <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input type="text" placeholder="חיפוש חופשי..." className="search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
               </div>
-              <div className="search-input-wrapper">
-                <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="חיפוש חופשי..." className="search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+
+              {/* Row 2: Advanced Column Filters */}
+              <div className="filter-row-2">
+                <div className="adv-filter-group">
+                  <span className="adv-filter-label">סינון לפי מקור:</span>
+                  <select className="adv-filter-input" style={{appearance: "auto"}} value={filterFundingSource} onChange={e => setFilterFundingSource(e.target.value)}>
+                    <option value="all">הכל</option>
+                    <option value="אגף/גוף">אגף / גוף</option>
+                    <option value="תורם קבוע">תורם קבוע</option>
+                    <option value="כללי">כללי</option>
+                  </select>
+                </div>
+                <div className="adv-filter-group" style={{ borderRight: "1px solid #e2e8f0", paddingRight: "16px" }}>
+                  <span className="adv-filter-label">פרויקט:</span>
+                  <input type="text" className="adv-filter-input" placeholder="שם פרויקט..." value={filterProject} onChange={e => setFilterProject(e.target.value)} style={{ width: "120px" }} />
+                </div>
+                <div className="adv-filter-group" style={{ borderRight: "1px solid #e2e8f0", paddingRight: "16px" }}>
+                  <span className="adv-filter-label">סכום מ- (₪):</span>
+                  <input type="number" className="adv-filter-input" placeholder="0" value={filterMinAmount} onChange={e => setFilterMinAmount(e.target.value)} style={{ width: "90px" }} />
+                  <span className="adv-filter-label" style={{ marginLeft: "4px" }}>עד:</span>
+                  <input type="number" className="adv-filter-input" placeholder="100,000" value={filterMaxAmount} onChange={e => setFilterMaxAmount(e.target.value)} style={{ width: "90px" }} />
+                </div>
               </div>
             </div>
             
             <div className="custom-scroll" style={{ overflowX: "auto", maxHeight: "450px" }}>
               <table className="fin-table">
                 <thead>
-                  {/* --- التعديل 4: تحديث ترويسة الجدول لإضافة المصدر وتغيير الاسم --- */}
                   <tr>
                     <th>סוג</th>
                     <th>סכום</th>
@@ -407,13 +482,8 @@ export default function Financial() {
                         )}
                       </td>
                       <td style={{ fontWeight: "bold", fontSize: "15px", color: item.type === "הוצאה" ? "#dc3545" : "#0f172a" }}>{formatCurrency(item.amount)}</td>
-                      
-                      {/* عرض المصدر (أجף/תורם/כללי) */}
                       <td style={{ fontWeight: "500", color: "#475569" }}>{item.fundingSource || "כללי"}</td>
-                      
-                      {/* عرض الاسم/المورد */}
                       <td style={{ fontWeight: "600", color: "#334155" }}>{item.source}</td>
-                      
                       <td style={{ color: "#64748b" }}>{item.project || "—"}</td>
                       <td style={{ color: "#64748b" }}>{item.date}</td>
                       <td>
@@ -442,7 +512,7 @@ export default function Financial() {
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan="8" style={{ textAlign: "center", padding: "60px", color: "#94a3b8", fontSize: "15px" }}>לא נמצאו פעולות.</td></tr>
+                    <tr><td colSpan="8" style={{ textAlign: "center", padding: "60px", color: "#94a3b8", fontSize: "15px" }}>לא נמצאו פעולות התואמות לסינון.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -450,7 +520,7 @@ export default function Financial() {
           </>
         )}
 
-        {/* ... بقية كود الـ Receipts Tab لم يتغير ... */}
+        {/* ... (Receipts Tab) ... */}
         {activeTab === 'receipts' && (
           <>
             <div className="filter-section" style={{ justifyContent: "flex-end" }}>
@@ -507,6 +577,11 @@ export default function Financial() {
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", borderRadius: "20px", width: "90%", maxWidth: "680px", boxShadow: "0 25px 50px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
             
+            {/* Auto-Complete Datalist */}
+            <datalist id="source-suggestions">
+              {uniqueSources.map((src, idx) => <option key={idx} value={src} />)}
+            </datalist>
+
             <div style={{ padding: "24px 32px", borderBottom: "1px solid #e2d8c9", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <h3 style={{ margin: 0, color: "#343a40", fontSize: "1.5rem", fontWeight: "bold" }}>הוספת פעולה כספית</h3>
               <button onClick={() => setIsAddModalOpen(false)} style={{ background: "#f8f9fa", border: "1px solid #e2d8c9", borderRadius: "50%", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6c757d", transition: "0.2s" }} onMouseEnter={e => e.currentTarget.style.backgroundColor="#e9ecef"} onMouseLeave={e => e.currentTarget.style.backgroundColor="#f8f9fa"}>
@@ -532,7 +607,6 @@ export default function Financial() {
                   </div>
                 </div>
 
-                {/* --- التعديل 5: إضافة حقل "المصدر" الجديد جنباً إلى جنب مع الاسم/المورد --- */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>מקור <span style={{color: "#dc3545"}}>*</span></label>
@@ -544,7 +618,8 @@ export default function Financial() {
                   </div>
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>שם / ספק <span style={{color: "#dc3545"}}>*</span></label>
-                    <input type="text" required value={formData.source} onChange={(e) => setFormData({...formData, source: e.target.value})} style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} />
+                    {/* Auto-complete input connected to datalist */}
+                    <input type="text" required list="source-suggestions" value={formData.source} onChange={(e) => setFormData({...formData, source: e.target.value})} placeholder="התחל להקליד כדי לראות אפשרויות..." style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} />
                   </div>
                 </div>
 
@@ -601,6 +676,7 @@ export default function Financial() {
         </div>
       )}
 
+      {/* Upload and Edit Modals omitted for brevity - they are unchanged from your last state */}
       {isUploadModalOpen && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", borderRadius: "20px", width: "90%", maxWidth: "680px", boxShadow: "0 25px 50px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
