@@ -1,4 +1,13 @@
+import { Link } from "react-router-dom";
 import useSiteContent from "@/hooks/useSiteContent";
+import { ACTIVITIES } from "@/data/activities";
+
+const SLUGS = {
+  center: "personal-volunteering",
+  bubble0: "parliaments",
+  bubble1: "continuous-connection",
+  bubble2: "holiday-projects",
+};
 
 function NL({ text }) {
   return (text || "").split("\n").map((line, i, arr) => (
@@ -45,7 +54,7 @@ export default function ActivitiesSection() {
             </svg>
 
             {/* Bubble 1 — top */}
-            <div className="act2-bubble act2-bubble-top">
+            <Link to={`/our-work/${SLUGS.bubble0}`} className="act2-bubble act2-bubble-top">
               <div className="act2-bubble-inner">
                 <svg className="act2-ico" viewBox="0 0 48 48" fill="none" stroke="#E89A4A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <circle cx="16" cy="18" r="3.2" />
@@ -57,10 +66,10 @@ export default function ActivitiesSection() {
                 <h3 className="act2-bubble-title">{b[0]?.title}</h3>
                 <p className="act2-bubble-desc"><NL text={b[0]?.desc} /></p>
               </div>
-            </div>
+            </Link>
 
             {/* Bubble 2 — left */}
-            <div className="act2-bubble act2-bubble-bl">
+            <Link to={`/our-work/${SLUGS.bubble1}`} className="act2-bubble act2-bubble-bl">
               <div className="act2-bubble-inner">
                 <svg className="act2-ico" viewBox="0 0 48 48" fill="none" stroke="#E89A4A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M3 24l6-6 5 1 4-3 6 6-3 3-3-2-6 6-3 0z" />
@@ -71,10 +80,10 @@ export default function ActivitiesSection() {
                 <h3 className="act2-bubble-title">{b[1]?.title}</h3>
                 <p className="act2-bubble-desc"><NL text={b[1]?.desc} /></p>
               </div>
-            </div>
+            </Link>
 
             {/* Bubble 3 — bottom-right */}
-            <div className="act2-bubble act2-bubble-br">
+            <Link to={`/our-work/${SLUGS.bubble2}`} className="act2-bubble act2-bubble-br">
               <div className="act2-bubble-inner">
                 <svg className="act2-ico" viewBox="0 0 48 48" fill="none" stroke="#E89A4A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="8" y="12" width="32" height="28" rx="3" />
@@ -87,10 +96,10 @@ export default function ActivitiesSection() {
                 <h3 className="act2-bubble-title">{b[2]?.title}</h3>
                 <p className="act2-bubble-desc"><NL text={b[2]?.desc} /></p>
               </div>
-            </div>
+            </Link>
 
             {/* Center bubble */}
-            <div className="act2-center">
+            <Link to={`/our-work/${SLUGS.center}`} className="act2-center">
               <span className="act2-badge" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="9" r="3.2" />
@@ -114,7 +123,7 @@ export default function ActivitiesSection() {
                 </div>
                 <p className="act2-center-desc"><NL text={a.centerDesc} /></p>
               </div>
-            </div>
+            </Link>
           </div>
         </div>
       </div>

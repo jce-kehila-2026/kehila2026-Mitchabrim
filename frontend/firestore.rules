@@ -147,6 +147,25 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Elderly contact persons — admins only. These are NOT volunteers;
+    // they are family members, social workers, neighbors, etc.
+    match /elderlyContactPersons/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Links between elderly contact persons and elderly citizens.
+    match /elderlyContactLinks/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Organizations and their internal contact persons — admins only.
+    match /organizations/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /organizationContacts/{docId} {
+      allow read, write: if isAdmin();
+    }
+
     // Default: deny. Add app-specific rules for your other collections.
     match /{document=**} {
       allow read, write: if false;

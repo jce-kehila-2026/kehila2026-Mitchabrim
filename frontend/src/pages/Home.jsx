@@ -8,6 +8,7 @@ import GallerySection from "@/components/public/GallerySection.jsx";
 import PartnersSection from "@/components/public/PartnersSection.jsx";
 import JoinRequestSection from "@/components/public/JoinRequestSection.jsx";
 import PressSection from "@/components/public/PressSection.jsx";
+
 import PublicFooter from "@/components/public/PublicFooter.jsx";
 import BackgroundDecorations from "@/components/public/BackgroundDecorations.jsx";
 
@@ -25,6 +26,7 @@ export default function Home() {
       <TeamSection />
       <PressSection />
       <JoinRequestSection />
+      
       <PublicFooter />
     </div>
   );

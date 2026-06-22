@@ -1,13 +1,49 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase";
+import { getElderlyContactById } from "../services/elderlyContactsService";
 
 const Detail = ({ label, value }) => (
   <div className="item"><label>{label}</label><div>{value || "—"}</div></div>
 );
 
+const statusBadge = (s) => (s === "פעיל" ? "badge-green" : "badge-gray");
+
 export default function ElderlyProfile() {
   const { id } = useParams();
+
+  const [contact, setContact] = useState(null);
+  const [loadingContact, setLoadingContact] = useState(true);
+
+  const loadContact = async () => {
+    try {
+      setLoadingContact(true);
+      // Read the elderly document to get its linked contactPersonId
+      const eSnap = await getDoc(doc(db, "elderly", id));
+      const elderly = eSnap.exists() ? eSnap.data() : null;
+      const cpId = elderly?.contactPersonId || null;
+      if (!cpId) {
+        setContact(null);
+        return;
+      }
+      const cp = await getElderlyContactById(cpId);
+      setContact(cp);
+    } catch (e) {
+      console.error(e);
+      setContact(null);
+    } finally {
+      setLoadingContact(false);
+    }
+  };
+
+  useEffect(() => {
+    loadContact();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   return (
     <AdminLayout title="תיק אזרח ותיק" subtitle={`מספר תיק: ${id}`}>
       <Link to="/admin/elderly" className="back-link">→ חזרה לרשימה</Link>
@@ -31,11 +67,42 @@ export default function ElderlyProfile() {
         </div>
       </SectionCard>
 
-      <SectionCard title="איש קשר">
-        <div className="detail-grid">
-          <Detail label="שם איש קשר" value="דוד לוי (בן)" />
-          <Detail label="טלפון" value="054-9999999" />
-        </div>
+      <SectionCard
+        title="איש קשר של האזרח"
+        actions={
+          <Link to="/admin/elderly" className="btn btn-sm">
+            עריכת איש קשר מקושר
+          </Link>
+        }
+      >
+        {loadingContact ? (
+          <p style={{ color: "#6b7280" }}>טוען איש קשר...</p>
+        ) : !contact ? (
+          <p style={{ color: "#6b7280" }}>לא קושר איש קשר</p>
+        ) : (
+          <>
+            <div className="detail-grid">
+              <Detail label="שם איש קשר" value={contact.fullName} />
+              <Detail label="סוג קשר" value={contact.relationType} />
+              <Detail label="טלפון" value={contact.phone} />
+              <Detail label="מייל" value={contact.email} />
+              <Detail
+                label="סטטוס"
+                value={
+                  <span className={`badge ${statusBadge(contact.status)}`}>
+                    {contact.status || "פעיל"}
+                  </span>
+                }
+              />
+            </div>
+            {contact.notes && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ fontWeight: 600 }}>הערות</label>
+                <p style={{ margin: "4px 0 0", color: "#374151" }}>{contact.notes}</p>
+              </div>
+            )}
+          </>
+        )}
       </SectionCard>
 
       <SectionCard title="רקע וצרכים">
@@ -55,16 +122,10 @@ export default function ElderlyProfile() {
         </div>
       </SectionCard>
 
-
       <SectionCard title="היסטוריית פרויקטי חגים">
         <div className="list-item">
           <div><div className="list-item-title">חלוקת חבילות חנוכה 2025</div>
           <div className="list-item-sub">קיבלה • נמסר על ידי: דניאלה כץ</div></div>
-          <span className="badge badge-green">נמסר</span>
-        </div>
-        <div className="list-item">
-          <div><div className="list-item-title">שי לפסח 2025</div>
-          <div className="list-item-sub">קיבלה • נמסר על ידי: חברת חשמל</div></div>
           <span className="badge badge-green">נמסר</span>
         </div>
       </SectionCard>
