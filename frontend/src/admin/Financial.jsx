@@ -27,7 +27,6 @@ export default function Financial() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isEditReceiptModalOpen, setIsEditReceiptModalOpen] = useState(false);
   
-  // --- حالة جديدة للتحكم بظهور القائمة المنسدلة المخصصة ---
   const [showSuggestions, setShowSuggestions] = useState(false);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -73,7 +72,6 @@ export default function Financial() {
     return { income, expenses, donations, balance: income - expenses };
   }, [transactions]);
 
-  // Extract unique sources for Auto-Complete
   const uniqueSources = useMemo(() => {
     const sourcesList = transactions.filter(t => t.type !== "קבלה_בלבד" && t.source).map(t => t.source.trim());
     return [...new Set(sourcesList)];
@@ -296,6 +294,26 @@ export default function Financial() {
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; transition: background 0.2s; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+        /* --- CSS الخاص ببانر التحذير --- */
+        .fin-alert-banner {
+          background-color: #fef2f2;
+          border: 1px solid #f87171;
+          border-right: 4px solid #dc3545;
+          color: #991b1b;
+          padding: 16px 20px;
+          border-radius: 12px;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-size: 14.5px;
+          box-shadow: 0 4px 6px -1px rgba(220, 53, 69, 0.1);
+          animation: fadeInDown 0.4s ease-out;
+          direction: rtl;
+        }
+        .fin-alert-banner svg { color: #dc3545; flex-shrink: 0; }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
         .fin-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 24px; direction: rtl; }
         .fin-stat-card { background: #fff; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 10px rgba(0,0,0,0.02); display: flex; justify-content: space-between; align-items: flex-start; transition: all 0.2s; }
         .fin-stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(139,44,44,0.05); }
@@ -375,7 +393,6 @@ export default function Financial() {
         }
         .modal-form-select:focus { border-color: #8b2c2c; box-shadow: 0 0 0 3px rgba(139,44,44,0.1); }
 
-        /* --- CSS الخاص بالقائمة المنسدلة الذكية --- */
         .autocomplete-wrapper { position: relative; width: 100%; }
         .autocomplete-dropdown { 
           position: absolute; top: 100%; left: 0; right: 0; 
@@ -397,6 +414,21 @@ export default function Financial() {
 
       {toastMessage && <div className="toast-msg">✓ {toastMessage}</div>}
 
+      {/* --- شريط التحذير الجديد يظهر فقط إذا كان الرصيد أقل من صفر --- */}
+      {globalTotals.balance < 0 && (
+        <div className="fin-alert-banner">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div>
+            <strong>שים לב: </strong> 
+            קופת הארגון נמצאת בגירעון (מינוס). יש לעקוב אחר ההוצאות.
+          </div>
+        </div>
+      )}
+
       <div className="fin-stats-grid">
         <div className="fin-stat-card">
           <div><span className="fin-label">סה״כ הכנסות</span><span className="fin-value">{formatCurrency(globalTotals.income)}</span></div>
@@ -410,9 +442,9 @@ export default function Financial() {
           <div><span className="fin-label">סך תרומות</span><span className="fin-value" style={{ color: "#8b2c2c" }}>{formatCurrency(globalTotals.donations)}</span></div>
           <div className="fin-icon-box">❤️</div>
         </div>
-        <div className="fin-stat-card" style={{ borderColor: "#8b2c2c", background: "#fffefc" }}>
-          <div><span className="fin-label" style={{ color: "#8b2c2c" }}>יתרה נוכחית</span><span className="fin-value" style={{ color: globalTotals.balance < 0 ? "#dc3545" : "#1e6b2c" }}>{formatCurrency(globalTotals.balance)}</span></div>
-          <div className="fin-icon-box" style={{ backgroundColor: "#8b2c2c", color: "white" }}>📊</div>
+        <div className="fin-stat-card" style={{ borderColor: globalTotals.balance < 0 ? "#dc3545" : "#8b2c2c", background: globalTotals.balance < 0 ? "#fdf2f2" : "#fffefc" }}>
+          <div><span className="fin-label" style={{ color: globalTotals.balance < 0 ? "#dc3545" : "#8b2c2c" }}>יתרה נוכחית</span><span className="fin-value" style={{ color: globalTotals.balance < 0 ? "#dc3545" : "#1e6b2c" }}>{formatCurrency(globalTotals.balance)}</span></div>
+          <div className="fin-icon-box" style={{ backgroundColor: globalTotals.balance < 0 ? "#dc3545" : "#8b2c2c", color: "white" }}>📊</div>
         </div>
       </div>
 
@@ -529,6 +561,7 @@ export default function Financial() {
           </>
         )}
 
+        {/* ... (Receipts Tab) ... */}
         {activeTab === 'receipts' && (
           <>
             <div className="filter-section" style={{ justifyContent: "flex-end" }}>
@@ -620,7 +653,6 @@ export default function Financial() {
                     </select>
                   </div>
                   
-                  {/* --- المكون الجديد للقائمة المنسدلة البيضاء الأنيقة --- */}
                   <div className="autocomplete-wrapper">
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>שם / ספק <span style={{color: "#dc3545"}}>*</span></label>
                     <input 
