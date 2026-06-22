@@ -20,7 +20,7 @@ export default function GallerySection() {
   const goTo = (i) => setIndex(((i % total) + total) % total);
 
   return (
-    <section className="pub-section gallery3d-section">
+    <section id="gallery" className="pub-section gallery3d-section">
       <div className="container">
         <div className="gallery-header">
           <span className="section-eyebrow">{g.eyebrow}</span>
