@@ -11,6 +11,7 @@ import {
   deleteElderly,
 } from "@/services/elderlyService.js";
 import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
+import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 
 /* ===== Options (shared with volunteers page) =====
@@ -379,13 +380,40 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
         </div>
 
         <div className="form-section">
-          <h4>איש קשר</h4>
+          <h4>איש קשר של האזרח</h4>
+          {entry.contactPersonId ? (
+            <>
+              <div className="detail-grid">
+                <D label="שם איש קשר" value={entry.contactPersonName} />
+                <D label="סוג קשר" value={entry.contactPersonRelationType} />
+                <D label="טלפון" value={entry.contactPersonPhone} />
+                <D label="מייל" value={entry.contactPersonEmail} />
+                <D label="סטטוס" value={entry.contactPersonStatus} />
+              </div>
+              {entry.contactPersonNotes && (
+                <div className="field" style={{ marginTop: 10 }}>
+                  <label>הערות</label>
+                  <div>{entry.contactPersonNotes}</div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p style={{ color: "#6b7280", margin: 0 }}>לא קושר איש קשר</p>
+          )}
+          <div style={{ marginTop: 10 }}>
+            <button className="btn btn-sm" onClick={() => setEditing(true)}>
+              עריכת איש קשר מקושר
+            </button>
+          </div>
+        </div>
+
+        <div className="form-section">
+          <h4>תאריך יצירת קשר אחרון</h4>
           <div className="detail-grid">
-            <D label="שם איש קשר" value={entry.contactName} />
-            <D label="טלפון איש קשר" value={entry.contactPhone} />
             <D label="תאריך יצירת קשר אחרונה" value={entry.lastContact} />
           </div>
         </div>
+
 
         <div className="form-section">
           <h4>התנדבות</h4>
@@ -428,12 +456,12 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
 }
 
 /* ===== Form modal (add / edit) ===== */
-const NUMERIC_FIELDS = ["idNum", "mobile", "homePhone", "contactPhone"];
+const NUMERIC_FIELDS = ["idNum", "mobile", "homePhone"];
 const REQUIRED_LABELS = {
   firstName: "שם פרטי", lastName: "שם משפחה", idNum: "ת.ז", birth: "תאריך לידה",
   marital: "מצב משפחתי", mobile: "טלפון נייד", homePhone: "טלפון בית",
   area: "אזור", neighborhood: "שכונה",
-  contactName: "שם איש קשר", contactPhone: "טלפון איש קשר", lastContact: "תאריך יצירת קשר אחרונה",
+  lastContact: "תאריך יצירת קשר אחרונה",
   volStatus: "סטטוס מתנדב", volName: "שם מתנדב",
   country: "ארץ לידה", language: "שפת דיבור", status: "סטטוס",
 };
@@ -452,7 +480,10 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
       firstName: "", lastName: "", idNum: "", birth: "",
       mobile: "", homePhone: "",
       area: "", neighborhood: "", address: "",
-      contactName: "", contactPhone: "", lastContact: "",
+      lastContact: "",
+      contactPersonId: null, contactPersonName: "", contactPersonPhone: "",
+      contactPersonRelationType: "", contactPersonEmail: "",
+      contactPersonStatus: "", contactPersonNotes: "",
       volStatus: "לא רוצה", volName: "",
       assistance: "", marital: MARITAL_OPTIONS[0],
       country: "ישראל", language: "עברית",
@@ -468,6 +499,10 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const [volunteers, setVolunteers] = useState([]);
   const [volLoading, setVolLoading] = useState(true);
   const [volError, setVolError] = useState("");
+  // Load contact persons for the contact-person-select dropdown.
+  const [contactPersons, setContactPersons] = useState([]);
+  const [cpLoading, setCpLoading] = useState(true);
+  const [cpError, setCpError] = useState("");
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -482,8 +517,21 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
         if (mounted) setVolLoading(false);
       }
     })();
+    (async () => {
+      try {
+        const list = await getElderlyContacts();
+        if (!mounted) return;
+        setContactPersons(list);
+      } catch (err) {
+        console.error("Failed to load contact persons:", err);
+        if (mounted) setCpError("טעינת רשימת אנשי הקשר נכשלה");
+      } finally {
+        if (mounted) setCpLoading(false);
+      }
+    })();
     return () => { mounted = false; };
   }, []);
+
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   // Changing area resets neighborhood to avoid stale/invalid pairings.
@@ -593,17 +641,36 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
         </div>
 
         <div className="form-section">
-          <h4>איש קשר</h4>
+          <h4>איש קשר מקושר</h4>
           <div className="row row-2">
-            <div className="field"><label>שם איש קשר</label><input className="input" value={f.contactName} onChange={set("contactName")} /></div>
-            <div className="field">
-              <label>טלפון איש קשר</label>
-              <input className="input" value={f.contactPhone} onChange={setDigits("contactPhone")} inputMode="numeric" />
-              <NumericMsg k="contactPhone" />
+            <div className="field" style={{ gridColumn: "1 / -1" }}>
+              <label>איש קשר מקושר</label>
+              <ContactPersonSelect
+                contactPersons={contactPersons}
+                loading={cpLoading}
+                error={cpError}
+                valueId={f.contactPersonId}
+                onChange={(cp) =>
+                  setF({
+                    ...f,
+                    contactPersonId: cp ? cp.id : null,
+                    contactPersonName: cp ? (cp.fullName || `${cp.firstName || ""} ${cp.lastName || ""}`.trim()) : "",
+                    contactPersonPhone: cp ? (cp.phone || "") : "",
+                    contactPersonRelationType: cp ? (cp.relationType || "") : "",
+                    contactPersonEmail: cp ? (cp.email || "") : "",
+                    contactPersonStatus: cp ? (cp.status || "פעיל") : "",
+                    contactPersonNotes: cp ? (cp.notes || "") : "",
+                  })
+                }
+              />
+              <div style={{ color: "#6b7280", fontSize: 12, marginTop: 6 }}>
+                ניתן לבחור רק איש קשר קיים. ליצירת איש קשר חדש יש לעבור ל"ניהול אנשי קשר לקשישים".
+              </div>
             </div>
             <div className="field"><label>תאריך יצירת קשר אחרונה</label><input className="input" type="date" value={f.lastContact} onChange={set("lastContact")} /></div>
           </div>
         </div>
+
 
         <div className="form-section">
           <h4>התנדבות</h4>
@@ -948,4 +1015,120 @@ function optionStyle(active) {
     borderBottom: "1px solid #f8fafc",
     cursor: "pointer",
   };
+}
+
+/* ===== Searchable contact-person dropdown =====
+   Loads from elderlyContactPersons. Lets the admin search by name/phone/relation
+   type and pick "ללא איש קשר" to clear. Only selects existing contact persons. */
+function ContactPersonSelect({ contactPersons, loading, error, valueId, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const cName = (c) => c.fullName || `${c.firstName || ""} ${c.lastName || ""}`.trim();
+  const cPhone = (c) => c.phone || "";
+  const cRel = (c) => c.relationType || "";
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return contactPersons;
+    return contactPersons.filter((c) =>
+      [cName(c), cPhone(c), cRel(c)].join(" ").toLowerCase().includes(q),
+    );
+  }, [contactPersons, query]);
+
+  const selected = valueId ? contactPersons.find((c) => c.id === valueId) : null;
+  const displayText = selected
+    ? `${cName(selected)}${cPhone(selected) ? " — " + cPhone(selected) : ""}${cRel(selected) ? " — " + cRel(selected) : ""}`
+    : "בחר/י איש קשר מהרשימה";
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="select"
+        onClick={() => setOpen((o) => !o)}
+        style={{ width: "100%", textAlign: "start", cursor: "pointer", background: "#fff" }}
+      >
+        {loading ? "טוען אנשי קשר…" : displayText}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            insetInlineStart: 0,
+            insetInlineEnd: 0,
+            zIndex: 50,
+            background: "#fff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            boxShadow: "0 10px 30px rgba(0,0,0,.12)",
+            maxHeight: 320,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
+            <input
+              className="input"
+              autoFocus
+              placeholder="חיפוש לפי שם, טלפון או סוג קשר…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+
+          <div style={{ overflowY: "auto", maxHeight: 240 }}>
+            <button
+              type="button"
+              onClick={() => { onChange(null); setOpen(false); setQuery(""); }}
+              style={optionStyle(!valueId)}
+            >
+              ללא איש קשר
+            </button>
+
+            {error && (
+              <div style={{ padding: 12, color: "#b91c1c", fontSize: 13 }}>{error}</div>
+            )}
+            {!error && loading && (
+              <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}>טוען אנשי קשר…</div>
+            )}
+            {!error && !loading && filtered.length === 0 && (
+              <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}>
+                {contactPersons.length === 0 ? "לא נמצאו אנשי קשר במערכת" : "לא נמצאו תוצאות"}
+              </div>
+            )}
+            {!loading && filtered.map((c) => {
+              const isSel = c.id === valueId;
+              const parts = [cPhone(c), cRel(c)].filter(Boolean);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => { onChange(c); setOpen(false); setQuery(""); }}
+                  style={optionStyle(isSel)}
+                >
+                  <div style={{ fontWeight: 600, color: "#0f172a" }}>{cName(c) || "—"}</div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>
+                    {parts.join(" — ") || "—"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
