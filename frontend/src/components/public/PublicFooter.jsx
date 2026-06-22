@@ -26,11 +26,12 @@ export default function PublicFooter() {
           <div className="footer-col">
             <h4>ניווט</h4>
             <ul>
-              <li><a href="#">בית</a></li>
               <li><a href="#about">אודות</a></li>
-              <li><a href="#activities">פעילויות</a></li>
-              <li><a href="#join">התנדבות</a></li>
-              <li><a href="#join">הצטרפות</a></li>
+              <li><a href="#partners">שותפים</a></li>
+              <li><a href="#activities">העשייה שלנו</a></li>
+              <li><a href="#team">צוות</a></li>
+              <li><a href="#gallery">גלריה</a></li>
+              <li><a href="#join">יצירת קשר</a></li>
               <li><a href="/login">כניסה</a></li>
             </ul>
           </div>

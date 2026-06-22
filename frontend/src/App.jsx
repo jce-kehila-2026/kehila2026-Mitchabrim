@@ -6,6 +6,7 @@ import "./styles/volunteer.css";
 import "./styles/Login.css";
 
 import Home from "./pages/Home.jsx";
+import ActivityDetail from "./pages/ActivityDetail.jsx";
 import Login from "./pages/Login.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
@@ -24,6 +25,8 @@ import VolunteerReports from "./admin/VolunteerReports.jsx";
 import Settings from "./admin/Settings.jsx";
 import SiteContent from "./admin/SiteContent.jsx";
 import ProfileUpdateRequests from "./admin/ProfileUpdateRequests.jsx";
+import ElderlyContacts from "./admin/ElderlyContacts.jsx";
+import Organizations from "./admin/Organizations.jsx";
 
 import VolunteerDashboard from "./volunteer/VolunteerDashboard.jsx";
 import VolunteerReportForm from "./volunteer/VolunteerReportForm.jsx";
@@ -42,6 +45,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/our-work/:slug" element={<ActivityDetail />} />
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
 
@@ -50,8 +54,11 @@ export default function App() {
 
       <Route path="/admin" element={<Admin><Dashboard /></Admin>} />
       <Route path="/admin/elderly" element={<Admin><Elderly /></Admin>} />
+      <Route path="/admin/elderly-contacts" element={<Admin><ElderlyContacts /></Admin>} />
       <Route path="/admin/elderly/:id" element={<Admin><ElderlyProfile /></Admin>} />
       <Route path="/admin/volunteers" element={<Admin><Volunteers /></Admin>} />
+      <Route path="/admin/organizations-contacts" element={<Admin><Organizations /></Admin>} />
+
       <Route path="/admin/projects" element={<Admin><Projects /></Admin>} />
       <Route path="/admin/parliaments" element={<Admin><Parliaments /></Admin>} />
       <Route path="/admin/media" element={<Admin><Media /></Admin>} />
