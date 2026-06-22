@@ -9,32 +9,38 @@ export default function Financial() {
   // STATE MANAGEMENT
   // ==========================================
   const [transactions, setTransactions] = useState([]);
-  
   const [activeTab, setActiveTab] = useState("transactions"); 
-
+  
+  // Basic Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all"); 
   
+  // Advanced Filters
+  const [filterFundingSource, setFilterFundingSource] = useState("all");
+  const [filterProject, setFilterProject] = useState("");
+  const [filterMinAmount, setFilterMinAmount] = useState("");
+  const [filterMaxAmount, setFilterMaxAmount] = useState("");
+
   const [receiptSearchTerm, setReceiptSearchTerm] = useState("");
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isEditReceiptModalOpen, setIsEditReceiptModalOpen] = useState(false);
   
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-
   const [toastMessage, setToastMessage] = useState(""); 
   const [deleteId, setDeleteId] = useState(null); 
   const [deleteReceiptData, setDeleteReceiptData] = useState(null); 
 
   const [formData, setFormData] = useState({
-    type: "תרומה", amount: "", source: "", project: "", date: new Date().toISOString().split('T')[0], receipt: "", notes: "", paymentMethod: "העברה בנקאית", otherPaymentMethod: ""
+    type: "תרומה", amount: "", fundingSource: "כללי", source: "", project: "", date: new Date().toISOString().split('T')[0], receipt: "", notes: "", paymentMethod: "העברה בנקאית", otherPaymentMethod: ""
   });
 
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadData, setUploadData] = useState({ receiptName: "", receiptNumber: "", transactionId: "" });
-
   const [editReceiptData, setEditReceiptData] = useState(null);
 
   // ==========================================
@@ -61,58 +67,53 @@ export default function Financial() {
       const amountVal = parseFloat(item.amount) || 0;
       if (item.type === "הוצאה") expenses += amountVal;
       else if (item.type === "תרומה") { income += amountVal; donations += amountVal; }
-      else if (item.type === "הכנסה") income += amountVal; // تم التصحيح هنا
+      else if (item.type === "הכנסה") income += amountVal; 
     });
     return { income, expenses, donations, balance: income - expenses };
+  }, [transactions]);
+
+  const uniqueSources = useMemo(() => {
+    const sourcesList = transactions.filter(t => t.type !== "קבלה_בלבד" && t.source).map(t => t.source.trim());
+    return [...new Set(sourcesList)];
   }, [transactions]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       if (t.type === "קבלה_בלבד") return false; 
       const matchesType = filterType === "all" || t.type === filterType;
+      const matchesFundingSource = filterFundingSource === "all" || t.fundingSource === filterFundingSource;
+      const matchesProject = !filterProject || (t.project && t.project.toLowerCase().includes(filterProject.toLowerCase()));
+      
+      const amt = parseFloat(t.amount) || 0;
+      const min = parseFloat(filterMinAmount);
+      const max = parseFloat(filterMaxAmount);
+      const matchesMin = isNaN(min) || amt >= min;
+      const matchesMax = isNaN(max) || amt <= max;
+
       const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
+      const matchesSearch = !searchTerm || (
         (t.source && t.source.toLowerCase().includes(searchLower)) ||
-        (t.project && t.project.toLowerCase().includes(searchLower)) ||
         (t.receipt && t.receipt.toLowerCase().includes(searchLower)) ||
         (t.notes && t.notes.toLowerCase().includes(searchLower)) ||
-        (t.receiptName && t.receiptName.toLowerCase().includes(searchLower));
-      return matchesType && matchesSearch;
+        (t.receiptName && t.receiptName.toLowerCase().includes(searchLower))
+      );
+
+      return matchesType && matchesFundingSource && matchesProject && matchesMin && matchesMax && matchesSearch;
     });
-  }, [transactions, filterType, searchTerm]);
+  }, [transactions, filterType, filterFundingSource, filterProject, filterMinAmount, filterMaxAmount, searchTerm]);
 
   const uploadedReceipts = useMemo(() => {
     let allReceipts = [];
-    
     transactions.forEach(t => {
-      // 1. الفواتير المستقلة أو القديمة (Legacy)
       if (t.receiptUrl || t.type === "קבלה_בלבד") {
-          allReceipts.push({
-              ...t,
-              archiveId: t.id + "_legacy",
-              isStandalone: t.type === "קבלה_בלבד",
-              isAttachment: false
-          });
+          allReceipts.push({ ...t, archiveId: t.id + "_legacy", isStandalone: t.type === "קבלה_בלבד", isAttachment: false });
       }
-      
-      // 2. الفواتير المتعددة الجديدة (Attachments Array)
       if (t.attachments && t.attachments.length > 0) {
           t.attachments.forEach(att => {
-              allReceipts.push({
-                  ...t, // نسخ بيانات العملية الأم (المبلغ، المشروع، الخ)
-                  archiveId: t.id + "_" + att.id,
-                  receiptUrl: att.url,
-                  receiptName: att.name,
-                  receipt: att.number,
-                  isStandalone: false,
-                  isAttachment: true,
-                  attachmentId: att.id
-              });
+              allReceipts.push({ ...t, archiveId: t.id + "_" + att.id, receiptUrl: att.url, receiptName: att.name, receipt: att.number, isStandalone: false, isAttachment: true, attachmentId: att.id });
           });
       }
     });
-
-    // تطبيق فلتر البحث على المصفوفة المسطحة الجديدة
     const searchLower = receiptSearchTerm.toLowerCase();
     return allReceipts.filter(r => 
       (r.receiptName && r.receiptName.toLowerCase().includes(searchLower)) ||
@@ -137,6 +138,7 @@ export default function Financial() {
       const newTransaction = {
         type: formData.type, 
         amount: parseFloat(formData.amount), 
+        fundingSource: formData.fundingSource,
         source: formData.source.trim(), 
         project: formData.project.trim(),
         date: formData.date, 
@@ -157,7 +159,7 @@ export default function Financial() {
 
       await addDoc(collection(db, "financialTransactions"), newTransaction);
       setIsAddModalOpen(false);
-      setFormData({ type: "תרומה", amount: "", source: "", project: "", date: new Date().toISOString().split('T')[0], receipt: "", notes: "", paymentMethod: "העברה בנקאית", otherPaymentMethod: "" });
+      setFormData({ type: "תרומה", amount: "", fundingSource: "כללי", source: "", project: "", date: new Date().toISOString().split('T')[0], receipt: "", notes: "", paymentMethod: "העברה בנקאית", otherPaymentMethod: "" });
       showToast("הפעולה נשמרה בהצלחה!"); 
     } catch (error) { alert("שגיאה בשמירת הנתונים."); } 
     finally { setIsSubmitting(false); }
@@ -167,7 +169,7 @@ export default function Financial() {
     try {
       await deleteDoc(doc(db, "financialTransactions", id));
       setDeleteId(null);
-      showToast("הפעולה נמחקה מהמערכת!"); // تم التصحيح
+      showToast("הפעולה נמחקה מהמערכת!"); 
     } catch (error) { alert("שגיאה במחיקת הפעולה."); }
   };
 
@@ -184,21 +186,10 @@ export default function Financial() {
       const finalReceiptNum = uploadData.receiptNumber.trim() || "ללא מספר";
 
       if (uploadData.transactionId) {
-        // تحديث جذري: إضافة الفاتورة كمرفق إضافي بدلاً من استبدال القديمة
         const tx = transactions.find(t => t.id === uploadData.transactionId);
         const currentAttachments = tx.attachments || [];
-        
-        const newAttachment = {
-            url: downloadUrl,
-            name: finalReceiptName,
-            number: finalReceiptNum,
-            id: Date.now().toString() // معرف فريد للمرفق
-        };
-
-        await updateDoc(doc(db, "financialTransactions", uploadData.transactionId), { 
-            attachments: [...currentAttachments, newAttachment]
-        });
-
+        const newAttachment = { url: downloadUrl, name: finalReceiptName, number: finalReceiptNum, id: Date.now().toString() };
+        await updateDoc(doc(db, "financialTransactions", uploadData.transactionId), { attachments: [...currentAttachments, newAttachment] });
       } else {
         await addDoc(collection(db, "financialTransactions"), {
           type: "קבלה_בלבד", amount: 0, source: "—", project: "—", date: new Date().toISOString().split('T')[0],
@@ -206,7 +197,7 @@ export default function Financial() {
         });
       }
       setIsUploadModalOpen(false); setUploadFile(null); setUploadData({ receiptName: "", receiptNumber: "", transactionId: "" });
-      showToast("הקבלה הועלתה וצורפה בהצלחה!"); // تم التصحيح
+      showToast("הקבלה הועלתה וצורפה בהצלחה!"); 
       setActiveTab("receipts"); 
     } catch (error) { alert("שגיאה בהעלאת הקובץ."); } 
     finally { setIsUploading(false); }
@@ -217,16 +208,10 @@ export default function Financial() {
     setIsSubmitting(true);
     try {
       const { id, isStandalone, isAttachment, attachmentId, receiptUrl, receiptName, receipt } = editReceiptData;
-      const oldTxId = id;
-      const newTxId = uploadData.transactionId; 
+      const oldTxId = id; const newTxId = uploadData.transactionId; 
 
-      if (oldTxId === newTxId && !isStandalone) {
-        setIsEditReceiptModalOpen(false);
-        setIsSubmitting(false);
-        return; 
-      }
+      if (oldTxId === newTxId && !isStandalone) { setIsEditReceiptModalOpen(false); setIsSubmitting(false); return; }
 
-      // 2. الحذف من الوجهة القديمة
       if (isStandalone) {
         if (newTxId) {
           await updateDoc(doc(db, "financialTransactions", newTxId), { receiptUrl, receiptName, receipt });
@@ -244,42 +229,31 @@ export default function Financial() {
           await updateDoc(doc(db, "financialTransactions", oldTxId), { receiptUrl: "", receiptName: "", receipt: "" });
         }
       }
-      
-      setIsEditReceiptModalOpen(false);
-      showToast("שיוך הקבלה עודכן בהצלחה!");
-    } catch (error) {
-      alert("שגיאה בעדכון השיוך.");
-    } finally {
-      setIsSubmitting(false);
-    }
+      setIsEditReceiptModalOpen(false); showToast("שיוך הקבלה עודכן בהצלחה!");
+    } catch (error) { alert("שגיאה בעדכון השיוך."); } finally { setIsSubmitting(false); }
   };
 
   const handleDeleteReceiptConfirm = async () => {
     if (!deleteReceiptData) return;
     try {
-      if (deleteReceiptData.isStandalone) {
-          await deleteDoc(doc(db, "financialTransactions", deleteReceiptData.id));
-      } else if (deleteReceiptData.isAttachment) {
+      if (deleteReceiptData.isStandalone) { await deleteDoc(doc(db, "financialTransactions", deleteReceiptData.id)); } 
+      else if (deleteReceiptData.isAttachment) {
           const tx = transactions.find(t => t.id === deleteReceiptData.id);
           const updatedAttachments = tx.attachments.filter(a => a.id !== deleteReceiptData.attachmentId);
           await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { attachments: updatedAttachments });
-      } else {
-          await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { receiptUrl: "", receiptName: "" });
-      }
-      setDeleteReceiptData(null);
-      showToast("הקבלה הוסרה בהצלחה!");
+      } else { await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { receiptUrl: "", receiptName: "" }); }
+      setDeleteReceiptData(null); showToast("הקבלה הוסרה בהצלחה!");
     } catch (error) { alert("שגיאה במחיקת הקבלה."); }
   };
 
   const exportToCSV = () => {
     const BOM = "\uFEFF";
-    const header = "סוג,סכום,מקור,פרויקט,תאריך,מספר קבלה,הערות\n";
+    const header = "סוג,סכום,מקור,שם/ספק,פרויקט,תאריך,מספר קבלה,הערות\n";
     const rows = filteredTransactions.map(t => {
       let receiptText = t.receipt || "";
-      if (t.attachments && t.attachments.length > 0) {
-          receiptText = t.attachments.map(a => a.number || a.name).join(" | ");
-      }
-      return `"${t.type}","${t.amount}","${t.source}","${t.project}","${t.date}","${receiptText}","${t.notes}"`;
+      if (t.attachments && t.attachments.length > 0) { receiptText = t.attachments.map(a => a.number || a.name).join(" | "); }
+      const fundSrc = t.fundingSource || "—";
+      return `"${t.type}","${t.amount}","${fundSrc}","${t.source}","${t.project}","${t.date}","${receiptText}","${t.notes}"`;
     }).join("\n");
     const blob = new Blob([BOM + header + rows], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -293,7 +267,7 @@ export default function Financial() {
   const getBadgeStyle = (type) => {
     if (type === "תרומה") return { backgroundColor: "#e8f5e9", color: "#1e6b2c" };
     if (type === "הוצאה") return { backgroundColor: "#fdecec", color: "#dc3545" };
-    if (type === "הכנסה") return { backgroundColor: "#e2e3e5", color: "#383d41" }; // تم التصحيح
+    if (type === "הכנסה") return { backgroundColor: "#e2e3e5", color: "#383d41" }; 
     return {};
   };
 
@@ -320,7 +294,25 @@ export default function Financial() {
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; transition: background 0.2s; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-        /* action-btn-primary/secondary/tertiary are now defined globally in admin.css */
+        /* --- CSS الخاص ببانر التحذير --- */
+        .fin-alert-banner {
+          background-color: #fef2f2;
+          border: 1px solid #f87171;
+          border-right: 4px solid #dc3545;
+          color: #991b1b;
+          padding: 16px 20px;
+          border-radius: 12px;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-size: 14.5px;
+          box-shadow: 0 4px 6px -1px rgba(220, 53, 69, 0.1);
+          animation: fadeInDown 0.4s ease-out;
+          direction: rtl;
+        }
+        .fin-alert-banner svg { color: #dc3545; flex-shrink: 0; }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
         .fin-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 24px; direction: rtl; }
         .fin-stat-card { background: #fff; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 10px rgba(0,0,0,0.02); display: flex; justify-content: space-between; align-items: flex-start; transition: all 0.2s; }
@@ -336,7 +328,10 @@ export default function Financial() {
         .segment-btn.active { background: #fff; color: #8b2c2c; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
         .segment-btn:hover:not(.active) { color: #334155; }
 
-        .filter-section { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .filter-section { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; flex-direction: column; gap: 16px; }
+        .filter-row-1 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .filter-row-2 { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; background: #fff; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0; }
+        
         .filter-pills-container { display: flex; gap: 6px; background: #fff; border: 1px solid #e2e8f0; padding: 6px; border-radius: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
         .filter-btn { padding: 8px 24px; border-radius: 30px; font-weight: 600; font-size: 13.5px; cursor: pointer; border: none; background: transparent; color: #64748b; transition: all 0.2s; }
         .filter-btn:hover:not(.active) { color: #0f172a; background: #f1f5f9; }
@@ -346,6 +341,11 @@ export default function Financial() {
         .search-input { width: 100%; padding: 12px 40px 12px 16px; border-radius: 30px; border: 1px solid #cbd5e1; outline: none; font-size: 14px; transition: all 0.2s; box-sizing: border-box; background: #fff; }
         .search-input:focus { border-color: #8b2c2c; box-shadow: 0 0 0 3px rgba(139,44,44,0.1); }
         .search-icon { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+
+        .adv-filter-group { display: flex; align-items: center; gap: 8px; }
+        .adv-filter-label { font-size: 13px; font-weight: 600; color: #475569; white-space: nowrap; }
+        .adv-filter-input { padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; outline: none; transition: 0.2s; background: #f8fafc; }
+        .adv-filter-input:focus { border-color: #8b2c2c; background: #fff; }
 
         .fin-table { width: 100%; border-collapse: collapse; }
         .fin-table th { background: #f1f5f9; padding: 16px 24px; text-align: right; color: #475569; font-size: 13.5px; font-weight: bold; border-bottom: 2px solid #cbd5e1; }
@@ -393,11 +393,41 @@ export default function Financial() {
         }
         .modal-form-select:focus { border-color: #8b2c2c; box-shadow: 0 0 0 3px rgba(139,44,44,0.1); }
 
+        .autocomplete-wrapper { position: relative; width: 100%; }
+        .autocomplete-dropdown { 
+          position: absolute; top: 100%; left: 0; right: 0; 
+          background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; 
+          margin-top: 4px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+          z-index: 50; max-height: 180px; overflow-y: auto; 
+          list-style: none; padding: 0; 
+        }
+        .autocomplete-item { 
+          padding: 10px 16px; cursor: pointer; color: #334155; font-size: 14px; 
+          border-bottom: 1px solid #f1f5f9; transition: background 0.2s;
+        }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover { background: #f8fafc; color: #8b2c2c; font-weight: bold; }
+
         .toast-msg { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background-color: #1e6b2c; color: white; padding: 12px 24px; border-radius: 30px; font-weight: bold; font-size: 14px; box-shadow: 0 10px 20px rgba(30,107,44,0.3); z-index: 5000; animation: slideUp 0.3s ease-out; }
         @keyframes slideUp { from { bottom: -50px; opacity: 0; } to { bottom: 30px; opacity: 1; } }
       `}</style>
 
       {toastMessage && <div className="toast-msg">✓ {toastMessage}</div>}
+
+      {/* --- شريط التحذير الجديد يظهر فقط إذا كان الرصيد أقل من صفر --- */}
+      {globalTotals.balance < 0 && (
+        <div className="fin-alert-banner">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div>
+            <strong>שים לב: </strong> 
+            קופת הארגון נמצאת בגירעון (מינוס). יש לעקוב אחר ההוצאות.
+          </div>
+        </div>
+      )}
 
       <div className="fin-stats-grid">
         <div className="fin-stat-card">
@@ -412,9 +442,9 @@ export default function Financial() {
           <div><span className="fin-label">סך תרומות</span><span className="fin-value" style={{ color: "#8b2c2c" }}>{formatCurrency(globalTotals.donations)}</span></div>
           <div className="fin-icon-box">❤️</div>
         </div>
-        <div className="fin-stat-card" style={{ borderColor: "#8b2c2c", background: "#fffefc" }}>
-          <div><span className="fin-label" style={{ color: "#8b2c2c" }}>יתרה נוכחית</span><span className="fin-value" style={{ color: globalTotals.balance < 0 ? "#dc3545" : "#1e6b2c" }}>{formatCurrency(globalTotals.balance)}</span></div>
-          <div className="fin-icon-box" style={{ backgroundColor: "#8b2c2c", color: "white" }}>📊</div>
+        <div className="fin-stat-card" style={{ borderColor: globalTotals.balance < 0 ? "#dc3545" : "#8b2c2c", background: globalTotals.balance < 0 ? "#fdf2f2" : "#fffefc" }}>
+          <div><span className="fin-label" style={{ color: globalTotals.balance < 0 ? "#dc3545" : "#8b2c2c" }}>יתרה נוכחית</span><span className="fin-value" style={{ color: globalTotals.balance < 0 ? "#dc3545" : "#1e6b2c" }}>{formatCurrency(globalTotals.balance)}</span></div>
+          <div className="fin-icon-box" style={{ backgroundColor: globalTotals.balance < 0 ? "#dc3545" : "#8b2c2c", color: "white" }}>📊</div>
         </div>
       </div>
 
@@ -433,15 +463,39 @@ export default function Financial() {
         {activeTab === 'transactions' && (
           <>
             <div className="filter-section">
-              <div className="filter-pills-container">
-                <button className={`filter-btn ${filterType === "all" ? "active" : ""}`} onClick={() => setFilterType("all")}>הכל</button>
-                <button className={`filter-btn ${filterType === "תרומה" ? "active" : ""}`} onClick={() => setFilterType("תרומה")}>תרומות</button>
-                <button className={`filter-btn ${filterType === "הכנסה" ? "active" : ""}`} onClick={() => setFilterType("הכנסה")}>הכנסות כלליות</button>
-                <button className={`filter-btn ${filterType === "הוצאה" ? "active" : ""}`} onClick={() => setFilterType("הוצאה")}>הוצאות</button>
+              <div className="filter-row-1">
+                <div className="filter-pills-container">
+                  <button className={`filter-btn ${filterType === "all" ? "active" : ""}`} onClick={() => setFilterType("all")}>הכל</button>
+                  <button className={`filter-btn ${filterType === "תרומה" ? "active" : ""}`} onClick={() => setFilterType("תרומה")}>תרומות</button>
+                  <button className={`filter-btn ${filterType === "הכנסה" ? "active" : ""}`} onClick={() => setFilterType("הכנסה")}>הכנסות כלליות</button>
+                  <button className={`filter-btn ${filterType === "הוצאה" ? "active" : ""}`} onClick={() => setFilterType("הוצאה")}>הוצאות</button>
+                </div>
+                <div className="search-input-wrapper">
+                  <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input type="text" placeholder="חיפוש חופשי..." className="search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
               </div>
-              <div className="search-input-wrapper">
-                <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="חיפוש לפי מקור, פרויקט או קבלה..." className="search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+
+              <div className="filter-row-2">
+                <div className="adv-filter-group">
+                  <span className="adv-filter-label">סינון לפי מקור:</span>
+                  <select className="adv-filter-input" style={{appearance: "auto"}} value={filterFundingSource} onChange={e => setFilterFundingSource(e.target.value)}>
+                    <option value="all">הכל</option>
+                    <option value="אגף/גוף">אגף / גוף</option>
+                    <option value="תורם קבוע">תורם קבוע</option>
+                    <option value="כללי">כללי</option>
+                  </select>
+                </div>
+                <div className="adv-filter-group" style={{ borderRight: "1px solid #e2e8f0", paddingRight: "16px" }}>
+                  <span className="adv-filter-label">פרויקט:</span>
+                  <input type="text" className="adv-filter-input" placeholder="שם פרויקט..." value={filterProject} onChange={e => setFilterProject(e.target.value)} style={{ width: "120px" }} />
+                </div>
+                <div className="adv-filter-group" style={{ borderRight: "1px solid #e2e8f0", paddingRight: "16px" }}>
+                  <span className="adv-filter-label">סכום מ- (₪):</span>
+                  <input type="number" className="adv-filter-input" placeholder="0" value={filterMinAmount} onChange={e => setFilterMinAmount(e.target.value)} style={{ width: "90px" }} />
+                  <span className="adv-filter-label" style={{ marginLeft: "4px" }}>עד:</span>
+                  <input type="number" className="adv-filter-input" placeholder="100,000" value={filterMaxAmount} onChange={e => setFilterMaxAmount(e.target.value)} style={{ width: "90px" }} />
+                </div>
               </div>
             </div>
             
@@ -451,7 +505,8 @@ export default function Financial() {
                   <tr>
                     <th>סוג</th>
                     <th>סכום</th>
-                    <th>מקור / ספק</th>
+                    <th>מקור</th>
+                    <th>שם / ספק</th>
                     <th>פרויקט</th>
                     <th>תאריך</th>
                     <th>קבלה/חשבונית</th>
@@ -468,26 +523,24 @@ export default function Financial() {
                         )}
                       </td>
                       <td style={{ fontWeight: "bold", fontSize: "15px", color: item.type === "הוצאה" ? "#dc3545" : "#0f172a" }}>{formatCurrency(item.amount)}</td>
+                      <td style={{ fontWeight: "500", color: "#475569" }}>{item.fundingSource || "כללי"}</td>
                       <td style={{ fontWeight: "600", color: "#334155" }}>{item.source}</td>
                       <td style={{ color: "#64748b" }}>{item.project || "—"}</td>
                       <td style={{ color: "#64748b" }}>{item.date}</td>
                       <td>
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                          {/* الفاتورة القديمة أو الأولى */}
                           {item.receiptUrl && (
                             <a href={item.receiptUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#8b2c2c", fontWeight: "bold", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", backgroundColor: "#fef2f2", padding: "4px 10px", borderRadius: "8px", width: "fit-content" }} title="צפה בקובץ">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                               {item.receiptName || item.receipt || "מסמך מצורף"}
                             </a>
                           )}
-                          {/* الفواتير المتعددة المرفقة الجديدة */}
                           {item.attachments && item.attachments.map(att => (
                             <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" style={{ color: "#8b2c2c", fontWeight: "bold", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", backgroundColor: "#fef2f2", padding: "4px 10px", borderRadius: "8px", width: "fit-content" }} title="צפה בקובץ">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                               {att.name || att.number || "מסמך מצורף"}
                             </a>
                           ))}
-                          
                           {!item.receiptUrl && (!item.attachments || item.attachments.length === 0) && (
                             item.receipt ? <span style={{ fontWeight: "500", color: "#64748b" }}>{item.receipt}</span> : "—"
                           )}
@@ -500,7 +553,7 @@ export default function Financial() {
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan="7" style={{ textAlign: "center", padding: "60px", color: "#94a3b8", fontSize: "15px" }}>לא נמצאו פעולות.</td></tr>
+                    <tr><td colSpan="8" style={{ textAlign: "center", padding: "60px", color: "#94a3b8", fontSize: "15px" }}>לא נמצאו פעולות התואמות לסינון.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -508,6 +561,7 @@ export default function Financial() {
           </>
         )}
 
+        {/* ... (Receipts Tab) ... */}
         {activeTab === 'receipts' && (
           <>
             <div className="filter-section" style={{ justifyContent: "flex-end" }}>
@@ -537,15 +591,7 @@ export default function Financial() {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </a>
                     <button onClick={() => {
-                        setEditReceiptData({ 
-                            id: r.id, 
-                            isStandalone: r.isStandalone, 
-                            isAttachment: r.isAttachment,
-                            attachmentId: r.attachmentId,
-                            receiptUrl: r.receiptUrl, 
-                            receiptName: r.receiptName, 
-                            receipt: r.receipt 
-                        });
+                        setEditReceiptData({ id: r.id, isStandalone: r.isStandalone, isAttachment: r.isAttachment, attachmentId: r.attachmentId, receiptUrl: r.receiptUrl, receiptName: r.receiptName, receipt: r.receipt });
                         setUploadData({ ...uploadData, transactionId: r.isStandalone ? "" : r.id });
                         setIsEditReceiptModalOpen(true);
                       }} className="action-icon-btn action-icon-edit" title="ערוך שיוך קבלה"
@@ -568,9 +614,6 @@ export default function Financial() {
         )}
       </div>
 
-      {/* ========================================== */}
-      {/* מודל הוספת פעולה כספית */}
-      {/* ========================================== */}
       {isAddModalOpen && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", borderRadius: "20px", width: "90%", maxWidth: "680px", boxShadow: "0 25px 50px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
@@ -600,6 +643,51 @@ export default function Financial() {
                   </div>
                 </div>
 
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
+                  <div>
+                    <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>מקור <span style={{color: "#dc3545"}}>*</span></label>
+                    <select required value={formData.fundingSource} onChange={(e) => setFormData({...formData, fundingSource: e.target.value})} className="modal-form-select">
+                      <option value="אגף/גוף">אגף / גוף</option>
+                      <option value="תורם קבוע">תורם קבוע</option>
+                      <option value="כללי">כללי</option>
+                    </select>
+                  </div>
+                  
+                  <div className="autocomplete-wrapper">
+                    <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>שם / ספק <span style={{color: "#dc3545"}}>*</span></label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={formData.source} 
+                      onChange={(e) => {
+                         setFormData({...formData, source: e.target.value});
+                         setShowSuggestions(true);
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                      placeholder="התחל להקליד כדי לראות אפשרויות..." 
+                      style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} 
+                    />
+                    
+                    {showSuggestions && formData.source && uniqueSources.filter(s => s.toLowerCase().includes(formData.source.toLowerCase()) && s !== formData.source).length > 0 && (
+                      <ul className="autocomplete-dropdown custom-scroll">
+                        {uniqueSources.filter(s => s.toLowerCase().includes(formData.source.toLowerCase()) && s !== formData.source).map((src, idx) => (
+                          <li 
+                            key={idx} 
+                            className="autocomplete-item"
+                            onClick={() => {
+                              setFormData({...formData, source: src});
+                              setShowSuggestions(false);
+                            }}
+                          >
+                            {src}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
                 {(formData.type === "תרומה" || formData.type === "הכנסה") && (
                   <div style={{ marginBottom: "20px", padding: "20px", backgroundColor: "#f8fafc", borderRadius: "12px", border: "1px dashed #cbd5e1" }}>
                     <label style={{ display: "block", marginBottom: "10px", fontSize: "13.5px", fontWeight: "600", color: "#8b2c2c" }}>אמצעי תשלום / סוג העברה <span style={{color: "#dc3545"}}>*</span></label>
@@ -624,24 +712,18 @@ export default function Financial() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
                   <div>
-                    <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>מקור / ספק <span style={{color: "#dc3545"}}>*</span></label>
-                    <input type="text" required value={formData.source} onChange={(e) => setFormData({...formData, source: e.target.value})} style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} />
-                  </div>
-                  <div>
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>פרויקט משויך</label>
                     <input type="text" value={formData.project} onChange={(e) => setFormData({...formData, project: e.target.value})} style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} />
                   </div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
                   <div>
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>תאריך הביצוע <span style={{color: "#dc3545"}}>*</span></label>
                     <input type="date" required value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} />
                   </div>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>מספר קבלה (ידני)</label>
-                    <input type="text" value={formData.receipt} onChange={(e) => setFormData({...formData, receipt: e.target.value})} placeholder="למשל: 1042" style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} />
-                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>מספר קבלה (ידני)</label>
+                  <input type="text" value={formData.receipt} onChange={(e) => setFormData({...formData, receipt: e.target.value})} placeholder="למשל: 1042" style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px", marginBottom: "20px" }} />
                 </div>
 
                 <div>
@@ -659,7 +741,6 @@ export default function Financial() {
         </div>
       )}
 
-      {/* מודל העלאת קבלה */}
       {isUploadModalOpen && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", borderRadius: "20px", width: "90%", maxWidth: "680px", boxShadow: "0 25px 50px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
@@ -718,7 +799,6 @@ export default function Financial() {
         </div>
       )}
 
-      {/* מודל עריכת שיוך קבלה */}
       {isEditReceiptModalOpen && editReceiptData && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", borderRadius: "20px", width: "90%", maxWidth: "520px", boxShadow: "0 20px 40px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column" }}>
@@ -761,9 +841,6 @@ export default function Financial() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* מודל מחיקת פעולה שלמה */}
-      {/* ========================================== */}
       {deleteId && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", padding: "32px", borderRadius: "20px", textAlign: "center", width: "90%", maxWidth: "380px", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
@@ -780,7 +857,6 @@ export default function Financial() {
         </div>
       )}
 
-      {/* מודל הסרת קבלה */}
       {deleteReceiptData && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", padding: "32px", borderRadius: "20px", textAlign: "center", width: "90%", maxWidth: "380px", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
