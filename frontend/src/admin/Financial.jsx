@@ -15,7 +15,7 @@ export default function Financial() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all"); 
   
-  // Advanced Filters (New)
+  // Advanced Filters
   const [filterFundingSource, setFilterFundingSource] = useState("all");
   const [filterProject, setFilterProject] = useState("");
   const [filterMinAmount, setFilterMinAmount] = useState("");
@@ -26,6 +26,9 @@ export default function Financial() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isEditReceiptModalOpen, setIsEditReceiptModalOpen] = useState(false);
+  
+  // --- حالة جديدة للتحكم بظهور القائمة المنسدلة المخصصة ---
+  const [showSuggestions, setShowSuggestions] = useState(false);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -79,24 +82,16 @@ export default function Financial() {
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       if (t.type === "קבלה_בלבד") return false; 
-      
-      // Type Filter
       const matchesType = filterType === "all" || t.type === filterType;
-      
-      // Funding Source Filter
       const matchesFundingSource = filterFundingSource === "all" || t.fundingSource === filterFundingSource;
-      
-      // Project Filter
       const matchesProject = !filterProject || (t.project && t.project.toLowerCase().includes(filterProject.toLowerCase()));
       
-      // Amount Filter
       const amt = parseFloat(t.amount) || 0;
       const min = parseFloat(filterMinAmount);
       const max = parseFloat(filterMaxAmount);
       const matchesMin = isNaN(min) || amt >= min;
       const matchesMax = isNaN(max) || amt <= max;
 
-      // Global Search Filter (שם/ספק, הערות, מספר קבלה)
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = !searchTerm || (
         (t.source && t.source.toLowerCase().includes(searchLower)) ||
@@ -380,6 +375,22 @@ export default function Financial() {
         }
         .modal-form-select:focus { border-color: #8b2c2c; box-shadow: 0 0 0 3px rgba(139,44,44,0.1); }
 
+        /* --- CSS الخاص بالقائمة المنسدلة الذكية --- */
+        .autocomplete-wrapper { position: relative; width: 100%; }
+        .autocomplete-dropdown { 
+          position: absolute; top: 100%; left: 0; right: 0; 
+          background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; 
+          margin-top: 4px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+          z-index: 50; max-height: 180px; overflow-y: auto; 
+          list-style: none; padding: 0; 
+        }
+        .autocomplete-item { 
+          padding: 10px 16px; cursor: pointer; color: #334155; font-size: 14px; 
+          border-bottom: 1px solid #f1f5f9; transition: background 0.2s;
+        }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover { background: #f8fafc; color: #8b2c2c; font-weight: bold; }
+
         .toast-msg { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background-color: #1e6b2c; color: white; padding: 12px 24px; border-radius: 30px; font-weight: bold; font-size: 14px; box-shadow: 0 10px 20px rgba(30,107,44,0.3); z-index: 5000; animation: slideUp 0.3s ease-out; }
         @keyframes slideUp { from { bottom: -50px; opacity: 0; } to { bottom: 30px; opacity: 1; } }
       `}</style>
@@ -420,7 +431,6 @@ export default function Financial() {
         {activeTab === 'transactions' && (
           <>
             <div className="filter-section">
-              {/* Row 1: Type Pills and Global Search */}
               <div className="filter-row-1">
                 <div className="filter-pills-container">
                   <button className={`filter-btn ${filterType === "all" ? "active" : ""}`} onClick={() => setFilterType("all")}>הכל</button>
@@ -434,7 +444,6 @@ export default function Financial() {
                 </div>
               </div>
 
-              {/* Row 2: Advanced Column Filters */}
               <div className="filter-row-2">
                 <div className="adv-filter-group">
                   <span className="adv-filter-label">סינון לפי מקור:</span>
@@ -520,7 +529,6 @@ export default function Financial() {
           </>
         )}
 
-        {/* ... (Receipts Tab) ... */}
         {activeTab === 'receipts' && (
           <>
             <div className="filter-section" style={{ justifyContent: "flex-end" }}>
@@ -577,11 +585,6 @@ export default function Financial() {
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", borderRadius: "20px", width: "90%", maxWidth: "680px", boxShadow: "0 25px 50px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
             
-            {/* Auto-Complete Datalist */}
-            <datalist id="source-suggestions">
-              {uniqueSources.map((src, idx) => <option key={idx} value={src} />)}
-            </datalist>
-
             <div style={{ padding: "24px 32px", borderBottom: "1px solid #e2d8c9", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <h3 style={{ margin: 0, color: "#343a40", fontSize: "1.5rem", fontWeight: "bold" }}>הוספת פעולה כספית</h3>
               <button onClick={() => setIsAddModalOpen(false)} style={{ background: "#f8f9fa", border: "1px solid #e2d8c9", borderRadius: "50%", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6c757d", transition: "0.2s" }} onMouseEnter={e => e.currentTarget.style.backgroundColor="#e9ecef"} onMouseLeave={e => e.currentTarget.style.backgroundColor="#f8f9fa"}>
@@ -616,10 +619,40 @@ export default function Financial() {
                       <option value="כללי">כללי</option>
                     </select>
                   </div>
-                  <div>
+                  
+                  {/* --- المكون الجديد للقائمة المنسدلة البيضاء الأنيقة --- */}
+                  <div className="autocomplete-wrapper">
                     <label style={{ display: "block", marginBottom: "8px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }}>שם / ספק <span style={{color: "#dc3545"}}>*</span></label>
-                    {/* Auto-complete input connected to datalist */}
-                    <input type="text" required list="source-suggestions" value={formData.source} onChange={(e) => setFormData({...formData, source: e.target.value})} placeholder="התחל להקליד כדי לראות אפשרויות..." style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} />
+                    <input 
+                      type="text" 
+                      required 
+                      value={formData.source} 
+                      onChange={(e) => {
+                         setFormData({...formData, source: e.target.value});
+                         setShowSuggestions(true);
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                      placeholder="התחל להקליד כדי לראות אפשרויות..." 
+                      style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #ced4da", outline: "none", boxSizing: "border-box", fontSize: "14px" }} 
+                    />
+                    
+                    {showSuggestions && formData.source && uniqueSources.filter(s => s.toLowerCase().includes(formData.source.toLowerCase()) && s !== formData.source).length > 0 && (
+                      <ul className="autocomplete-dropdown custom-scroll">
+                        {uniqueSources.filter(s => s.toLowerCase().includes(formData.source.toLowerCase()) && s !== formData.source).map((src, idx) => (
+                          <li 
+                            key={idx} 
+                            className="autocomplete-item"
+                            onClick={() => {
+                              setFormData({...formData, source: src});
+                              setShowSuggestions(false);
+                            }}
+                          >
+                            {src}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
 
@@ -676,7 +709,6 @@ export default function Financial() {
         </div>
       )}
 
-      {/* Upload and Edit Modals omitted for brevity - they are unchanged from your last state */}
       {isUploadModalOpen && (
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(15,23,42,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, direction: "rtl", backdropFilter: "blur(4px)" }}>
           <div style={{ backgroundColor: "#fff", borderRadius: "20px", width: "90%", maxWidth: "680px", boxShadow: "0 25px 50px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
