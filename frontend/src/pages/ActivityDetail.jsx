@@ -67,13 +67,12 @@ export default function ActivityDetail() {
               </p>
 
               <div className="activity-cta">
-                {/* 3. استخدمنا a بدلاً من Link لحل المشكلة 5 */}
-                <a href="/#activities" className="btn btn-outline">
+                <Link to="/#activities" className="btn btn-outline">
                   ← שירותים אחרים
-                </a>
-                <a href="/#contact" className="btn btn-primary">
+                </Link>
+                <Link to="/#contact" className="btn btn-primary">
                   יצירת קשר
-                </a>
+                </Link>
               </div>
             </div>
 
