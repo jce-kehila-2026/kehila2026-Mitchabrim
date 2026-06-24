@@ -8,6 +8,39 @@ import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers } from "@/services/volunteersService.js";
 import { getParliaments } from "@/services/parliamentsService.js";
 
+// ============================================================
+// IMPORT REcharts FOR CHARTS
+// ============================================================
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+// ============================================================
+// CHART COLORS
+// ============================================================
+const CHART_COLORS = [
+  "#8B0000",
+  "#D4A574",
+  "#2e7d32",
+  "#ed6c02",
+  "#0288d1",
+  "#7b1fa2",
+  "#00695c",
+  "#e65100",
+  "#4a148c",
+  "#bf360c",
+];
+
 /* ============================================================
    REPORT DEFINITIONS - All data comes from Firebase only
    No SEED data - pure Firestore connection
@@ -75,6 +108,28 @@ const REPORT_TYPES = {
       { value: "birth", label: "תאריך לידה" },
       { value: "status", label: "סטטוס" },
     ],
+    // ===== CHART DATA =====
+    getChartData: (data) => {
+      // Bar: Elderly by Neighborhood
+      const neighborhoodCount = {};
+      data.forEach((item) => {
+        const key = item.neighborhood || "ללא שכונה";
+        neighborhoodCount[key] = (neighborhoodCount[key] || 0) + 1;
+      });
+      const barData = Object.entries(neighborhoodCount)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+
+      // Pie: Elderly by Status
+      const statusCount = {};
+      data.forEach((item) => {
+        const key = item.status || "ללא סטטוס";
+        statusCount[key] = (statusCount[key] || 0) + 1;
+      });
+      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
+
+      return { barData, pieData };
+    },
     transform: (item) => ({
       ...item,
       name: `${item.firstName || ""} ${item.lastName || ""}`.trim() || item.name || "",
@@ -133,6 +188,28 @@ const REPORT_TYPES = {
       { value: "status", label: "סטטוס" },
       { value: "start", label: "תאריך התחלה" },
     ],
+    // ===== CHART DATA =====
+    getChartData: (data) => {
+      // Bar: Volunteers by Group
+      const groupCount = {};
+      data.forEach((item) => {
+        const key = item.group || "ללא קבוצה";
+        groupCount[key] = (groupCount[key] || 0) + 1;
+      });
+      const barData = Object.entries(groupCount)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+
+      // Pie: Volunteers by Status
+      const statusCount = {};
+      data.forEach((item) => {
+        const key = item.status || "ללא סטטוס";
+        statusCount[key] = (statusCount[key] || 0) + 1;
+      });
+      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
+
+      return { barData, pieData };
+    },
     transform: (item) => ({
       ...item,
       isArchived: item.isArchived ? "כן" : "לא",
@@ -180,6 +257,23 @@ const REPORT_TYPES = {
       { value: "year", label: "שנה" },
       { value: "status", label: "סטטוס" },
     ],
+    // ===== CHART DATA =====
+    getChartData: (data) => {
+      // Bar: Project Progress
+      const barData = data
+        .map((item) => {
+          const progress = item.elderly ? Math.round((item.delivered / item.elderly) * 100) : 0;
+          return {
+            name: item.name || "ללא שם",
+            progress: progress,
+            delivered: item.delivered || 0,
+            total: item.elderly || 0,
+          };
+        })
+        .sort((a, b) => b.progress - a.progress);
+
+      return { barData };
+    },
     transform: (item) => ({
       ...item,
       isArchived: item.isArchived ? "כן" : "לא",
@@ -226,6 +320,18 @@ const REPORT_TYPES = {
       { value: "status", label: "סטטוס" },
       { value: "nextDate", label: "תאריך מפגש" },
     ],
+    // ===== CHART DATA =====
+    getChartData: (data) => {
+      // Bar: Parliament Members
+      const barData = data
+        .map((item) => ({
+          name: item.name || "ללא שם",
+          members: item.members || 0,
+        }))
+        .sort((a, b) => b.members - a.members);
+
+      return { barData };
+    },
     transform: (item) => ({
       ...item,
       coordinators: (item.coordinators || []).join(", "),
@@ -265,6 +371,18 @@ const REPORT_TYPES = {
       { value: "name", label: "שם" },
       { value: "status", label: "סטטוס" },
     ],
+    // ===== CHART DATA =====
+    getChartData: (data) => {
+      // Pie: Requests by Status
+      const statusCount = {};
+      data.forEach((item) => {
+        const key = item.status || "ללא סטטוס";
+        statusCount[key] = (statusCount[key] || 0) + 1;
+      });
+      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
+
+      return { pieData };
+    },
     transform: (item) => ({
       ...item,
       isArchived: item.isArchived ? "כן" : "לא",
@@ -310,6 +428,36 @@ const REPORT_TYPES = {
       { value: "amount", label: "סכום" },
       { value: "type", label: "סוג" },
     ],
+    // ===== CHART DATA =====
+    getChartData: (data) => {
+      // Bar: Income vs Expenses by Project
+      const projectData = {};
+      data.forEach((item) => {
+        const key = item.project || "ללא פרויקט";
+        if (!projectData[key]) {
+          projectData[key] = { name: key, income: 0, expense: 0 };
+        }
+        if (item.type === "תרומה") {
+          projectData[key].income += Number(item.amount) || 0;
+        } else if (item.type === "הוצאה") {
+          projectData[key].expense += Number(item.amount) || 0;
+        }
+      });
+      const barData = Object.values(projectData);
+
+      // Pie: Donations by SubType
+      const donationData = data.filter((item) => item.type === "תרומה");
+      const subTypeCount = {};
+      donationData.forEach((item) => {
+        const key = item.subType || "אחר";
+        subTypeCount[key] = (subTypeCount[key] || 0) + (Number(item.amount) || 0);
+      });
+      const pieData = Object.entries(subTypeCount)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+
+      return { barData, pieData };
+    },
     transform: (item) => ({
       ...item,
       isArchived: item.isArchived ? "כן" : "לא",
@@ -588,8 +736,218 @@ const ReportsGrid = ({ onOpen }) => (
   </div>
 );
 
+// ============================================================
+// CHART RENDER FUNCTIONS
+// ============================================================
+
+const renderElderlyCharts = (data) => {
+  const { barData, pieData } = REPORT_TYPES.elderly.getChartData(data);
+  
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+      <SectionCard title="📊 אזרחים ותיקים לפי שכונה">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={barData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" fill="#8B0000" name="מספר אזרחים" />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+      
+      <SectionCard title="🧩 התפלגות לפי סטטוס">
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {pieData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </SectionCard>
+    </div>
+  );
+};
+
+const renderVolunteerCharts = (data) => {
+  const { barData, pieData } = REPORT_TYPES.volunteers.getChartData(data);
+  
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+      <SectionCard title="📊 מתנדבים לפי קבוצה">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={barData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" fill="#D4A574" name="מספר מתנדבים" />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+      
+      <SectionCard title="🧩 התפלגות לפי סטטוס">
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {pieData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </SectionCard>
+    </div>
+  );
+};
+
+const renderProjectCharts = (data) => {
+  const { barData } = REPORT_TYPES.projects.getChartData(data);
+  
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
+      <SectionCard title="📊 התקדמות פרויקטים (אחוז מסירות)">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={barData} layout="vertical">
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis type="number" domain={[0, 100]} />
+            <YAxis type="category" dataKey="name" width={80} />
+            <Tooltip formatter={(value) => `${value}%`} />
+            <Legend />
+            <Bar dataKey="progress" fill="#2e7d32" name="התקדמות (%)" />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+    </div>
+  );
+};
+
+const renderParliamentCharts = (data) => {
+  const { barData } = REPORT_TYPES.parliaments.getChartData(data);
+  
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
+      <SectionCard title="📊 מספר משתתפים בפרלמנטים">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={barData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="members" fill="#7b1fa2" name="מספר משתתפים" />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+    </div>
+  );
+};
+
+const renderJoinRequestCharts = (data) => {
+  const { pieData } = REPORT_TYPES.joinRequests.getChartData(data);
+  
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
+      <SectionCard title="🧩 התפלגות בקשות הצטרפות לפי סטטוס">
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {pieData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </SectionCard>
+    </div>
+  );
+};
+
+const renderFinancialCharts = (data) => {
+  const { barData, pieData } = REPORT_TYPES.financial.getChartData(data);
+  
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+      <SectionCard title="📊 הכנסות מול הוצאות לפי פרויקט">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={barData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip formatter={(value) => `₪${value.toLocaleString()}`} />
+            <Legend />
+            <Bar dataKey="income" fill="#2e7d32" name="הכנסות" />
+            <Bar dataKey="expense" fill="#d32f2f" name="הוצאות" />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+      
+      <SectionCard title="🧩 התפלגות תרומות לפי סוג">
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {pieData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => `₪${value.toLocaleString()}`} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </SectionCard>
+    </div>
+  );
+};
+
 /* ============================================================
-   Report Builder Component with Enhanced Filters
+   Report Builder Component with Enhanced Filters + CHARTS
    ============================================================ */
 const ReportBuilder = ({ reportKey, onBack }) => {
   const report = REPORT_TYPES[reportKey];
@@ -702,6 +1060,28 @@ const ReportBuilder = ({ reportKey, onBack }) => {
     return null;
   };
 
+  // ===== RENDER CHARTS BASED ON REPORT TYPE =====
+  const renderCharts = () => {
+    if (!filteredData.length) return null;
+
+    switch (reportKey) {
+      case "elderly":
+        return renderElderlyCharts(filteredData);
+      case "volunteers":
+        return renderVolunteerCharts(filteredData);
+      case "projects":
+        return renderProjectCharts(filteredData);
+      case "parliaments":
+        return renderParliamentCharts(filteredData);
+      case "joinRequests":
+        return renderJoinRequestCharts(filteredData);
+      case "financial":
+        return renderFinancialCharts(filteredData);
+      default:
+        return null;
+    }
+  };
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
@@ -722,6 +1102,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         </button>
         <h2 style={{ margin: 0, color: "#8B0000", fontSize: "22px" }}>{report.icon} {report.label}</h2>
       </div>
+
+      {/* ===== CHARTS SECTION ===== */}
+      {!loading && renderCharts()}
 
       {/* Filters */}
       {report.filters.length > 0 && (
