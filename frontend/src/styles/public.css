@@ -618,6 +618,10 @@ section.pub-section {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 50%; /* أضف هذا السطر السحري */
 }
 
 .act2-ico {
@@ -712,6 +716,7 @@ section.pub-section {
   z-index: 0;
 }
 
+/* الحاوية الداخلية للدائرة الكبيرة */
 .act2-center-inner {
   position: relative;
   z-index: 3;
@@ -720,6 +725,10 @@ section.pub-section {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 50%; /* أضف هذا السطر السحري */
 }
 
 .act2-center-ico {
@@ -2968,15 +2977,27 @@ section.pub-section,
   color: inherit;
   display: block;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
+  
+  /* القوة الجبرية لإخفاء مربع اللمس ومنع التحديد */
+  -webkit-tap-highlight-color: transparent !important; 
+  user-select: none !important; 
 }
+
+/* إخفاء الإطار الافتراضي في جميع حالات الضغط والتركيز حرفياً */
+.act2-bubble:focus,
+.act2-center:focus,
+.act2-bubble:active,
+.act2-center:active,
+.act2-bubble:focus-visible,
+.act2-center:focus-visible {
+  outline: none !important;
+}
+
 .act2-bubble:hover,
 .act2-center:hover {
   transform: translateY(-4px);
 }
-.act2-bubble:hover .act2-bubble-inner,
-.act2-center:hover .act2-center-inner {
-  box-shadow: var(--shadow-md);
-}
+
 
 /* ---------- Header dropdown ---------- */
 .pub-nav-item {
@@ -3078,10 +3099,11 @@ section.pub-section,
   display: flex;
   flex-direction: column;
 }
+/* تعديل لون العنوان في الصفحة الداخلية ليصبح خمري (المشكلة 4) */
 .activity-title {
   font-size: 52px;
   line-height: 1.15;
-  color: var(--color-accent);
+  color: #8f1d1d; /* تم التعديل من برتقالي إلى خمري */
   font-weight: 800;
   margin: 0;
 }

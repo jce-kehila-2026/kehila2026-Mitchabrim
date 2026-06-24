@@ -4,12 +4,12 @@ import logo from "@/assets/logo.png";
 import { ACTIVITIES } from "@/data/activities";
 
 const NAV_ITEMS = [
-  { href: "#about", label: "אודות" },
-  { href: "#partners", label: "שותפים" },
-  { href: "#activities", label: "העשייה שלנו", dropdown: true },
-  { href: "#team", label: "צוות" },
-  { href: "#gallery", label: "גלריה" },
-  { href: "#join", label: "יצירת קשר" },
+  { href: "/#about", label: "אודות" },
+  { href: "/#partners", label: "שותפים" },
+  { href: "/#activities", label: "העשייה שלנו", dropdown: true },
+  { href: "/#team", label: "צוות" },
+  { href: "/#gallery", label: "גלריה" },
+  { href: "/#join", label: "יצירת קשר" },
 ];
 
 export default function PublicNavbar() {
@@ -87,7 +87,7 @@ export default function PublicNavbar() {
                 {ddOpen && (
                   <div className="pub-nav-dropdown" role="menu">
                     <a
-                      href="#activities"
+                      href="/#activities"
                       onClick={() => setDdOpen(false)}
                       role="menuitem"
                     >
