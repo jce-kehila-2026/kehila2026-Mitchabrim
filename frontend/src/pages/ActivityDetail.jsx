@@ -1,3 +1,4 @@
+import { useEffect } from "react"; // 1. أضفنا هذا السطر
 import { Link, useParams, Navigate } from "react-router-dom";
 import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
@@ -21,6 +22,11 @@ function NL({ text }) {
 export default function ActivityDetail() {
   const { slug } = useParams();
   const activity = getActivityBySlug(slug);
+
+  // 2. إجبار الصفحة تفتح من أعلى دائماً (حل المشكلة 2)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [slug]);
 
   if (!activity) return <Navigate to="/" replace />;
 
@@ -61,12 +67,13 @@ export default function ActivityDetail() {
               </p>
 
               <div className="activity-cta">
-                <Link to="/#activities" className="btn btn-outline">
+                {/* 3. استخدمنا a بدلاً من Link لحل المشكلة 5 */}
+                <a href="/#activities" className="btn btn-outline">
                   ← שירותים אחרים
-                </Link>
-                <Link to="/#contact" className="btn btn-primary">
+                </a>
+                <a href="/#contact" className="btn btn-primary">
                   יצירת קשר
-                </Link>
+                </a>
               </div>
             </div>
 
