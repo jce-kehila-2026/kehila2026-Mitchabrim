@@ -1,0 +1,92 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // -----------------------------
+    // Helpers
+    // -----------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function hasUserDoc() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function isActiveUser() {
+      return hasUserDoc()
+        && (
+          userDoc().data.status == 'active'
+          || userDoc().data.active == true
+        );
+    }
+
+    function isAdmin() {
+      return isActiveUser()
+        && userDoc().data.role == 'admin';
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isImageOrPdf() {
+      return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf';
+    }
+
+    function maxSize(mb) {
+      return request.resource.size < mb * 1024 * 1024;
+    }
+
+    function validImageUpload5MB() {
+      return request.resource == null
+        || (isImage() && maxSize(5));
+    }
+
+    function validReceiptUpload10MB() {
+      return request.resource == null
+        || (isImageOrPdf() && maxSize(10));
+    }
+
+    // =============================
+    // Public website images
+    // =============================
+    // images/ is used by the public website.
+    // Everyone can read.
+    // Only admin can upload, edit, or delete.
+    // Images only, max 5MB.
+
+    match /images/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && validImageUpload5MB();
+    }
+
+    // =============================
+    // Receipts
+    // =============================
+    // receipts/ is private.
+    // Only admin can read, upload, edit, or delete.
+    // Images or PDFs only, max 10MB.
+
+    match /receipts/{allPaths=**} {
+      allow read, write: if isAdmin() && validReceiptUpload10MB();
+    }
+
+    // =============================
+    // Default deny
+    // =============================
+    // Any other path is blocked.
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

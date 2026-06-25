@@ -1,37 +1,86 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: is the requesting user an active admin in users/{uid}?
-    function isAdmin() {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+    // =========================
+    // Helper functions
+    // =========================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasUserDoc() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isActiveUser() {
+      return hasUserDoc()
         && (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true
+          userDoc().data.status == 'active'
+          || userDoc().data.active == true
         );
     }
 
+    function isAdmin() {
+      return isActiveUser()
+        && userDoc().data.role == 'admin';
+    }
+
+    function isVolunteer() {
+      return isActiveUser()
+        && userDoc().data.role == 'volunteer';
+    }
+
+    function linkedVolunteerId() {
+      return userDoc().data.linkedVolunteerId;
+    }
+
+    function isOwnVolunteerDoc(volunteerId) {
+      return isVolunteer()
+        && (
+          resource.data.authUid == request.auth.uid
+          || linkedVolunteerId() == volunteerId
+        );
+    }
+
+    // =========================
+    // Users
+    // =========================
+    // فقط الأدمن ينشئ/يعدل/يحذف users.
+    // المستخدم يقرأ مستنده فقط.
+    // لا تسمح للمستخدم العادي بإنشاء users/{uid} لنفسه.
+
     match /users/{userId} {
-      // A user can always read their own role document during login.
-      allow get: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      // Authenticated users may query (needed for the email/fullName
-      // fallback lookup during login, before the role is known).
-      allow list: if request.auth != null;
-      // Admins manage users. A user may also create their OWN doc
-      // (users/{auth.uid}) — used only by the VITE_ADMIN_EMAIL bootstrap.
-      allow create: if isAdmin() || request.auth.uid == userId;
-      allow update, delete: if isAdmin();
+      allow get: if isSignedIn()
+        && (
+          request.auth.uid == userId
+          || isAdmin()
+        );
+
+      allow list: if isAdmin();
+
+      allow create, update, delete: if isAdmin();
     }
 
-    // Legacy collection from the previous implementation — admins only.
+    // =========================
+    // Legacy allowedUsers
+    // =========================
+
     match /allowedUsers/{docId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow read, write: if isAdmin();
     }
 
-    // Projects — admins only (including subcollections).
+    // =========================
+    // Projects
+    // =========================
+
     match /projects/{projectId} {
       allow read, write: if isAdmin();
 
@@ -44,129 +93,253 @@ service cloud.firestore {
       }
     }
 
-    // Volunteers — admin full access; authenticated volunteers may read so
-    // the volunteer site can look up volunteers/{doc} where authUid==uid.
-    // Volunteers may also update ONLY phone, address, email, updatedAt on
-    // their own linked volunteer document.
+    // =========================
+    // Volunteers
+    // =========================
+    // Admin: كامل الصلاحية.
+    // Volunteer: يقرأ ملفه فقط.
+    // Volunteer: يعدل فقط phone/address/email/updatedAt في ملفه.
+
     match /volunteers/{volunteerId} {
-      allow read: if request.auth != null;
+      allow get: if isAdmin()
+        || isOwnVolunteerDoc(volunteerId);
+
+      allow list: if isAdmin();
+
       allow create, delete: if isAdmin();
+
       allow update: if isAdmin()
         || (
-          request.auth != null
-          && resource.data.authUid == request.auth.uid
+          isOwnVolunteerDoc(volunteerId)
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['phone','address','email','updatedAt'])
-        )
-        || (
-          request.auth != null
-          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.linkedVolunteerId == volunteerId
-          && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['phone','address','email','updatedAt'])
+               .hasOnly(['phone', 'address', 'email', 'updatedAt'])
         );
     }
 
-    // Volunteer tasks — admin full access; volunteers can only read their own.
+    // =========================
+    // Elderly
+    // =========================
+    // حاليا Admin فقط لأنها تحتوي بيانات حساسة.
+    // إذا أردت أن يرى المتطوع فقط المواطن/المواطنين المرتبطين به،
+    // يجب إضافة حقل واضح مثل assignedVolunteerAuthUid أو assignedVolunteerId.
+
+    match /elderly/{elderlyId} {
+      allow read, write: if isAdmin();
+    }
+
+    // =========================
+    // Volunteer Tasks
+    // =========================
+    // Admin: كامل الصلاحية.
+    // Volunteer: يقرأ مهامه فقط.
+    // ملاحظة مهمة:
+    // لكي يعمل list للمتطوع، يجب أن يكون كود React فيه query مفلتر:
+    // where("volunteerAuthUid", "==", auth.currentUser.uid)
+    // أو:
+    // where("volunteerId", "==", linkedVolunteerId)
+
     match /volunteerTasks/{taskId} {
-      allow read: if isAdmin()
-        || (request.auth != null && resource.data.volunteerAuthUid == request.auth.uid)
+      allow get: if isAdmin()
         || (
-          request.auth != null
-          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.linkedVolunteerId == resource.data.volunteerId
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        )
+        || (
+          isVolunteer()
+          && resource.data.volunteerId == linkedVolunteerId()
         );
-      allow list: if request.auth != null;
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        )
+        || (
+          isVolunteer()
+          && resource.data.volunteerId == linkedVolunteerId()
+        );
+
       allow create, update, delete: if isAdmin();
     }
 
-    // Elderly — admin full access; authenticated volunteers may read so the
-    // report form can list elderly assigned to them.
-    match /elderly/{elderlyId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
+    // =========================
+    // Volunteer Reports
+    // =========================
+    // Volunteer: ينشئ تقرير لنفسه ويقرأ تقاريره فقط.
+    // Admin: كامل الصلاحية.
 
-    // Volunteer reports — volunteers can create their own and read their own,
-    // but cannot edit or delete. Admins have full access.
     match /volunteerReports/{reportId} {
-      allow read: if isAdmin()
-        || (request.auth != null && resource.data.volunteerAuthUid == request.auth.uid);
-      allow create: if request.auth != null
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow create: if isVolunteer()
         && request.resource.data.volunteerAuthUid == request.auth.uid;
+
       allow update, delete: if isAdmin();
     }
 
+    // =========================
+    // Profile Update Requests
+    // =========================
+    // Volunteer: يرسل طلب تعديل بياناته ويقرأ طلباته فقط.
+    // Admin: يقرأ الكل ويوافق/يرفض.
 
-    // Admin notifications — admins read/manage; any user (including
-    // unauthenticated public-site visitors) can CREATE a notification
-    // addressed to the admin audience (e.g. when a visitor submits a
-    // join request, or a volunteer submits a profile update request).
-    match /notifications/{notifId} {
-      allow read, update, delete: if isAdmin();
-      allow create: if request.resource.data.audience == 'admin';
-    }
-
-    // Join requests submitted from the public website — anyone can create,
-    // admins read and manage.
-    match /joinRequests/{reqId} {
-      allow read, update, delete: if isAdmin();
-      allow create: if true;
-    }
-
-    // Profile update requests — volunteers create/read their own; admins
-    // read all and approve/reject. Volunteers cannot edit or delete.
     match /profileUpdateRequests/{reqId} {
-      allow read: if isAdmin()
-        || (request.auth != null && resource.data.volunteerAuthUid == request.auth.uid);
-      allow list: if request.auth != null;
-      allow create: if request.auth != null
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow create: if isVolunteer()
         && request.resource.data.volunteerAuthUid == request.auth.uid
         && request.resource.data.status == 'pending';
+
       allow update, delete: if isAdmin();
     }
 
-    // Volunteer notifications — admins write; volunteers read their own and
-    // may only toggle the `read` flag on their own notifications.
+    // =========================
+    // Admin Notifications
+    // =========================
+    // Admin: يقرأ ويدير.
+    // Public/Volunteer: يسمح بإنشاء إشعار فقط موجه للأدمن.
+    // تم تقييد الحقول لتقليل التخريب.
+
+    match /notifications/{notifId} {
+      allow read, update, delete: if isAdmin();
+
+      allow create: if request.resource.data.keys().hasOnly([
+          'audience',
+          'type',
+          'title',
+          'message',
+          'createdAt',
+          'read'
+        ])
+        && request.resource.data.audience == 'admin'
+        && request.resource.data.read == false;
+    }
+
+    // =========================
+// Join Requests
+// =========================
+// Public website can submit a join/contact request.
+// Admin only can read and manage requests.
+
+match /joinRequests/{reqId} {
+  allow read, update, delete: if isAdmin();
+
+  allow create: if request.resource.data.keys().hasOnly([
+      'firstName',
+      'lastName',
+      'fullName',
+      'name',
+      'phone',
+      'email',
+      'requestType',
+      'reason',
+      'message',
+      'notes',
+      'status',
+      'createdAt'
+    ])
+    && request.resource.data.status == 'new';
+}
+
+    // =========================
+    // Volunteer Notifications
+    // =========================
+    // Admin: يكتب ويدير.
+    // Volunteer: يقرأ إشعاراته فقط ويستطيع تغيير read فقط.
+
     match /volunteerNotifications/{notifId} {
-      allow read: if isAdmin()
-        || (request.auth != null && resource.data.volunteerAuthUid == request.auth.uid);
-      allow list: if request.auth != null;
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
       allow create, delete: if isAdmin();
+
       allow update: if isAdmin()
         || (
-          request.auth != null
+          isVolunteer()
           && resource.data.volunteerAuthUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
         );
     }
 
-    // Public site content (CMS) — anyone can read, admins write.
+    // =========================
+    // Public Site Content
+    // =========================
+    // محتوى الموقع العام: قراءة للجميع، كتابة للأدمن فقط.
+
     match /siteContent/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Elderly contact persons — admins only. These are NOT volunteers;
-    // they are family members, social workers, neighbors, etc.
+    // =========================
+    // Elderly Contact Persons
+    // =========================
+
     match /elderlyContactPersons/{docId} {
       allow read, write: if isAdmin();
     }
 
-    // Links between elderly contact persons and elderly citizens.
     match /elderlyContactLinks/{docId} {
       allow read, write: if isAdmin();
     }
 
-    // Organizations and their internal contact persons — admins only.
+    // =========================
+    // Organizations
+    // =========================
+
     match /organizations/{docId} {
       allow read, write: if isAdmin();
     }
+
     match /organizationContacts/{docId} {
       allow read, write: if isAdmin();
     }
 
-    // Default: deny. Add app-specific rules for your other collections.
+    // =========================
+    // Settings
+    // =========================
+    // القراءة العامة مقبولة فقط إذا كانت settings تحتوي معلومات عامة
+    // مثل مناطق وأحياء لا تكشف بيانات شخصية.
+    // الكتابة للأدمن فقط.
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =========================
+    // Default deny
+    // =========================
+
     match /{document=**} {
       allow read, write: if false;
     }
