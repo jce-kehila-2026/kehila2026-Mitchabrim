@@ -24,14 +24,14 @@ export default function Home() {
         if (element) {
           // 👈 هذا الرقم هو السر! كل ما صغرته (أو خليته 0)، الصفحة بتنزل لتحت أكثر
           // وكل ما كبرته، الصفحة بتوقف لفوق أكثر. جرب 40 وإذا بدك إياها تنزل كمان سويها 20 או 0
-          const offset = 40; 
-          
+          const offset = 40;
+
           // حساب المسافة الدقيقة للقسم من أعلى الصفحة
           const y = element.getBoundingClientRect().top + window.scrollY - offset;
-          
-          window.scrollTo({ 
-            top: y, 
-            behavior: "smooth" 
+
+          window.scrollTo({
+            top: y,
+            behavior: "smooth",
           });
         }
       }, 150);

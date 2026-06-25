@@ -48,18 +48,8 @@ export default function ActivityDetail() {
           <div className="activity-grid">
             <div className="activity-text">
               <h1 className="activity-title">{activity.title}</h1>
-              <svg
-                className="activity-underline"
-                viewBox="0 0 220 14"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M3 9 C 50 2, 120 14, 217 5"
-                  stroke="#E89A4A"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                />
+              <svg className="activity-underline" viewBox="0 0 220 14" fill="none" aria-hidden="true">
+                <path d="M3 9 C 50 2, 120 14, 217 5" stroke="#E89A4A" strokeWidth="4" strokeLinecap="round" />
               </svg>
 
               <p className="activity-body">
