@@ -34,6 +34,9 @@ import VolunteerReportsHistory from "./volunteer/VolunteerReportsHistory.jsx";
 import VolunteerTasks from "./volunteer/VolunteerTasks.jsx";
 import VolunteerProfile from "./volunteer/VolunteerProfile.jsx";
 
+import Gallery from "./pages/Gallery";
+import AlbumGallery from "./pages/AlbumGallery";
+
 const Admin = ({ children }) => (
   <ProtectedRoute allow={["admin"]}>{children}</ProtectedRoute>
 );
@@ -75,6 +78,8 @@ export default function App() {
       <Route path="/volunteer/reports" element={<Vol><VolunteerReportsHistory /></Vol>} />
       <Route path="/volunteer/tasks" element={<Vol><VolunteerTasks /></Vol>} />
       <Route path="/volunteer/profile" element={<Vol><VolunteerProfile /></Vol>} />
+      <Route path="/gallery" element={<Gallery />} />
+      <Route path="/gallery/album/:albumName" element={<AlbumGallery />} />
     </Routes>
   );
 }

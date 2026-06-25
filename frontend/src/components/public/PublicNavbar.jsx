@@ -8,7 +8,8 @@ const NAV_ITEMS = [
   { href: "/#partners", label: "שותפים" },
   { href: "/#activities", label: "העשייה שלנו", dropdown: true },
   { href: "/#team", label: "צוות" },
-  { href: "/#gallery", label: "גלריה" },
+  { href: "/#gallery", label: "גלריה" },  // ← القديم يبقى
+  { href: "/gallery", label: "📸 גלריה" }, // ← الجديد
   { href: "/#join", label: "יצירת קשר" },
 ];
 
