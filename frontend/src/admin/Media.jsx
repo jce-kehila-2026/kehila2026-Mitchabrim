@@ -1,4 +1,6 @@
+// src/admin/Media.jsx
 import { useState, useRef, useEffect } from "react";
+import { Link } from "react-router-dom";
 import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
@@ -888,10 +890,54 @@ export default function Media() {
                 justifyContent: "space-between",
                 alignItems: "center",
                 backgroundColor: "#fff",
+                flexWrap: "wrap",
+                gap: "12px",
               }}
             >
               <h3 style={{ margin: 0, color: "#343a40", fontSize: "1.4rem", fontWeight: "bold" }}>פרטי תמונה</h3>
-              <div style={{ display: "flex", gap: "12px" }}>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                {/* ✅ زر جديد - פתח בגלריה */}
+                {detailsModal.image.category && (
+                  <Link
+                    to={`/gallery/album/${encodeURIComponent(detailsModal.image.category)}`}
+                    target="_blank"
+                    style={{
+                      background: "#8B0000",
+                      border: "none",
+                      borderRadius: "30px",
+                      padding: "6px 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      cursor: "pointer",
+                      color: "white",
+                      textDecoration: "none",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      transition: "background 0.3s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#a00000")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#8B0000")}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                    פתח בגלריה
+                  </Link>
+                )}
+
+                {/* زر - פתח בגודל מלא */}
                 <a
                   href={detailsModal.image.url}
                   target="_blank"
@@ -927,6 +973,8 @@ export default function Media() {
                   </svg>
                   פתח בגודל מלא
                 </a>
+
+                {/* زر الإغلاق */}
                 <button
                   onClick={() => setDetailsModal({ isOpen: false, image: null })}
                   style={{
@@ -1026,7 +1074,6 @@ export default function Media() {
                     }}
                   />
 
-                  {/* التعديل المعماري هنا: تنسيق جديد للقائمة المنسدلة لتبدو كشارة أنيقة ومصغرة */}
                   <div
                     style={{
                       display: "flex",
