@@ -39,10 +39,18 @@ const VOLUNTEER_STATUS_OPTIONS = ["משויך לאזרח ותיק", "ממתין 
 /* =========================
    Validation helpers
 ========================= */
-const LETTERS_RE = /^[\u0590-\u05FFa-zA-Z\s'"\-]+$/;
-const NUMBERS_RE = /^\d+$/;
+import {
+  validatePhone as _validatePhone,
+  validateId as _validateId,
+  validateName as _validateName,
+  validateEmail as _validateEmail,
+  filterDigits,
+  filterName,
+} from "@/utils/validation";
+
+const LETTERS_RE = /^[\u0590-\u05FF\u0600-\u06FFa-zA-Z\s'"\-]+$/;
 const isLettersOnly = (v) => LETTERS_RE.test((v || "").trim());
-const isNumbersOnly = (v) => NUMBERS_RE.test((v || "").trim());
+const isNumbersOnly = (v) => /^\d+$/.test((v || "").trim());
 const Req = () => <span style={{ color: "#dc2626", marginInlineStart: 4 }}>*</span>;
 const FieldError = ({ msg }) =>
   msg ? <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{msg}</div> : null;
@@ -657,26 +665,23 @@ function VolunteerProfileModal({ volunteer, groups = [], onClose, onSave, onDele
       return;
     }
 
+    let v = value;
+    if (key === "phone") v = filterDigits(v, 10);
+    else if (key === "idNumber") v = filterDigits(v, 9);
+    else if (key === "firstName" || key === "lastName") v = filterName(v, 80);
     setForm({
       ...form,
-      [key]: value,
+      [key]: v,
     });
   };
 
   const validate = () => {
     const e = {};
-    if (!form.firstName?.trim()) e.firstName = "שדה חובה";
-    else if (!isLettersOnly(form.firstName)) e.firstName = "אותיות בלבד";
-
-    if (!form.lastName?.trim()) e.lastName = "שדה חובה";
-    else if (!isLettersOnly(form.lastName)) e.lastName = "אותיות בלבד";
-
-    if (!form.idNumber?.trim()) e.idNumber = "שדה חובה";
-    else if (!isNumbersOnly(form.idNumber)) e.idNumber = "מספרים בלבד";
-
-    if (!form.phone?.trim()) e.phone = "שדה חובה";
-    else if (!isNumbersOnly(form.phone)) e.phone = "מספרים בלבד";
-
+    const fn = _validateName(form.firstName); if (fn) e.firstName = fn;
+    const ln = _validateName(form.lastName); if (ln) e.lastName = ln;
+    const idErr = _validateId(form.idNumber); if (idErr) e.idNumber = idErr;
+    const phErr = _validatePhone(form.phone); if (phErr) e.phone = phErr;
+    const emErr = _validateEmail(form.email, { required: false }); if (emErr) e.email = emErr;
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -1455,17 +1460,11 @@ function CreateGroupModal({ onClose, onSave }) {
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = "שדה חובה";
-    else if (!isLettersOnly(form.name)) e.name = "אותיות בלבד";
-
-    if (!form.type.trim()) e.type = "שדה חובה";
-
-    if (!form.contact.trim()) e.contact = "שדה חובה";
-    else if (!isLettersOnly(form.contact)) e.contact = "אותיות בלבד";
-
-    if (!form.phone.trim()) e.phone = "שדה חובה";
-    else if (!isNumbersOnly(form.phone)) e.phone = "מספרים בלבד";
-
+    const nm = _validateName(form.name); if (nm) e.name = nm;
+    if (!form.type?.trim()) e.type = "שדה חובה";
+    const ct = _validateName(form.contact); if (ct) e.contact = ct;
+    const ph = _validatePhone(form.phone); if (ph) e.phone = ph;
+    const em = _validateEmail(form.email, { required: false }); if (em) e.email = em;
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -1638,26 +1637,22 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
       return;
     }
 
+    let v = value;
+    if (key === "phone") v = filterDigits(v, 10);
+    else if (key === "idNumber") v = filterDigits(v, 9);
+    else if (key === "firstName" || key === "lastName") v = filterName(v, 80);
     setForm({
       ...form,
-      [key]: value,
+      [key]: v,
     });
   };
 
   const validate = () => {
     const e = {};
-    if (!form.firstName.trim()) e.firstName = "שדה חובה";
-    else if (!isLettersOnly(form.firstName)) e.firstName = "אותיות בלבד";
-
-    if (!form.lastName.trim()) e.lastName = "שדה חובה";
-    else if (!isLettersOnly(form.lastName)) e.lastName = "אותיות בלבד";
-
-    if (!form.idNumber.trim()) e.idNumber = "שדה חובה";
-    else if (!isNumbersOnly(form.idNumber)) e.idNumber = "מספרים בלבד";
-
-    if (!form.phone.trim()) e.phone = "שדה חובה";
-    else if (!isNumbersOnly(form.phone)) e.phone = "מספרים בלבד";
-
+    const fn = _validateName(form.firstName); if (fn) e.firstName = fn;
+    const ln = _validateName(form.lastName); if (ln) e.lastName = ln;
+    const idErr = _validateId(form.idNumber); if (idErr) e.idNumber = idErr;
+    const phErr = _validatePhone(form.phone); if (phErr) e.phone = phErr;
     setErrors(e);
     return Object.keys(e).length === 0;
   };

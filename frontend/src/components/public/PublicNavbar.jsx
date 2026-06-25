@@ -86,20 +86,11 @@ export default function PublicNavbar() {
                 </button>
                 {ddOpen && (
                   <div className="pub-nav-dropdown" role="menu">
-                    <a
-                      href="/#activities"
-                      onClick={() => setDdOpen(false)}
-                      role="menuitem"
-                    >
+                    <a href="/#activities" onClick={() => setDdOpen(false)} role="menuitem">
                       כל העשייה
                     </a>
                     {ACTIVITIES.map((a) => (
-                      <Link
-                        key={a.slug}
-                        to={`/our-work/${a.slug}`}
-                        onClick={() => setDdOpen(false)}
-                        role="menuitem"
-                      >
+                      <Link key={a.slug} to={`/our-work/${a.slug}`} onClick={() => setDdOpen(false)} role="menuitem">
                         {a.title}
                       </Link>
                     ))}
@@ -110,7 +101,7 @@ export default function PublicNavbar() {
               <a key={item.href} href={item.href}>
                 {item.label}
               </a>
-            )
+            ),
           )}
         </nav>
 
@@ -134,10 +125,7 @@ export default function PublicNavbar() {
 
       {open && (
         <div className="pub-nav-mobile" onClick={handleLinkClick}>
-          <div
-            className="pub-nav-mobile-inner"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="pub-nav-mobile-inner" onClick={(e) => e.stopPropagation()}>
             {NAV_ITEMS.map((item) =>
               item.dropdown ? (
                 <div key={item.href}>
@@ -186,7 +174,7 @@ export default function PublicNavbar() {
                 <a key={item.href} href={item.href} onClick={handleLinkClick}>
                   {item.label}
                 </a>
-              )
+              ),
             )}
             <Link to="/login" className="btn btn-primary" onClick={handleLinkClick}>
               התחברות

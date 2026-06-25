@@ -12,6 +12,7 @@ import {
   addDoc,
   serverTimestamp,
 } from "firebase/firestore";
+import { sanitizeText } from "@/utils/sanitize";
 
 export default function ProfileUpdateRequests() {
   const [requests, setRequests] = useState([]);
@@ -148,9 +149,10 @@ function RequestDetailModal({ request, onClose }) {
     try {
       setSaving(true);
       setErr("");
+      const safeResponse = sanitizeText(response, 2000);
       await updateDoc(doc(db, "profileUpdateRequests", request.id), {
         status: decision,
-        adminResponse: response.trim(),
+        adminResponse: safeResponse,
         reviewedAt: serverTimestamp(),
         reviewedBy: auth.currentUser?.uid || null,
       });
@@ -159,7 +161,7 @@ function RequestDetailModal({ request, onClose }) {
         volunteerAuthUid: request.volunteerAuthUid,
         type: "profile_update_response",
         title: decision === "approved" ? "הבקשה שלך אושרה" : "הבקשה שלך נדחתה",
-        message: response.trim() || (decision === "approved"
+        message: safeResponse || (decision === "approved"
           ? "בקשתך לעדכון פרטים אושרה על ידי המנהל."
           : "בקשתך לעדכון פרטים נדחתה על ידי המנהל."),
         requestId: request.id,

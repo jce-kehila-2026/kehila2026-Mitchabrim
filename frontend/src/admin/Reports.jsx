@@ -489,42 +489,44 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
       .join(" • ");
   }
 
-  const tableRows = rows.map((r) => {
-    return `<tr>${cols.map((c) => `<td>${r[c.key] == null || r[c.key] === "" ? "—" : String(r[c.key])}</td>`).join("")}</tr>`;
-  }).join("");
+  const tableRows = rows
+    .map((r) => {
+      return `<tr>${cols.map((c) => `<td>${r[c.key] == null || r[c.key] === "" ? "—" : String(r[c.key])}</td>`).join("")}</tr>`;
+    })
+    .join("");
 
   let summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
-  const archived = rows.filter(d => d.isArchived === "כן").length;
+  const archived = rows.filter((d) => d.isArchived === "כן").length;
   if (archived > 0) {
     summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
   }
 
   if (report.id === "elderly") {
-    const active = rows.filter(d => d.status === "פעיל").length;
-    const males = rows.filter(d => d.gender === "זכר").length;
-    const females = rows.filter(d => d.gender === "נקבה").length;
+    const active = rows.filter((d) => d.status === "פעיל").length;
+    const males = rows.filter((d) => d.gender === "זכר").length;
+    const females = rows.filter((d) => d.gender === "נקבה").length;
     summaryItems += `
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
       <div class="item">👴 זכרים: <strong>${males}</strong></div>
       <div class="item">👵 נקבות: <strong>${females}</strong></div>
     `;
   } else if (report.id === "volunteers") {
-    const active = rows.filter(d => d.status === "פעיל").length;
-    const pending = rows.filter(d => d.status === "ממתין לשיבוץ").length;
+    const active = rows.filter((d) => d.status === "פעיל").length;
+    const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
     summaryItems += `
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
       <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
     `;
   } else if (report.id === "projects") {
-    const completed = rows.filter(d => d.status === "הסתיים" || d.status === "סיים").length;
-    const active = rows.filter(d => d.status === "פעיל").length;
+    const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
+    const active = rows.filter((d) => d.status === "פעיל").length;
     summaryItems += `
       <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
     `;
   } else if (report.id === "financial") {
-    const incomes = rows.filter(d => d.type === "תרומה" || d.type === "הכנסה");
-    const expenses = rows.filter(d => d.type === "הוצאה");
+    const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
+    const expenses = rows.filter((d) => d.type === "הוצאה");
     const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     summaryItems += `
@@ -669,12 +671,14 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
    Reports Grid (6 Cards)
    ============================================================ */
 const ReportsGrid = ({ onOpen }) => (
-  <div style={{
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-    gap: 20,
-    marginBottom: 28,
-  }}>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+      gap: 20,
+      marginBottom: 28,
+    }}
+  >
     {Object.values(REPORT_TYPES).map((r) => (
       <div
         key={r.id}
@@ -701,19 +705,27 @@ const ReportsGrid = ({ onOpen }) => (
         }}
       >
         <div style={{ fontSize: 36, marginBottom: 8 }}>{r.icon}</div>
-        <h3 style={{
-          color: "#8B0000",
-          margin: "0 0 4px",
-          fontSize: 18,
-          fontWeight: 600,
-        }}>{r.label}</h3>
-        <p style={{
-          color: "#666",
-          fontSize: 14,
-          margin: "0 0 18px",
-          minHeight: 40,
-          lineHeight: 1.4,
-        }}>{r.description}</p>
+        <h3
+          style={{
+            color: "#8B0000",
+            margin: "0 0 4px",
+            fontSize: 18,
+            fontWeight: 600,
+          }}
+        >
+          {r.label}
+        </h3>
+        <p
+          style={{
+            color: "#666",
+            fontSize: 14,
+            margin: "0 0 18px",
+            minHeight: 40,
+            lineHeight: 1.4,
+          }}
+        >
+          {r.description}
+        </p>
         <button
           className="btn btn-primary"
           onClick={() => onOpen(r.id)}
@@ -742,7 +754,7 @@ const ReportsGrid = ({ onOpen }) => (
 
 const renderElderlyCharts = (data) => {
   const { barData, pieData } = REPORT_TYPES.elderly.getChartData(data);
-  
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
       <SectionCard title="📊 אזרחים ותיקים לפי שכונה">
@@ -757,7 +769,7 @@ const renderElderlyCharts = (data) => {
           </BarChart>
         </ResponsiveContainer>
       </SectionCard>
-      
+
       <SectionCard title="🧩 התפלגות לפי סטטוס">
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
@@ -786,7 +798,7 @@ const renderElderlyCharts = (data) => {
 
 const renderVolunteerCharts = (data) => {
   const { barData, pieData } = REPORT_TYPES.volunteers.getChartData(data);
-  
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
       <SectionCard title="📊 מתנדבים לפי קבוצה">
@@ -801,7 +813,7 @@ const renderVolunteerCharts = (data) => {
           </BarChart>
         </ResponsiveContainer>
       </SectionCard>
-      
+
       <SectionCard title="🧩 התפלגות לפי סטטוס">
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
@@ -830,7 +842,7 @@ const renderVolunteerCharts = (data) => {
 
 const renderProjectCharts = (data) => {
   const { barData } = REPORT_TYPES.projects.getChartData(data);
-  
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
       <SectionCard title="📊 התקדמות פרויקטים (אחוז מסירות)">
@@ -851,7 +863,7 @@ const renderProjectCharts = (data) => {
 
 const renderParliamentCharts = (data) => {
   const { barData } = REPORT_TYPES.parliaments.getChartData(data);
-  
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
       <SectionCard title="📊 מספר משתתפים בפרלמנטים">
@@ -872,7 +884,7 @@ const renderParliamentCharts = (data) => {
 
 const renderJoinRequestCharts = (data) => {
   const { pieData } = REPORT_TYPES.joinRequests.getChartData(data);
-  
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
       <SectionCard title="🧩 התפלגות בקשות הצטרפות לפי סטטוס">
@@ -903,7 +915,7 @@ const renderJoinRequestCharts = (data) => {
 
 const renderFinancialCharts = (data) => {
   const { barData, pieData } = REPORT_TYPES.financial.getChartData(data);
-  
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
       <SectionCard title="📊 הכנסות מול הוצאות לפי פרויקט">
@@ -919,7 +931,7 @@ const renderFinancialCharts = (data) => {
           </BarChart>
         </ResponsiveContainer>
       </SectionCard>
-      
+
       <SectionCard title="🧩 התפלגות תרומות לפי סוג">
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
@@ -1020,10 +1032,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
     return result;
   }, [allData, filters, sort]);
 
-  const toggleField = (k) =>
-    setSelectedFields((cur) =>
-      cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]
-    );
+  const toggleField = (k) => setSelectedFields((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
 
   const renderFilterInput = (filter) => {
     const value = filters[filter.key] || "";
@@ -1051,7 +1060,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         >
           <option value="">{`כל ${filter.label}`}</option>
           {options.map((o) => (
-            <option key={o} value={o}>{o}</option>
+            <option key={o} value={o}>
+              {o}
+            </option>
           ))}
         </select>
       );
@@ -1100,7 +1111,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         >
           → חזרה לדוחות
         </button>
-        <h2 style={{ margin: 0, color: "#8B0000", fontSize: "22px" }}>{report.icon} {report.label}</h2>
+        <h2 style={{ margin: 0, color: "#8B0000", fontSize: "22px" }}>
+          {report.icon} {report.label}
+        </h2>
       </div>
 
       {/* ===== CHARTS SECTION ===== */}
@@ -1118,7 +1131,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
             ))}
           </div>
           <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-            {Object.values(filters).some(v => v && v !== "") && (
+            {Object.values(filters).some((v) => v && v !== "") && (
               <button
                 className="btn"
                 onClick={() => setFilters({})}
@@ -1145,17 +1158,19 @@ const ReportBuilder = ({ reportKey, onBack }) => {
               className="select"
               value={sort}
               onChange={(e) => setSort(e.target.value)}
-              style={{ 
-                padding: "8px 12px", 
-                borderRadius: 8, 
-                border: "1px solid #ddd", 
-                minWidth: 200, 
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                minWidth: 200,
                 background: "white",
                 color: sort ? "#1a1a1a" : "#666",
-                fontSize: "14px"
+                fontSize: "14px",
               }}
             >
-              <option value="" style={{ color: "#666" }}>ללא מיון</option>
+              <option value="" style={{ color: "#666" }}>
+                ללא מיון
+              </option>
               {report.sortOptions.map((o) => (
                 <option key={o.value} value={o.value} style={{ color: "#1a1a1a" }}>
                   {o.label}
@@ -1244,11 +1259,13 @@ const ReportBuilder = ({ reportKey, onBack }) => {
                 ברירת מחדל
               </button>
             </div>
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-              gap: 8,
-            }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                gap: 8,
+              }}
+            >
               {report.fields.map((f) => (
                 <label
                   key={f.key}
@@ -1277,7 +1294,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         <button
           className="btn btn-primary"
           onClick={() => {
-            const sortLabel = sort ? report.sortOptions?.find(o => o.value === sort)?.label || sort : "";
+            const sortLabel = sort ? report.sortOptions?.find((o) => o.value === sort)?.label || sort : "";
             exportToPDF(report, filteredData, selectedFields, filters, sortLabel);
           }}
           disabled={!filteredData.length || !selectedFields.length}
@@ -1314,7 +1331,11 @@ const ReportBuilder = ({ reportKey, onBack }) => {
                 <tr style={{ background: "#8B0000", color: "white" }}>
                   {selectedFields.map((k) => {
                     const f = report.fields.find((x) => x.key === k);
-                    return <th key={k} style={{ padding: "10px 8px", textAlign: "right", border: "1px solid #6b0000" }}>{f?.label || k}</th>;
+                    return (
+                      <th key={k} style={{ padding: "10px 8px", textAlign: "right", border: "1px solid #6b0000" }}>
+                        {f?.label || k}
+                      </th>
+                    );
                   })}
                 </tr>
               </thead>
@@ -1363,7 +1384,7 @@ const HolidaySummary = ({ onBack }) => {
           setAllData(data);
           const yearSet = new Set();
           const projectSet = new Set();
-          data.forEach(r => {
+          data.forEach((r) => {
             if (r.project) {
               projectSet.add(r.project);
               const yearMatch = r.project.match(/\d{4}/);
@@ -1388,22 +1409,24 @@ const HolidaySummary = ({ onBack }) => {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const filteredData = useMemo(() => {
     let result = allData;
     if (selectedYear) {
-      result = result.filter(r => r.project && r.project.includes(selectedYear));
+      result = result.filter((r) => r.project && r.project.includes(selectedYear));
     }
     if (selectedProject) {
-      result = result.filter(r => r.project === selectedProject);
+      result = result.filter((r) => r.project === selectedProject);
     }
     return result;
   }, [allData, selectedYear, selectedProject]);
 
-  const incomes = filteredData.filter(r => r.type === "תרומה");
-  const expenses = filteredData.filter(r => r.type === "הוצאה");
+  const incomes = filteredData.filter((r) => r.type === "תרומה");
+  const expenses = filteredData.filter((r) => r.type === "הוצאה");
 
   const sum = (arr) => arr.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const totalIn = sum(incomes);
@@ -1486,7 +1509,10 @@ const HolidaySummary = ({ onBack }) => {
 </body></html>`;
 
     const w = window.open("", "_blank");
-    if (!w) { alert("נא לאפשר חלונות קופצים בדפדפן"); return; }
+    if (!w) {
+      alert("נא לאפשר חלונות קופצים בדפדפן");
+      return;
+    }
     w.document.write(html);
     w.document.close();
   };
@@ -1499,7 +1525,19 @@ const HolidaySummary = ({ onBack }) => {
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-          <button className="btn" onClick={onBack} style={{ padding: "8px 16px", background: "#f5f0ed", border: "1px solid #ddd", borderRadius: "8px", cursor: "pointer" }}>→ חזרה</button>
+          <button
+            className="btn"
+            onClick={onBack}
+            style={{
+              padding: "8px 16px",
+              background: "#f5f0ed",
+              border: "1px solid #ddd",
+              borderRadius: "8px",
+              cursor: "pointer",
+            }}
+          >
+            → חזרה
+          </button>
           <h2 style={{ margin: 0, color: "#8B0000" }}>🎄 סיכום הכנסות והוצאות לפי חג</h2>
         </div>
         <SectionCard>
@@ -1547,11 +1585,13 @@ const HolidaySummary = ({ onBack }) => {
             >
               <option value="">כל השנים</option>
               {years.map((y) => (
-                <option key={y} value={y}>{y}</option>
+                <option key={y} value={y}>
+                  {y}
+                </option>
               ))}
             </select>
           </div>
-          
+
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: "#666", fontWeight: 500 }}>פרויקט / חג</label>
             <select
@@ -1567,11 +1607,13 @@ const HolidaySummary = ({ onBack }) => {
             >
               <option value="">כל הפרויקטים</option>
               {projects.map((p) => (
-                <option key={p} value={p}>{p}</option>
+                <option key={p} value={p}>
+                  {p}
+                </option>
               ))}
             </select>
           </div>
-          
+
           <button
             className="btn btn-primary"
             onClick={exportHolidayPDF}
@@ -1588,9 +1630,10 @@ const HolidaySummary = ({ onBack }) => {
           >
             📄 ייצוא ל-PDF
           </button>
-          
+
           <div style={{ marginInlineStart: "auto", color: "#666" }}>
-            {filteredData.length} רשומות • הכנסות: {totalIn.toLocaleString("he-IL")} ₪ • הוצאות: {totalOut.toLocaleString("he-IL")} ₪
+            {filteredData.length} רשומות • הכנסות: {totalIn.toLocaleString("he-IL")} ₪ • הוצאות:{" "}
+            {totalOut.toLocaleString("he-IL")} ₪
           </div>
         </div>
       </SectionCard>
@@ -1611,7 +1654,9 @@ const HolidaySummary = ({ onBack }) => {
                 {incomes.map((r, i) => (
                   <tr key={r.id || i} style={i % 2 === 0 ? { background: "white" } : { background: "#f9f6f4" }}>
                     <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.name || "—"}</td>
-                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>{(Number(r.amount) || 0).toLocaleString("he-IL")} ₪</td>
+                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                      {(Number(r.amount) || 0).toLocaleString("he-IL")} ₪
+                    </td>
                   </tr>
                 ))}
                 <tr style={{ fontWeight: 700, background: "#f5f0ed" }}>
@@ -1637,7 +1682,9 @@ const HolidaySummary = ({ onBack }) => {
                 {expenses.map((r, i) => (
                   <tr key={r.id || i} style={i % 2 === 0 ? { background: "white" } : { background: "#f9f6f4" }}>
                     <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.name || "—"}</td>
-                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>{(Number(r.amount) || 0).toLocaleString("he-IL")} ₪</td>
+                    <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                      {(Number(r.amount) || 0).toLocaleString("he-IL")} ₪
+                    </td>
                   </tr>
                 ))}
                 <tr style={{ fontWeight: 700, background: "#f5f0ed" }}>
@@ -1667,7 +1714,7 @@ const DonationsSummary = ({ onBack }) => {
         const snap = await getDocs(collection(db, "financial"));
         const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (alive) {
-          setRows(data.filter(r => r.type === "תרומה"));
+          setRows(data.filter((r) => r.type === "תרומה"));
         }
       } catch (e) {
         console.error("Failed to load financial data:", e);
@@ -1676,19 +1723,21 @@ const DonationsSummary = ({ onBack }) => {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const groups = DONATION_TYPES.map((type) => ({
     type,
-    items: rows.filter(r => r.subType === type),
+    items: rows.filter((r) => r.subType === type),
   }));
 
   const fmt = (n) => (Number(n) || 0).toLocaleString("he-IL");
 
   const printPDF = (selectedTypes) => {
-    const chosen = groups.filter(g => selectedTypes.includes(g.type));
-    if (!chosen.some(g => g.items.length)) {
+    const chosen = groups.filter((g) => selectedTypes.includes(g.type));
+    if (!chosen.some((g) => g.items.length)) {
       alert("אין נתונים לייצוא");
       return;
     }
@@ -1700,12 +1749,16 @@ const DonationsSummary = ({ onBack }) => {
     const buildGroupTable = (g) => {
       const total = g.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const body = g.items.length
-        ? g.items.map((r) => `<tr>
+        ? g.items
+            .map(
+              (r) => `<tr>
             <td>${r.name || "—"}</td>
             <td class="num">${fmt(r.amount)} ₪</td>
             <td>${(r.receiptType || "").includes("46") ? "" : "✔"}</td>
             <td>${(r.receiptType || "").includes("46") ? "✔" : ""}</td>
-          </tr>`).join("")
+          </tr>`,
+            )
+            .join("")
         : `<tr><td colspan="4" style="text-align:center;color:#888;">אין נתונים</td></tr>`;
       return `
         <h3 class="grp-title">${g.type}</h3>
@@ -1747,7 +1800,10 @@ ${chosen.map(buildGroupTable).join("")}
 </body></html>`;
 
     const w = window.open("", "_blank");
-    if (!w) { alert("נא לאפשר חלונות קופצים בדפדפן"); return; }
+    if (!w) {
+      alert("נא לאפשר חלונות קופצים בדפדפן");
+      return;
+    }
     w.document.write(html);
     w.document.close();
   };
@@ -1837,12 +1893,18 @@ ${chosen.map(buildGroupTable).join("")}
                     </thead>
                     <tbody>
                       {g.items.length === 0 ? (
-                        <tr><td colSpan="4" style={{ textAlign: "center", color: "#888", padding: "20px" }}>אין נתונים</td></tr>
+                        <tr>
+                          <td colSpan="4" style={{ textAlign: "center", color: "#888", padding: "20px" }}>
+                            אין נתונים
+                          </td>
+                        </tr>
                       ) : (
                         g.items.map((r, i) => (
                           <tr key={r.id || i} style={i % 2 === 0 ? { background: "white" } : { background: "#f9f6f4" }}>
                             <td style={{ padding: "8px", border: "1px solid #ddd" }}>{r.name || "—"}</td>
-                            <td style={{ padding: "8px", border: "1px solid #ddd" }}>{(Number(r.amount) || 0).toLocaleString("he-IL")} ₪</td>
+                            <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                              {(Number(r.amount) || 0).toLocaleString("he-IL")} ₪
+                            </td>
                             <td style={{ padding: "8px", border: "1px solid #ddd", textAlign: "center" }}>
                               {(r.receiptType || "").includes("46") ? "" : "✔"}
                             </td>
@@ -1864,15 +1926,17 @@ ${chosen.map(buildGroupTable).join("")}
             })}
           </div>
 
-          <div style={{
-            marginTop: 16,
-            padding: "12px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: 6,
-            fontWeight: 600,
-            textAlign: "center",
-          }}>
+          <div
+            style={{
+              marginTop: 16,
+              padding: "12px 16px",
+              background: "#f5f0ed",
+              border: "1px solid #ddd",
+              borderRadius: 6,
+              fontWeight: 600,
+              textAlign: "center",
+            }}
+          >
             סה"כ תרומות בכל הסוגים: <span style={{ color: "#8B0000" }}>{grandTotal.toLocaleString("he-IL")} ₪</span>
           </div>
         </>
@@ -1943,7 +2007,9 @@ const FinancialChooser = ({ onBack }) => {
           >
             <div style={{ fontSize: 36, marginBottom: 8 }}>{r.icon}</div>
             <h3 style={{ color: "#8B0000", margin: "0 0 4px", fontSize: 18 }}>{r.label}</h3>
-            <p style={{ color: "#666", fontSize: 14, margin: "0 0 18px", minHeight: 52, lineHeight: 1.4 }}>{r.description}</p>
+            <p style={{ color: "#666", fontSize: 14, margin: "0 0 18px", minHeight: 52, lineHeight: 1.4 }}>
+              {r.description}
+            </p>
             <button
               className="btn btn-primary"
               style={{

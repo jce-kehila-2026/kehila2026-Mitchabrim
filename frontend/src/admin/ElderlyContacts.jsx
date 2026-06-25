@@ -24,8 +24,7 @@ const RELATION_TYPES = ["עו״ס", "בן / בת משפחה", "שכן / שכנה
 const STATUS_OPTIONS = ["פעיל", "לא פעיל"];
 const LINK_OPTIONS = ["מקושר לאזרח ותיק", "לא מקושר"];
 
-const NUMBERS_RE = /^\d+$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { validatePhone, validateEmail, validateName, filterDigits, filterName } from "@/utils/validation";
 const Req = () => <span style={{ color: "#dc2626", marginInlineStart: 4 }}>*</span>;
 const FieldError = ({ msg }) =>
   msg ? <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{msg}</div> : null;
@@ -388,11 +387,14 @@ function ContactModal({ editing, onClose, onSave }) {
 
   const validate = () => {
     const e = {};
-    if (!form.firstName.trim()) e.firstName = "שדה חובה";
-    if (!form.lastName.trim()) e.lastName = "שדה חובה";
-    if (!form.phone.trim()) e.phone = "שדה חובה";
-    else if (!NUMBERS_RE.test(form.phone.trim().replace(/[-\s]/g, ""))) e.phone = "מספרים בלבד";
-    if (form.email && !EMAIL_RE.test(form.email.trim())) e.email = "כתובת מייל לא תקינה";
+    const nameErr1 = validateName(form.firstName, { required: true });
+    if (nameErr1) e.firstName = nameErr1;
+    const nameErr2 = validateName(form.lastName, { required: true });
+    if (nameErr2) e.lastName = nameErr2;
+    const phoneErr = validatePhone(form.phone, { required: true });
+    if (phoneErr) e.phone = phoneErr;
+    const emailErr = validateEmail(form.email, { required: false });
+    if (emailErr) e.email = emailErr;
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -415,17 +417,17 @@ function ContactModal({ editing, onClose, onSave }) {
           <div className="row row-2">
             <div className="field">
               <label>שם פרטי<Req /></label>
-              <input className="input" value={form.firstName} onChange={set("firstName")} />
+              <input className="input" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: filterName(e.target.value) })} />
               <FieldError msg={errors.firstName} />
             </div>
             <div className="field">
               <label>שם משפחה<Req /></label>
-              <input className="input" value={form.lastName} onChange={set("lastName")} />
+              <input className="input" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: filterName(e.target.value) })} />
               <FieldError msg={errors.lastName} />
             </div>
             <div className="field">
               <label>טלפון<Req /></label>
-              <input className="input" inputMode="numeric" value={form.phone} onChange={set("phone")} />
+              <input className="input" inputMode="numeric" maxLength={10} value={form.phone} onChange={(e) => setForm({ ...form, phone: filterDigits(e.target.value, 10) })} />
               <FieldError msg={errors.phone} />
             </div>
             <div className="field">

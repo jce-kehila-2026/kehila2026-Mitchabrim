@@ -13,6 +13,7 @@ import {
 import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
 import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
+import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
 
 /* ===== Options (shared with volunteers page) =====
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
@@ -536,23 +537,45 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   // Changing area resets neighborhood to avoid stale/invalid pairings.
   const setArea = (e) => setF({ ...f, area: e.target.value, neighborhood: "" });
-  const setDigits = (k) => (e) => {
+  const setDigits = (k, maxLen) => (e) => {
     const raw = e.target.value;
-    const cleaned = raw.replace(/\D/g, "");
+    let cleaned = raw.replace(/\D/g, "");
+    if (maxLen) cleaned = cleaned.slice(0, maxLen);
     setNumericWarn((w) => ({ ...w, [k]: raw !== cleaned }));
+    setF({ ...f, [k]: cleaned });
+  };
+  const setLetters = (k, maxLen = 80) => (e) => {
+    const raw = e.target.value;
+    const cleaned = raw.replace(/[^A-Za-z\u0590-\u05FF\u0600-\u06FF\s'\-"]/g, "").slice(0, maxLen);
     setF({ ...f, [k]: cleaned });
   };
 
 
   const showVolName = f.volStatus === "כן" || f.volStatus === "לא מתאים";
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const handleSave = () => {
     const required = Object.keys(REQUIRED_LABELS).filter((k) => k !== "volName" || showVolName);
     const empty = required.filter((k) => !String(f[k] ?? "").trim());
     const dup = existingIds.some((x) => x.idNum === f.idNum && x.id !== (initial?.id));
+
+    // logical validation
+    const errs = {};
+    const fn = validateName(f.firstName); if (fn) errs.firstName = fn;
+    const ln = validateName(f.lastName); if (ln) errs.lastName = ln;
+    const idErr = validateId(f.idNum); if (idErr) errs.idNum = idErr;
+    if (f.mobile) { const e1 = validatePhone(f.mobile, { required: false }); if (e1) errs.mobile = e1; }
+    if (f.homePhone) { const e2 = validatePhone(f.homePhone, { required: false }); if (e2) errs.homePhone = e2; }
+    if (f.birth && !/^\d{2}\/\d{2}\/\d{4}$/.test(String(f.birth).trim())) {
+      // accept DD/MM/YYYY format only
+      const parts = String(f.birth).trim().split(/[\/\-]/);
+      if (parts.length !== 3) errs.birth = "תאריך לא תקין (DD/MM/YYYY)";
+    }
+    setFieldErrors(errs);
     setMissing(empty);
     setIdDup(dup);
-    if (empty.length || dup) return;
+    if (empty.length || dup || Object.keys(errs).length) return;
     onSave(f);
   };
 
@@ -583,14 +606,15 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
         <div className="form-section">
           <h4>פרטים אישיים</h4>
           <div className="row row-2">
-            <div className="field"><label>שם פרטי</label><input className="input" value={f.firstName} onChange={set("firstName")} /></div>
-            <div className="field"><label>שם משפחה</label><input className="input" value={f.lastName} onChange={set("lastName")} /></div>
+            <div className="field"><label>שם פרטי</label><input className="input" value={f.firstName} onChange={setLetters("firstName")} />{fieldErrors.firstName && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.firstName}</div>}</div>
+            <div className="field"><label>שם משפחה</label><input className="input" value={f.lastName} onChange={setLetters("lastName")} />{fieldErrors.lastName && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.lastName}</div>}</div>
             <div className="field">
               <label>ת.ז</label>
-              <input className="input" value={f.idNum} onChange={setDigits("idNum")} inputMode="numeric" />
+              <input className="input" value={f.idNum} onChange={setDigits("idNum", 9)} inputMode="numeric" maxLength={9} />
               <NumericMsg k="idNum" />
+              {fieldErrors.idNum && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.idNum}</div>}
             </div>
-            <div className="field"><label>תאריך לידה</label><input className="input" type="text" value={f.birth} onChange={set("birth")} placeholder="DD/MM/YYYY" /></div>
+            <div className="field"><label>תאריך לידה</label><input className="input" type="text" value={f.birth} onChange={set("birth")} placeholder="DD/MM/YYYY" />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
             <div className="field">
               <label>מצב משפחתי</label>
               <select className="select" value={f.marital} onChange={set("marital")}>
@@ -605,13 +629,15 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
           <div className="row row-2">
             <div className="field">
               <label>טלפון נייד</label>
-              <input className="input" value={f.mobile} onChange={setDigits("mobile")} inputMode="numeric" />
+              <input className="input" value={f.mobile} onChange={setDigits("mobile", 10)} inputMode="numeric" maxLength={10} />
               <NumericMsg k="mobile" />
+              {fieldErrors.mobile && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.mobile}</div>}
             </div>
             <div className="field">
               <label>טלפון בית</label>
-              <input className="input" value={f.homePhone} onChange={setDigits("homePhone")} inputMode="numeric" />
+              <input className="input" value={f.homePhone} onChange={setDigits("homePhone", 10)} inputMode="numeric" maxLength={10} />
               <NumericMsg k="homePhone" />
+              {fieldErrors.homePhone && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.homePhone}</div>}
             </div>
             <div className="field">
               <label>אזור</label>

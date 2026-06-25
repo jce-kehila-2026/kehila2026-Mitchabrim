@@ -15,6 +15,7 @@ import {
 
 import { db } from "../firebase";
 import { getDoc } from "firebase/firestore";
+import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
 
 const volunteersCollection = collection(db, "volunteers");
 
@@ -67,29 +68,31 @@ export async function getVolunteers() {
 }
 
 export async function createVolunteer(volunteerData) {
+  const clean = sanitizeFormData(volunteerData);
   const docRef = await addDoc(volunteersCollection, {
-    ...volunteerData,
+    ...clean,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   return {
     id: docRef.id,
-    ...volunteerData,
+    ...clean,
   };
 }
 
 export async function editVolunteer(volunteerId, volunteerData) {
   const volunteerRef = doc(db, "volunteers", volunteerId);
+  const clean = sanitizeFormData(volunteerData);
 
   await updateDoc(volunteerRef, {
-    ...volunteerData,
+    ...clean,
     updatedAt: serverTimestamp(),
   });
 
   return {
     id: volunteerId,
-    ...volunteerData,
+    ...clean,
   };
 }
 
@@ -108,8 +111,9 @@ export async function getVolunteerGroups() {
 }
 
 export async function createVolunteerGroup(groupData) {
+  const clean = sanitizeFormData(groupData);
   const docRef = await addDoc(groupsCollection, {
-    ...groupData,
+    ...clean,
     count: 0,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -117,22 +121,23 @@ export async function createVolunteerGroup(groupData) {
 
   return {
     id: docRef.id,
-    ...groupData,
+    ...clean,
     count: 0,
   };
 }
 
 export async function editVolunteerGroup(groupId, groupData) {
   const groupRef = doc(db, "volunteerGroups", groupId);
+  const clean = sanitizeFormData(groupData);
 
   await updateDoc(groupRef, {
-    ...groupData,
+    ...clean,
     updatedAt: serverTimestamp(),
   });
 
   return {
     id: groupId,
-    ...groupData,
+    ...clean,
   };
 }
 
@@ -146,9 +151,9 @@ export async function addVolunteerToGroup(volunteerId, group, role, notes = "") 
 
   await updateDoc(volunteerRef, {
     groupId: group.id,
-    group: group.name,
-    groupRole: role || "חבר קבוצה",
-    groupNotes: notes,
+    group: sanitizeText(group.name, 200),
+    groupRole: sanitizeText(role || "חבר קבוצה", 100),
+    groupNotes: sanitizeText(notes, 2000),
     updatedAt: serverTimestamp(),
   });
 

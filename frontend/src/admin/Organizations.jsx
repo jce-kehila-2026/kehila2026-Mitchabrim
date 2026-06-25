@@ -32,8 +32,7 @@ const CATEGORY_OPTIONS = [
 ];
 const STATUS_OPTIONS = ["פעיל", "לא פעיל"];
 
-const NUMBERS_RE = /^\d+$/;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { validatePhone, validateEmail, validateName, filterDigits, filterName } from "@/utils/validation";
 const Req = () => <span style={{ color: "#dc2626", marginInlineStart: 4 }}>*</span>;
 const FieldError = ({ msg }) =>
   msg ? <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{msg}</div> : null;
@@ -402,17 +401,13 @@ function OrganizationModal({ editing, onClose, onCreate, onUpdate }) {
     const e = {};
     if (!form.organizationName.trim()) e.organizationName = "שדה חובה";
     if (!form.category) e.category = "יש לבחור קטגוריה";
-    if (form.email && !EMAIL_RE.test(form.email.trim())) e.email = "כתובת מייל לא תקינה";
-    if (form.phone && !NUMBERS_RE.test(form.phone.trim().replace(/[-\s]/g, "")))
-      e.phone = "מספרים בלבד";
+    const em = validateEmail(form.email, { required: false }); if (em) e.email = em;
+    const ph = validatePhone(form.phone, { required: false }); if (ph) e.phone = ph;
 
     if (!isEdit) {
-      if (!primary.contactName.trim()) e.pContactName = "שדה חובה";
-      if (!primary.phone.trim()) e.pPhone = "שדה חובה";
-      else if (!NUMBERS_RE.test(primary.phone.trim().replace(/[-\s]/g, "")))
-        e.pPhone = "מספרים בלבד";
-      if (primary.email && !EMAIL_RE.test(primary.email.trim()))
-        e.pEmail = "כתובת מייל לא תקינה";
+      const pn = validateName(primary.contactName); if (pn) e.pContactName = pn;
+      const pp = validatePhone(primary.phone); if (pp) e.pPhone = pp;
+      const pe = validateEmail(primary.email, { required: false }); if (pe) e.pEmail = pe;
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -728,10 +723,9 @@ function ContactPersonModal({ editing, onClose, onSave }) {
 
   const validate = () => {
     const e = {};
-    if (!form.contactName.trim()) e.contactName = "שדה חובה";
-    if (!form.phone.trim()) e.phone = "שדה חובה";
-    else if (!NUMBERS_RE.test(form.phone.trim().replace(/[-\s]/g, ""))) e.phone = "מספרים בלבד";
-    if (form.email && !EMAIL_RE.test(form.email.trim())) e.email = "כתובת מייל לא תקינה";
+    const nm = validateName(form.contactName); if (nm) e.contactName = nm;
+    const ph = validatePhone(form.phone); if (ph) e.phone = ph;
+    const em = validateEmail(form.email, { required: false }); if (em) e.email = em;
     setErrors(e);
     return Object.keys(e).length === 0;
   };

@@ -12,6 +12,7 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/firebase";
+import { sanitizeText } from "@/utils/sanitize";
 import {
   User, Phone, Mail, MapPin, IdCard, Home, Users, Activity, Pencil, X, Send,
 } from "lucide-react";
@@ -150,17 +151,18 @@ function RequestModal({ volunteer, user, onClose }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    const trimmed = message.trim();
+    const trimmed = sanitizeText(message, 1000);
     if (!trimmed) { setErr("יש לכתוב הודעה"); return; }
     if (trimmed.length > 1000) { setErr("ההודעה ארוכה מדי (מקסימום 1000 תווים)"); return; }
     if (!user?.uid) { setErr("יש להתחבר מחדש"); return; }
+    const safeVolName = sanitizeText(volunteerName, 200);
     try {
       setSending(true);
       setErr("");
       const reqRef = await addDoc(collection(db, "profileUpdateRequests"), {
         volunteerId: volunteer.id,
         volunteerAuthUid: user.uid,
-        volunteerName,
+        volunteerName: safeVolName,
         message: trimmed,
         status: "pending",
         createdAt: serverTimestamp(),
@@ -172,7 +174,7 @@ function RequestModal({ volunteer, user, onClose }) {
         audience: "admin",
         type: "profile_update_request",
         title: "בקשה חדשה לעדכון פרטי מתנדב",
-        message: `${volunteerName} שלח/ה בקשה לעדכון פרטים`,
+        message: `${safeVolName} שלח/ה בקשה לעדכון פרטים`,
         requestId: reqRef.id,
         read: false,
         createdAt: serverTimestamp(),
