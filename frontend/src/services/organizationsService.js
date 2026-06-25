@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
 
 const orgsCol = collection(db, "organizations");
 const contactsCol = collection(db, "organizationContacts");
@@ -39,14 +40,14 @@ export async function getOrganizationById(id) {
 
 export async function createOrganization(data) {
   const payload = {
-    organizationName: data.organizationName || "",
-    category: data.category || "",
-    phone: data.phone || "",
-    email: data.email || "",
-    website: data.website || "",
-    address: data.address || "",
-    status: data.status || "פעיל",
-    notes: data.notes || "",
+    organizationName: sanitizeText(data.organizationName, 200),
+    category: sanitizeText(data.category, 60),
+    phone: sanitizeText(data.phone, 40),
+    email: sanitizeText(data.email, 200),
+    website: sanitizeText(data.website, 300),
+    address: sanitizeText(data.address, 300),
+    status: sanitizeText(data.status, 40) || "פעיל",
+    notes: sanitizeText(data.notes, 5000),
     primaryContactId: null,
     primaryContactName: "",
     primaryContactPhone: "",
@@ -59,7 +60,7 @@ export async function createOrganization(data) {
 }
 
 export async function updateOrganization(id, data) {
-  const payload = { ...data, updatedAt: serverTimestamp() };
+  const payload = { ...sanitizeFormData(data), updatedAt: serverTimestamp() };
   await updateDoc(doc(db, "organizations", id), payload);
   return { id, ...payload };
 }
@@ -96,12 +97,12 @@ export async function getContactsForOrganization(organizationId) {
 export async function createOrganizationContact(data) {
   const payload = {
     organizationId: data.organizationId || "",
-    organizationName: data.organizationName || "",
-    contactName: data.contactName || "",
-    role: data.role || "",
-    phone: data.phone || "",
-    email: data.email || "",
-    notes: data.notes || "",
+    organizationName: sanitizeText(data.organizationName, 200),
+    contactName: sanitizeText(data.contactName, 200),
+    role: sanitizeText(data.role, 100),
+    phone: sanitizeText(data.phone, 40),
+    email: sanitizeText(data.email, 200),
+    notes: sanitizeText(data.notes, 5000),
     isPrimary: !!data.isPrimary,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -111,7 +112,7 @@ export async function createOrganizationContact(data) {
 }
 
 export async function updateOrganizationContact(id, data) {
-  const payload = { ...data, updatedAt: serverTimestamp() };
+  const payload = { ...sanitizeFormData(data), updatedAt: serverTimestamp() };
   await updateDoc(doc(db, "organizationContacts", id), payload);
   return { id, ...payload };
 }

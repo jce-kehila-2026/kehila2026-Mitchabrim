@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
 
 const tasksCollection = collection(db, "volunteerTasks");
 
@@ -70,15 +71,15 @@ export async function createTask(data, createdBy = null) {
   const payload = {
     volunteerId: data.volunteerId || null,
     volunteerAuthUid: data.volunteerAuthUid || null,
-    volunteerName: data.volunteerName || "",
-    title: data.title || "",
-    description: data.description || "",
-    taskType: data.taskType || "other",
+    volunteerName: sanitizeText(data.volunteerName, 200),
+    title: sanitizeText(data.title, 200),
+    description: sanitizeText(data.description, 5000),
+    taskType: sanitizeText(data.taskType, 60) || "other",
     elderlyId: data.elderlyId || null,
-    elderlyName: data.elderlyName || "",
+    elderlyName: sanitizeText(data.elderlyName, 200),
     dueDate: data.dueDate || null,
-    status: data.status || "open",
-    priority: data.priority || "normal",
+    status: sanitizeText(data.status, 40) || "open",
+    priority: sanitizeText(data.priority, 40) || "normal",
     createdBy: createdBy || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -89,7 +90,7 @@ export async function createTask(data, createdBy = null) {
 
 export async function updateTask(taskId, patch) {
   const ref = doc(db, "volunteerTasks", taskId);
-  await updateDoc(ref, { ...patch, updatedAt: serverTimestamp() });
+  await updateDoc(ref, { ...sanitizeFormData(patch), updatedAt: serverTimestamp() });
 }
 
 export async function deleteTask(taskId) {

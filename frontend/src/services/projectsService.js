@@ -16,6 +16,7 @@ import {
 import { db } from "../firebase";
 import { getElderly } from "./elderlyService";
 import { getAreasAndNeighborhoods } from "./settingsService";
+import { sanitizeFormData } from "../utils/sanitize";
 
 const projectsCollection = collection(db, "projects");
 
@@ -75,29 +76,31 @@ export async function getProjects() {
 }
 
 export async function createProject(projectData) {
+  const clean = sanitizeFormData(projectData);
   const docRef = await addDoc(projectsCollection, {
-    ...projectData,
+    ...clean,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   return {
     id: docRef.id,
-    ...projectData,
+    ...clean,
   };
 }
 
 export async function editProject(projectId, projectData) {
   const projectRef = doc(db, "projects", projectId);
+  const clean = sanitizeFormData(projectData);
 
   await updateDoc(projectRef, {
-    ...projectData,
+    ...clean,
     updatedAt: serverTimestamp(),
   });
 
   return {
     id: projectId,
-    ...projectData,
+    ...clean,
   };
 }
 

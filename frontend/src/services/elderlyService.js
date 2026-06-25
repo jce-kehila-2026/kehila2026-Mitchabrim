@@ -11,6 +11,8 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
+
 
 const elderlyCollection = collection(db, "elderly");
 
@@ -29,20 +31,22 @@ export async function getElderly() {
 }
 
 export async function createElderly(elderlyData) {
+  const clean = sanitizeFormData(elderlyData);
   const docRef = await addDoc(elderlyCollection, {
-    ...elderlyData,
+    ...clean,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   return {
     id: docRef.id,
-    ...elderlyData,
+    ...clean,
   };
 }
 
 export async function editElderly(elderlyId, elderlyData) {
   const elderlyRef = doc(db, "elderly", elderlyId);
+  elderlyData = sanitizeFormData(elderlyData);
 
   await updateDoc(elderlyRef, {
     ...elderlyData,
@@ -68,8 +72,8 @@ export async function assignVolunteerToElderly(elderlyId, volunteerName, status)
   const elderlyRef = doc(db, "elderly", elderlyId);
 
   await updateDoc(elderlyRef, {
-    volunteerName: volunteerName,
-    volunteerStatus: status, 
+    volunteerName: sanitizeText(volunteerName, 200),
+    volunteerStatus: sanitizeText(status, 100),
     updatedAt: serverTimestamp(),
   });
 }

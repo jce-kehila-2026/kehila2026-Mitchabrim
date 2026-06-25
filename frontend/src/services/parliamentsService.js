@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { sanitizeFormData } from "../utils/sanitize";
 
 const parliamentsCollection = collection(db, "parliaments");
 
@@ -26,18 +27,20 @@ export async function getParliaments() {
 }
 
 export async function createParliament(parliamentData) {
+  const clean = sanitizeFormData(parliamentData);
   const docRef = await addDoc(parliamentsCollection, {
-    ...parliamentData,
+    ...clean,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  return { id: docRef.id, ...parliamentData };
+  return { id: docRef.id, ...clean };
 }
 
 export async function editParliament(parliamentId, parliamentData) {
   const ref = doc(db, "parliaments", parliamentId);
-  await updateDoc(ref, { ...parliamentData, updatedAt: serverTimestamp() });
-  return { id: parliamentId, ...parliamentData };
+  const clean = sanitizeFormData(parliamentData);
+  await updateDoc(ref, { ...clean, updatedAt: serverTimestamp() });
+  return { id: parliamentId, ...clean };
 }
 
 export async function deleteParliament(parliamentId) {

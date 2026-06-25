@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { sanitizeFormData } from "../utils/sanitize";
 
 const contactsCol = collection(db, "elderlyContactPersons");
 const linksCol = collection(db, "elderlyContactLinks");
@@ -41,9 +42,10 @@ export async function getElderlyContactById(id) {
 }
 
 export async function createElderlyContact(data) {
+  const clean = sanitizeFormData(data);
   const payload = {
-    ...data,
-    fullName: `${data.firstName || ""} ${data.lastName || ""}`.trim(),
+    ...clean,
+    fullName: `${clean.firstName || ""} ${clean.lastName || ""}`.trim(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -52,9 +54,10 @@ export async function createElderlyContact(data) {
 }
 
 export async function updateElderlyContact(id, data) {
+  const clean = sanitizeFormData(data);
   const payload = {
-    ...data,
-    fullName: `${data.firstName || ""} ${data.lastName || ""}`.trim(),
+    ...clean,
+    fullName: `${clean.firstName || ""} ${clean.lastName || ""}`.trim(),
     updatedAt: serverTimestamp(),
   };
   await updateDoc(doc(db, "elderlyContactPersons", id), payload);

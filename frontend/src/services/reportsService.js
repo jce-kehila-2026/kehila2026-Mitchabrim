@@ -12,19 +12,21 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
 
 const reportsCollection = collection(db, "volunteerReports");
 
 export async function createVolunteerReport(reportData) {
+  const clean = sanitizeFormData(reportData);
   const docRef = await addDoc(reportsCollection, {
-    ...reportData,
+    ...clean,
     status: "pending",
     reviewedAt: null,
     reviewedBy: null,
     adminNote: "",
     createdAt: serverTimestamp(),
   });
-  return { id: docRef.id, ...reportData };
+  return { id: docRef.id, ...clean };
 }
 
 export async function getReportsForVolunteer(volunteerId) {
@@ -87,7 +89,7 @@ export async function updateReportReview(reportId, { status, adminNote, reviewed
     patch.reviewedAt = serverTimestamp();
     if (reviewedBy) patch.reviewedBy = reviewedBy;
   }
-  if (typeof adminNote === "string") patch.adminNote = adminNote;
+  if (typeof adminNote === "string") patch.adminNote = sanitizeText(adminNote, 5000);
   await updateDoc(ref, patch);
 }
 
