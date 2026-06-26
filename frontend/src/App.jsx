@@ -37,6 +37,7 @@ import VolunteerProfile from "./volunteer/VolunteerProfile.jsx";
 import Gallery from "./pages/Gallery";
 import AlbumGallery from "./pages/AlbumGallery";
 
+
 const Admin = ({ children }) => (
   <ProtectedRoute allow={["admin"]}>{children}</ProtectedRoute>
 );

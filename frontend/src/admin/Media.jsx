@@ -1,1305 +1,911 @@
 // src/admin/Media.jsx
-import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect, useRef, useCallback } from "react";
 import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
+import {
+  getImagesByFolder,
+  getFolders,
+  getFolderById,
+  createFolder,
+  deleteFolder,
+  uploadImage,
+  updateImage,
+  deleteImage,
+  toggleImagePublic,
+  moveImage,
+  searchMedia,
+  getAllFolders,
+  migrateOldImages,
+  createDefaultFolders,
+} from "@/services/mediaService";
 
-// Import Firebase tools
-import { storage, db } from "../firebase";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { collection, addDoc, getDocs, doc, deleteDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+// ─── helpers ────────────────────────────────────────────────────────────────
+function formatDate(ts) {
+  if (!ts) return "—";
+  const d = ts?.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString("he-IL", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
 
-const CATEGORIES = ["פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"];
+// ─── sub-components ──────────────────────────────────────────────────────────
 
+/** Small badge shown on every image card */
+function PublicBadge({ isPublic }) {
+  return (
+    <span
+      style={{
+        fontSize: "10px",
+        background: isPublic ? "#d4edda" : "#f8d7da",
+        color: isPublic ? "#155724" : "#721c24",
+        padding: "2px 8px",
+        borderRadius: "10px",
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {isPublic ? "🌐 ציבורי" : "🔒 פרטי"}
+    </span>
+  );
+}
+
+/** Tooltip-style info overlay on hover */
+function ImageInfoOverlay({ image }) {
+  return (
+    <div className="mb-img-info-overlay">
+      <div className="mb-img-info-row">
+        <span className="mb-img-info-label">שם:</span>
+        <span className="mb-img-info-val">{image.name}</span>
+      </div>
+      <div className="mb-img-info-row">
+        <span className="mb-img-info-label">נתיב:</span>
+        <span className="mb-img-info-val mb-img-path">{image.path || "/"}</span>
+      </div>
+      <div className="mb-img-info-row">
+        <span className="mb-img-info-label">תאריך:</span>
+        <span className="mb-img-info-val">{image.displayDate || formatDate(image.createdAt) || "—"}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function Media() {
-  const [imagesList, setImagesList] = useState([]);
+  // ── navigation ──
+  const [currentFolder, setCurrentFolder] = useState(null);
+  const [folderPath, setFolderPath]       = useState([]);
+
+  // ── data ──
+  const [folders, setFolders] = useState([]);
+  const [images,  setImages]  = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // ── search ──
+  const [searchQuery,   setSearchQuery]   = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching,   setIsSearching]   = useState(false);
+
+  // ── filters ──
+  const [filterType,   setFilterType]   = useState("all");   // all | folder | image
+  const [filterFrom,   setFilterFrom]   = useState("");       // YYYY-MM-DD
+  const [filterTo,     setFilterTo]     = useState("");
+  const [filterFolder, setFilterFolder] = useState("");       // folder id
+  const [allFoldersList, setAllFoldersList] = useState([]);
+  const [showFilters,    setShowFilters]    = useState(false);
+
+  // ── modals ──
+  const [showCreateFolder,  setShowCreateFolder]  = useState(false);
+  const [showUploadImage,   setShowUploadImage]   = useState(false);
+  const [showImageDetails,  setShowImageDetails]  = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [showMoveModal,     setShowMoveModal]     = useState(null);
+
+  // ── upload form ──
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [filePreview,  setFilePreview]  = useState(null);
+  const [uploadForm,   setUploadForm]   = useState({ name: "", notes: "", isPublic: true });
+  const [isUploading,  setIsUploading]  = useState(false);
+
+  // ── folder form ──
+  const [folderForm,       setFolderForm]       = useState({ name: "" });
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+
+  // ── toast ──
+  const [toast, setToast] = useState({ message: "", type: "" });
+
   const fileInputRef = useRef(null);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [dateSort, setDateSort] = useState("newest");
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [filePreview, setFilePreview] = useState(null);
-
-  const [formData, setFormData] = useState({
-    title: "",
-    category: "",
-    notes: "",
-  });
-
-  const [toastMessage, setToastMessage] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, image: null });
-
-  // State for Image Details/Edit Modal
-  const [detailsModal, setDetailsModal] = useState({ isOpen: false, image: null });
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  useEffect(() => {
-    const fetchImages = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, "images"));
-        const fetchedImages = [];
-        querySnapshot.forEach((doc) => {
-          fetchedImages.push({ id: doc.id, ...doc.data() });
-        });
-        setImagesList(fetchedImages);
-      } catch (error) {
-        console.error("Error fetching images:", error);
-      }
-    };
-    fetchImages();
-  }, []);
-
-  const showToast = (message) => {
-    setToastMessage(message);
-    setTimeout(() => setToastMessage(""), 3500);
-  };
-
-  const handleOpenModal = () => {
-    setSelectedFile(null);
-    setFilePreview(null);
-    setFormData({ title: "", category: "", notes: "" });
-    setIsModalOpen(true);
-  };
-
-  const handleFileSelect = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    setSelectedFile(file);
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFilePreview(reader.result);
-    };
-    reader.readAsDataURL(file);
-
-    setFormData((prev) => ({
-      ...prev,
-      title: file.name.split(".").pop() ? file.name.replace(/\.[^/.]+$/, "") : file.name,
-    }));
-  };
-
-  const handleFinalUpload = async (e) => {
-    e.preventDefault();
-    if (!selectedFile) {
-      showToast("אנא בחר קובץ תמונה");
-      return;
-    }
-    if (!formData.title.trim()) {
-      showToast("אנא הזן שם לתמונה");
-      return;
-    }
-    if (!formData.category) {
-      showToast("אנא בחר קטגוריה");
-      return;
-    }
-
-    setIsUploading(true);
-
+  // ════════════════════════════════════════════════════════════════════════════
+  // DATA LOADING
+  // ════════════════════════════════════════════════════════════════════════════
+  const loadData = useCallback(async () => {
+    setLoading(true);
     try {
-      const imageRef = ref(storage, `images/${Date.now()}_${selectedFile.name}`);
-      await uploadBytes(imageRef, selectedFile);
-      const url = await getDownloadURL(imageRef);
+      const [foldersData, imagesData, allFolders] = await Promise.all([
+        getFolders(currentFolder?.id || null),
+        getImagesByFolder(currentFolder?.id || null),
+        getAllFolders(),
+      ]);
+      setFolders(foldersData);
+      setImages(imagesData);
+      setAllFoldersList(allFolders);
+    } catch (err) {
+      console.error("Error loading data:", err);
+      showToast("שגיאה בטעינת הנתונים", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentFolder]);
 
-      const todayDate = new Date().toLocaleDateString("he-IL");
+  useEffect(() => { loadData(); }, [loadData]);
 
-      const newImageDoc = {
-        title: formData.title.trim(),
-        category: formData.category,
-        notes: formData.notes.trim(),
-        url: url,
-        uploadedAt: serverTimestamp(),
-        displayDate: todayDate,
-      };
+  // breadcrumb
+  useEffect(() => {
+    (async () => {
+      if (!currentFolder) { setFolderPath([]); return; }
+      const path = [];
+      let cur = currentFolder;
+      while (cur) {
+        path.unshift(cur);
+        cur = cur.parentId ? await getFolderById(cur.parentId) : null;
+      }
+      setFolderPath(path);
+    })();
+  }, [currentFolder]);
 
-      const docRef = await addDoc(collection(db, "images"), newImageDoc);
-      setImagesList((prevList) => [...prevList, { id: docRef.id, ...newImageDoc }]);
+  // ════════════════════════════════════════════════════════════════════════════
+  // TOAST
+  // ════════════════════════════════════════════════════════════════════════════
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast({ message: "", type: "" }), 3000);
+  };
 
-      showToast("התמונה הועלתה ונשמרה בהצלחה!");
-      setIsModalOpen(false);
-    } catch (error) {
-      console.error("Error during upload:", error);
-      showToast("אירעה שגיאה בזמן ההעלאה. אנא נסה שוב.");
+  // ════════════════════════════════════════════════════════════════════════════
+  // NAVIGATION
+  // ════════════════════════════════════════════════════════════════════════════
+  const navigateToFolder = (folder) => {
+    setCurrentFolder(folder);
+    resetSearch();
+  };
+  const navigateToRoot = () => {
+    setCurrentFolder(null);
+    resetSearch();
+  };
+  const resetSearch = () => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setIsSearching(false);
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SEARCH
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleSearch = async (e) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    if (q.length < 2) { setSearchResults([]); setIsSearching(false); return; }
+    setIsSearching(true);
+    try {
+      const results = await searchMedia(q);
+      setSearchResults(results);
+    } catch (err) {
+      console.error("Search error:", err);
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // FILTER LOGIC
+  // ════════════════════════════════════════════════════════════════════════════
+  const applyFilters = (items) => {
+    return items.filter((item) => {
+      // type filter
+      if (filterType === "folder" && item.type !== "folder") return false;
+      if (filterType === "image"  && item.type === "folder") return false;
+
+      // folder filter (only for images)
+      if (filterFolder && item.type !== "folder") {
+        if (item.parentId !== filterFolder) return false;
+      }
+
+      // date filter (only for images)
+      if (item.type !== "folder") {
+        const raw = item.createdAt?.toDate ? item.createdAt.toDate() : item.createdAt ? new Date(item.createdAt) : null;
+        if (filterFrom && raw && raw < new Date(filterFrom)) return false;
+        if (filterTo   && raw && raw > new Date(filterTo + "T23:59:59")) return false;
+      }
+
+      return true;
+    });
+  };
+
+  const hasActiveFilters = filterType !== "all" || filterFrom || filterTo || filterFolder;
+
+  const clearFilters = () => {
+    setFilterType("all");
+    setFilterFrom("");
+    setFilterTo("");
+    setFilterFolder("");
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // CREATE FOLDER
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleCreateFolder = async (e) => {
+    e.preventDefault();
+    if (!folderForm.name.trim()) { showToast("יש להזין שם למחלקה", "error"); return; }
+    setIsCreatingFolder(true);
+    try {
+      const parentPath = currentFolder?.path || "";
+      await createFolder({
+        name: folderForm.name.trim(),
+        parentId: currentFolder?.id || null,
+        path: parentPath ? `${parentPath}/${folderForm.name.trim()}` : `/${folderForm.name.trim()}`,
+      });
+      showToast(`המחלקה "${folderForm.name}" נוצרה`, "success");
+      setFolderForm({ name: "" });
+      setShowCreateFolder(false);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאה ביצירת המחלקה", "error");
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // UPLOAD IMAGE
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setFilePreview(reader.result);
+    reader.readAsDataURL(file);
+    setUploadForm((prev) => ({ ...prev, name: file.name.replace(/\.[^/.]+$/, "") }));
+  };
+
+  const handleUploadImage = async (e) => {
+    e.preventDefault();
+    if (!selectedFile)          { showToast("יש לבחור קובץ", "error"); return; }
+    if (!uploadForm.name.trim()) { showToast("יש להזין שם", "error"); return; }
+    setIsUploading(true);
+    try {
+      await uploadImage(selectedFile, {
+        name:       uploadForm.name.trim(),
+        notes:      uploadForm.notes.trim(),
+        parentId:   currentFolder?.id || null,
+        path:       currentFolder?.path || "/",
+        isPublic:   uploadForm.isPublic,
+        folderName: currentFolder?.name || "",
+      });
+      showToast(`"${uploadForm.name}" הועלתה`, "success");
+      setSelectedFile(null);
+      setFilePreview(null);
+      setUploadForm({ name: "", notes: "", isPublic: true });
+      setShowUploadImage(false);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאה בהעלאת התמונה", "error");
     } finally {
       setIsUploading(false);
     }
   };
 
-  const triggerDeleteConfirm = (e, img) => {
-    e.stopPropagation();
-    setDeleteConfirm({ isOpen: true, image: img });
-  };
-
-  const executeDelete = async () => {
-    const imageToDelete = deleteConfirm.image;
-    if (!imageToDelete) return;
-
+  // ════════════════════════════════════════════════════════════════════════════
+  // DELETE
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleDeleteImage = async (image) => {
     try {
-      await deleteDoc(doc(db, "images", imageToDelete.id));
-      const imageStorageRef = ref(storage, imageToDelete.url);
-      await deleteObject(imageStorageRef);
-
-      setImagesList((prevList) => prevList.filter((img) => img.id !== imageToDelete.id));
-
-      if (detailsModal.image && detailsModal.image.id === imageToDelete.id) {
-        setDetailsModal({ isOpen: false, image: null });
-      }
-
-      showToast("התמונה נמחקה בהצלחה!");
-    } catch (error) {
-      console.error("Error deleting image:", error);
-      showToast("שגיאה במחיקת התמונה.");
-    } finally {
-      setDeleteConfirm({ isOpen: false, image: null });
+      await deleteImage(image.id, image.url);
+      showToast(`"${image.name}" נמחקה`, "success");
+      setShowDeleteConfirm(null);
+      setShowImageDetails(null);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאה במחיקה", "error");
     }
   };
 
-  const handleOpenDetails = (img) => {
-    setDetailsModal({ isOpen: true, image: { ...img } });
-  };
-
-  const handleUpdateImageDetails = async () => {
-    if (!detailsModal.image) return;
-    setIsUpdating(true);
+  const handleDeleteFolder = async (folder) => {
+    if (!confirm(`למחוק את "${folder.name}" וכל תוכנה?`)) return;
     try {
-      const imageRef = doc(db, "images", detailsModal.image.id);
-
-      await updateDoc(imageRef, {
-        title: detailsModal.image.title.trim(),
-        category: detailsModal.image.category,
-        notes: detailsModal.image.notes.trim(),
-      });
-
-      setImagesList((prevList) =>
-        prevList.map((img) =>
-          img.id === detailsModal.image.id
-            ? {
-                ...img,
-                title: detailsModal.image.title.trim(),
-                category: detailsModal.image.category,
-                notes: detailsModal.image.notes.trim(),
-              }
-            : img,
-        ),
-      );
-
-      showToast("פרטי התמונה עודכנו בהצלחה!");
-    } catch (error) {
-      console.error("Error updating image details:", error);
-      showToast("שגיאה בעדכון פרטי התמונה.");
-    } finally {
-      setIsUpdating(false);
+      await deleteFolder(folder.id);
+      showToast(`"${folder.name}" נמחקה`, "success");
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאה במחיקה", "error");
     }
   };
 
-  const parseDate = (dateString) => {
-    if (!dateString) return 0;
-    const [day, month, year] = dateString.split(".");
-    return new Date(`${year}-${month}-${day}`).getTime();
-  };
-
-  const displayedImages = imagesList
-    .filter((img) => {
-      const matchesSearch = img.title.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === "" || img.category === selectedCategory;
-      return matchesSearch && matchesCategory;
-    })
-    .sort((a, b) => {
-      if (dateSort === "newest") {
-        return parseDate(b.displayDate) - parseDate(a.displayDate);
-      } else {
-        return parseDate(a.displayDate) - parseDate(b.displayDate);
+  // ════════════════════════════════════════════════════════════════════════════
+  // TOGGLE PUBLIC  ← "העברה לאתר ציבורי"
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleTogglePublic = async (image) => {
+    try {
+      const next = !image.isPublic;
+      await toggleImagePublic(image.id, next);
+      showToast(next ? "התמונה פורסמה באתר הציבורי ✅" : "התמונה הוסרה מהאתר הציבורי", "success");
+      // update local state so details modal reflects change immediately
+      if (showImageDetails?.id === image.id) {
+        setShowImageDetails((prev) => ({ ...prev, isPublic: next }));
       }
-    });
-
-  const inputStyle = {
-    width: "100%",
-    padding: "8px 12px",
-    borderRadius: "8px",
-    border: "1px solid #ced4da",
-    outline: "none",
-    fontFamily: "inherit",
-    direction: "rtl",
-    fontSize: "14px",
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאה בעדכון הסטטוס", "error");
+    }
   };
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // UPDATE IMAGE DETAILS
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleUpdateImage = async (imageId, updates) => {
+    try {
+      await updateImage(imageId, updates);
+      showToast("הפרטים עודכנו", "success");
+      setShowImageDetails(null);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאה בעדכון", "error");
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // MOVE IMAGE
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleMoveImage = async (imageId, targetFolderId) => {
+    try {
+      await moveImage(imageId, targetFolderId);
+      showToast("התמונה הועברה", "success");
+      setShowMoveModal(null);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאה בהעברה", "error");
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // MIGRATION HELPERS
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleMigrate = async () => {
+    if (!confirm("להמיר תמונות ישנות?")) return;
+    try {
+      const r = await migrateOldImages();
+      showToast(r.success ? `${r.count} תמונות הומרו` : "שגיאה", r.success ? "success" : "error");
+      if (r.success) await loadData();
+    } catch (err) { showToast("שגיאה", "error"); }
+  };
+
+  const handleCreateDefaultFolders = async () => {
+    if (!confirm("ליצור מחלקות ברירת מחדל?")) return;
+    try {
+      const created = await createDefaultFolders();
+      showToast(`${created.length} מחלקות נוצרו`, "success");
+      await loadData();
+    } catch (err) { showToast("שגיאה", "error"); }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // DERIVED DISPLAY LIST
+  // ════════════════════════════════════════════════════════════════════════════
+  const rawItems    = isSearching ? searchResults : [...folders, ...images];
+  const displayItems = applyFilters(rawItems);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════════════════════════════════════
   return (
     <AdminLayout
-      title="ניהול תמונות"
-      subtitle="ניהול תמונות האתר, גלריות ותמונות מוצגות"
+      title="מאגר תמונות"
+      subtitle="ניהול תמונות ומחלקות"
       actions={
-        <button className="action-btn-primary" onClick={handleOpenModal}>
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          העלאת תמונה
-        </button>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button className="btn btn-primary" onClick={() => setShowCreateFolder(true)}>
+            + מחלקה חדשה
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowUploadImage(true)}>
+            📷 העלאת תמונה
+          </button>
+          <button className="btn" onClick={handleCreateDefaultFolders} style={{ fontSize: "12px" }}>
+            מחלקות ברירת מחדל
+          </button>
+          <button className="btn" onClick={handleMigrate} style={{ fontSize: "12px" }}>
+            המרת תמונות ישנות
+          </button>
+        </div>
       }
     >
-      <style>{`
-        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; transition: background 0.2s; }
-        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-        .modal-form-select {
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: left 12px center;
-            padding-left: 40px !important;
-        }
-
-        .image-card-container {
-            border-radius: 12px;
-            overflow: hidden;
-            background: #fff;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            position: relative;
-            cursor: pointer;
-        }
-        .image-card-container:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 16px rgba(139,44,44,0.1);
-            border-color: #cbd5e1;
-        }
-
-        .text-truncate {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: block;
-        }
-        
-        .notes-truncate {
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-      `}</style>
-
-      {toastMessage && (
-        <div className="admin-toast">
-          <span className="admin-toast-check">✓</span>
-          {toastMessage}
+      {/* ── TOAST ── */}
+      {toast.message && (
+        <div className={`admin-toast ${toast.type === "error" ? "error" : ""}`}>
+          {toast.message}
         </div>
       )}
 
-      <SectionCard>
-        <div
-          style={{
-            backgroundColor: "#fdfbf7",
-            padding: "20px",
-            borderRadius: "12px",
-            border: "1px solid #e2d8c9",
-            marginBottom: "24px",
-            direction: "rtl",
-          }}
-        >
-          <div style={{ marginBottom: "16px", position: "relative", maxWidth: "100%" }}>
-            <span
-              style={{
-                position: "absolute",
-                right: "14px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                color: "#adb5bd",
-              }}
+      {/* ── BREADCRUMB ── */}
+      <div className="mb-breadcrumb">
+        <button className="btn btn-ghost mb-breadcrumb-btn" onClick={navigateToRoot}>
+          🏠 ראשי
+        </button>
+        {folderPath.map((folder, i) => (
+          <span key={folder.id} className="mb-breadcrumb-seg">
+            <span className="mb-breadcrumb-sep">/</span>
+            <button
+              className="btn btn-ghost mb-breadcrumb-btn"
+              onClick={() => navigateToFolder(folder)}
+              style={{ fontWeight: i === folderPath.length - 1 ? 700 : 400 }}
             >
-              🔍
-            </span>
+              {folder.name}
+            </button>
+          </span>
+        ))}
+      </div>
+
+      {/* ── SEARCH + FILTERS ── */}
+      <SectionCard>
+        <div className="mb-search-row">
+          <div className="mb-search-wrap">
+            <span className="mb-search-icon">🔍</span>
             <input
               type="text"
-              placeholder="חיפוש תמונה לפי שם..."
+              className="input mb-search-input"
+              placeholder="חיפוש לפי שם, הערות, נתיב..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              dir="rtl"
-              style={{
-                ...inputStyle,
-                padding: "12px 40px 12px 16px",
-                borderRadius: "30px",
-                backgroundColor: "#fff",
-                border: "1px solid #ced4da",
-              }}
+              onChange={handleSearch}
             />
+            {searchQuery && (
+              <button className="mb-search-clear" onClick={resetSearch}>×</button>
+            )}
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-start",
-              gap: "20px",
-              flexWrap: "wrap",
-            }}
+          <button
+            className={`btn ${showFilters || hasActiveFilters ? "btn-primary" : ""}`}
+            onClick={() => setShowFilters((v) => !v)}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  color: "#8b2c2c",
-                  fontWeight: "bold",
-                  fontSize: "14px",
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                </svg>
-                סינון:
-              </span>
-              <select
-                className="modal-form-select"
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                dir="rtl"
-                style={{
-                  ...inputStyle,
-                  padding: "10px 16px",
-                  borderRadius: "30px",
-                  minWidth: "160px",
-                  backgroundColor: "#fff",
-                }}
-              >
-                <option value="">קטגוריה: הכל</option>
-                {CATEGORIES.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
+            🎛 פילטרים {hasActiveFilters && `(${[filterType !== "all", filterFrom, filterTo, filterFolder].filter(Boolean).length})`}
+          </button>
+
+          {isSearching && (
+            <span className="mb-search-count">
+              {displayItems.length} תוצאות
+            </span>
+          )}
+        </div>
+
+        {/* Filter panel */}
+        {showFilters && (
+          <div className="mb-filter-panel">
+            <div className="mb-filter-group">
+              <label className="mb-filter-label">סוג פריט</label>
+              <div className="mb-filter-pills">
+                {[["all", "הכל"], ["folder", "📁 מחלקות"], ["image", "🖼 תמונות"]].map(([v, l]) => (
+                  <button
+                    key={v}
+                    className={`mb-filter-pill ${filterType === v ? "active" : ""}`}
+                    onClick={() => setFilterType(v)}
+                  >
+                    {l}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
-              <span style={{ color: "#8b2c2c", fontWeight: "bold", fontSize: "14px" }}>מיון לפי:</span>
-              <select
-                className="modal-form-select"
-                value={dateSort}
-                onChange={(e) => setDateSort(e.target.value)}
-                dir="rtl"
-                style={{
-                  ...inputStyle,
-                  padding: "10px 16px",
-                  borderRadius: "30px",
-                  minWidth: "160px",
-                  backgroundColor: "#fff",
-                }}
-              >
-                <option value="newest">החדש ביותר</option>
-                <option value="oldest">הישן ביותר</option>
-              </select>
+            <div className="mb-filter-group">
+              <label className="mb-filter-label">תאריך העלאה</label>
+              <div className="mb-filter-dates">
+                <input
+                  type="date"
+                  className="input"
+                  value={filterFrom}
+                  onChange={(e) => setFilterFrom(e.target.value)}
+                  placeholder="מתאריך"
+                />
+                <span style={{ color: "#888" }}>עד</span>
+                <input
+                  type="date"
+                  className="input"
+                  value={filterTo}
+                  onChange={(e) => setFilterTo(e.target.value)}
+                  placeholder="עד תאריך"
+                />
+              </div>
             </div>
+
+            {isSearching && (
+              <div className="mb-filter-group">
+                <label className="mb-filter-label">חפש בתוך מחלקה</label>
+                <select
+                  className="input"
+                  value={filterFolder}
+                  onChange={(e) => setFilterFolder(e.target.value)}
+                >
+                  <option value="">כל המחלקות</option>
+                  {allFoldersList.map((f) => (
+                    <option key={f.id} value={f.id}>{f.path || f.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {hasActiveFilters && (
+              <button className="btn mb-filter-clear" onClick={clearFilters}>
+                ✕ נקה פילטרים
+              </button>
+            )}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* ── GRID ── */}
+      <SectionCard>
+        {loading ? (
+          <div className="mb-empty">
+            <div className="loader" />
+            <p>טוען...</p>
+          </div>
+        ) : displayItems.length === 0 ? (
+          <div className="mb-empty">
+            <span style={{ fontSize: "48px" }}>📁</span>
+            <p>{isSearching ? "לא נמצאו תוצאות" : "אין פריטים במחלקה זו"}</p>
+            {!isSearching && (
+              <button className="btn btn-primary" onClick={() => setShowUploadImage(true)}>
+                📷 העלאת תמונה
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="mb-grid">
+            {displayItems.map((item) =>
+              item.type === "folder"
+                ? <FolderCard key={item.id} folder={item} onOpen={navigateToFolder} onDelete={handleDeleteFolder} />
+                : <ImageCard key={item.id} image={item} onOpen={setShowImageDetails} onDelete={setShowDeleteConfirm} onTogglePublic={handleTogglePublic} />
+            )}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MODALS
+      ══════════════════════════════════════════════════════════════════════ */}
+
+      {/* CREATE FOLDER */}
+      {showCreateFolder && (
+        <Modal onClose={() => setShowCreateFolder(false)} title="📁 מחלקה חדשה" maxWidth="480px">
+          <form onSubmit={handleCreateFolder}>
+            <div className="form-section">
+              <div className="field">
+                <label>שם המחלקה *</label>
+                <input
+                  className="input"
+                  value={folderForm.name}
+                  onChange={(e) => setFolderForm({ name: e.target.value })}
+                  placeholder="לדוגמה: פעילויות 2024"
+                  autoFocus
+                />
+              </div>
+              <div className="field">
+                <label>מיקום</label>
+                <div style={{ color: "#666", fontSize: "14px", padding: "8px 0" }}>
+                  📍 {currentFolder ? folderPath.map((f) => f.name).join(" / ") : "ראשי"}
+                </div>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setShowCreateFolder(false)}>ביטול</button>
+              <button type="submit" className="btn btn-primary" disabled={isCreatingFolder}>
+                {isCreatingFolder ? "יוצר..." : "יצירת מחלקה"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* UPLOAD IMAGE */}
+      {showUploadImage && (
+        <Modal onClose={() => setShowUploadImage(false)} title="📷 העלאת תמונה" maxWidth="560px">
+          <form onSubmit={handleUploadImage}>
+            <div className="form-section">
+              <div className="field">
+                <label>בחר קובץ *</label>
+                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="input" />
+                {filePreview && (
+                  <img src={filePreview} alt="preview" className="mb-upload-preview" />
+                )}
+              </div>
+              <div className="field">
+                <label>שם התמונה *</label>
+                <input
+                  className="input"
+                  value={uploadForm.name}
+                  onChange={(e) => setUploadForm({ ...uploadForm, name: e.target.value })}
+                  placeholder="שם התמונה"
+                />
+              </div>
+              <div className="field">
+                <label>הערות</label>
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  value={uploadForm.notes}
+                  onChange={(e) => setUploadForm({ ...uploadForm, notes: e.target.value })}
+                  placeholder="תיאור התמונה"
+                />
+              </div>
+              <div className="field mb-toggle-row">
+                <label>🌐 הצג באתר הציבורי</label>
+                <button
+                  type="button"
+                  className={`mb-toggle-btn ${uploadForm.isPublic ? "active" : ""}`}
+                  onClick={() => setUploadForm({ ...uploadForm, isPublic: !uploadForm.isPublic })}
+                >
+                  {uploadForm.isPublic ? "כן" : "לא"}
+                </button>
+              </div>
+              <div className="field">
+                <label>מיקום</label>
+                <div style={{ color: "#666", fontSize: "14px", padding: "8px 0" }}>
+                  📍 {currentFolder ? folderPath.map((f) => f.name).join(" / ") : "ראשי"}
+                </div>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setShowUploadImage(false)}>ביטול</button>
+              <button type="submit" className="btn btn-primary" disabled={isUploading}>
+                {isUploading ? "מעלה..." : "העלאת תמונה"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* IMAGE DETAILS */}
+      {showImageDetails && (
+        <ImageDetailsModal
+          image={showImageDetails}
+          allFolders={allFoldersList}
+          onClose={() => setShowImageDetails(null)}
+          onChange={(upd) => setShowImageDetails((p) => ({ ...p, ...upd }))}
+          onSave={() =>
+            handleUpdateImage(showImageDetails.id, {
+              name:     showImageDetails.name,
+              notes:    showImageDetails.notes,
+              isPublic: showImageDetails.isPublic,
+            })
+          }
+          onDelete={() => setShowDeleteConfirm(showImageDetails)}
+          onTogglePublic={() => handleTogglePublic(showImageDetails)}
+          onMove={(targetId) => handleMoveImage(showImageDetails.id, targetId)}
+        />
+      )}
+
+      {/* DELETE CONFIRM */}
+      {showDeleteConfirm && (
+        <Modal onClose={() => setShowDeleteConfirm(null)} title="⚠️ מחיקת תמונה" maxWidth="400px">
+          <div className="form-section" style={{ textAlign: "center" }}>
+            <p>האם למחוק את התמונה</p>
+            <p style={{ fontWeight: "bold", color: "#8B0000", fontSize: "16px" }}>
+              "{showDeleteConfirm.name}"?
+            </p>
+            <p style={{ color: "#888", fontSize: "13px" }}>פעולה זו אינה ניתנת לביטול</p>
+          </div>
+          <div className="modal-actions" style={{ justifyContent: "center" }}>
+            <button className="btn" onClick={() => setShowDeleteConfirm(null)}>ביטול</button>
+            <button className="btn btn-danger" onClick={() => handleDeleteImage(showDeleteConfirm)}>
+              מחק לצמיתות
+            </button>
+          </div>
+        </Modal>
+      )}
+    </AdminLayout>
+  );
+}
+
+// ─── FOLDER CARD ─────────────────────────────────────────────────────────────
+function FolderCard({ folder, onOpen, onDelete }) {
+  return (
+    <div className="mb-card mb-card-folder" onClick={() => onOpen(folder)}>
+      <div className="mb-card-thumb mb-card-folder-thumb">
+        <span className="mb-folder-icon">📁</span>
+      </div>
+      <div className="mb-card-body">
+        <div className="mb-card-name">{folder.name}</div>
+        <div className="mb-card-meta">מחלקה</div>
+        {folder.path && (
+          <div className="mb-card-path" title={folder.path}>{folder.path}</div>
+        )}
+      </div>
+      <button
+        className="mb-card-del"
+        onClick={(e) => { e.stopPropagation(); onDelete(folder); }}
+        title="מחק מחלקה"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// ─── IMAGE CARD ───────────────────────────────────────────────────────────────
+function ImageCard({ image, onOpen, onDelete, onTogglePublic }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      className="mb-card mb-card-image"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* thumbnail */}
+      <div
+        className="mb-card-thumb mb-card-image-thumb"
+        style={{ backgroundImage: `url(${image.url})` }}
+        onClick={() => onOpen(image)}
+      >
+        {/* hover overlay with path/date info */}
+        {hovered && <ImageInfoOverlay image={image} />}
+      </div>
+
+      <div className="mb-card-body">
+        <div className="mb-card-name" title={image.name}>{image.name}</div>
+        <div className="mb-card-footer">
+          <PublicBadge isPublic={image.isPublic} />
+          <span className="mb-card-date">{image.displayDate || formatDate(image.createdAt)}</span>
+        </div>
+
+        {/* quick "publish to site" button */}
+        <button
+          className={`mb-publish-btn ${image.isPublic ? "published" : ""}`}
+          onClick={() => onTogglePublic(image)}
+          title={image.isPublic ? "הסר מהאתר הציבורי" : "הוסף לאתר הציבורי"}
+        >
+          {image.isPublic ? "✓ מופיע באתר" : "➕ הוסף לאתר"}
+        </button>
+      </div>
+
+      {/* delete button */}
+      <button
+        className="mb-card-del"
+        onClick={(e) => { e.stopPropagation(); onDelete(image); }}
+        title="מחק תמונה"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// ─── IMAGE DETAILS MODAL ─────────────────────────────────────────────────────
+function ImageDetailsModal({ image, allFolders, onClose, onChange, onSave, onDelete, onTogglePublic, onMove }) {
+  const [targetFolder, setTargetFolder] = useState("");
+  const [showMoveSection, setShowMoveSection] = useState(false);
+
+  return (
+    <Modal onClose={onClose} title="🖼️ פרטי תמונה" maxWidth="740px">
+      <div className="form-section">
+        {/* image preview */}
+        <div className="mb-details-preview-wrap">
+          <img src={image.url} alt={image.name} className="mb-details-preview" />
+        </div>
+
+        {/* info grid */}
+        <div className="mb-details-info-grid">
+          <div className="mb-details-info-item">
+            <span className="mb-details-info-label">📍 נתיב</span>
+            <span className="mb-details-info-val mb-details-path">{image.path || "/"}</span>
+          </div>
+          <div className="mb-details-info-item">
+            <span className="mb-details-info-label">📅 תאריך</span>
+            <span className="mb-details-info-val">{image.displayDate || formatDate(image.createdAt)}</span>
+          </div>
+          <div className="mb-details-info-item">
+            <span className="mb-details-info-label">📁 מחלקה</span>
+            <span className="mb-details-info-val">{image.folderName || "ראשי"}</span>
+          </div>
+          <div className="mb-details-info-item">
+            <span className="mb-details-info-label">🌐 סטטוס</span>
+            <PublicBadge isPublic={image.isPublic} />
           </div>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-            gap: 16,
-            direction: "rtl",
-          }}
-        >
-          {displayedImages.map((img) => (
-            <div key={img.id} className="image-card-container" onClick={() => handleOpenDetails(img)}>
-              <button
-                onClick={(e) => triggerDeleteConfirm(e, img)}
-                title="מחק תמונה"
-                style={{
-                  position: "absolute",
-                  top: 8,
-                  left: 8,
-                  background: "rgba(255, 255, 255, 0.9)",
-                  color: "#dc3545",
-                  border: "1px solid #f5c6cb",
-                  borderRadius: "50%",
-                  width: 30,
-                  height: 30,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                  zIndex: 5,
-                  transition: "0.2s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#dc3545")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.9)")}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ transition: "0.2s", color: "inherit" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = "#dc3545")}
-                >
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  <line x1="10" y1="11" x2="10" y2="17"></line>
-                  <line x1="14" y1="11" x2="14" y2="17"></line>
-                </svg>
-              </button>
+        {/* editable fields */}
+        <div className="field">
+          <label>שם התמונה</label>
+          <input
+            className="input"
+            value={image.name}
+            onChange={(e) => onChange({ name: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label>הערות</label>
+          <textarea
+            className="textarea"
+            rows={3}
+            value={image.notes || ""}
+            onChange={(e) => onChange({ notes: e.target.value })}
+          />
+        </div>
 
-              <div
-                style={{
-                  aspectRatio: "4/3",
-                  backgroundImage: `url(${img.url})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  backgroundColor: "#f8f9fa",
-                  borderBottom: "1px solid #e2e8f0",
-                }}
-              ></div>
-
-              <div style={{ padding: "12px" }}>
-                <div
-                  className="text-truncate"
-                  style={{ fontWeight: 700, color: "#343a40", fontSize: "13.5px" }}
-                  title={img.title}
-                >
-                  {img.title}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#6c757d",
-                    marginTop: 4,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <span
-                    style={{
-                      backgroundColor: "#fdfbf7",
-                      padding: "2px 6px",
-                      borderRadius: "10px",
-                      border: "1px solid #e2d8c9",
-                      fontWeight: "600",
-                      color: "#8b2c2c",
-                    }}
-                  >
-                    {img.category}
-                  </span>
-                  <span>{img.displayDate}</span>
-                </div>
-                {img.notes && (
-                  <div
-                    className="notes-truncate"
-                    style={{
-                      fontSize: 11,
-                      color: "#6c757d",
-                      marginTop: 8,
-                      fontStyle: "italic",
-                      borderTop: "1px dashed #e2e8f0",
-                      paddingTop: "6px",
-                      lineHeight: "1.4",
-                    }}
-                    title={img.notes}
-                  >
-                    {img.notes}
-                  </div>
-                )}
-              </div>
+        {/* publish toggle — prominent */}
+        <div className="mb-details-publish-row">
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>הצגה באתר הציבורי</div>
+            <div style={{ fontSize: 13, color: "#666" }}>
+              תמונות ציבוריות מופיעות בגלריה הציבורית (/gallery)
             </div>
-          ))}
-          {displayedImages.length === 0 && (
-            <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "60px", color: "#adb5bd" }}>
-              לא נמצאו תמונות התואמות לחיפוש שלך.
+          </div>
+          <button
+            className={`mb-toggle-btn ${image.isPublic ? "active" : ""}`}
+            onClick={onTogglePublic}
+            style={{ minWidth: 80 }}
+          >
+            {image.isPublic ? "✅ ציבורי" : "🔒 פרטי"}
+          </button>
+        </div>
+
+        {/* move to folder */}
+        <div className="mb-details-move-section">
+          <button
+            className="btn"
+            onClick={() => setShowMoveSection((v) => !v)}
+            style={{ fontSize: 13 }}
+          >
+            📦 העבר למחלקה אחרת
+          </button>
+          {showMoveSection && (
+            <div className="mb-details-move-row">
+              <select
+                className="input"
+                value={targetFolder}
+                onChange={(e) => setTargetFolder(e.target.value)}
+              >
+                <option value="">בחר מחלקה...</option>
+                {allFolders.map((f) => (
+                  <option key={f.id} value={f.id}>{f.path || f.name}</option>
+                ))}
+              </select>
+              <button
+                className="btn btn-primary"
+                onClick={() => { if (targetFolder) onMove(targetFolder); }}
+                disabled={!targetFolder}
+              >
+                העבר
+              </button>
             </div>
           )}
         </div>
-      </SectionCard>
+      </div>
 
-      {/* 1. Upload Modal */}
-      {isModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            backgroundColor: "rgba(15,23,42,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 4000,
-            direction: "rtl",
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: "20px",
-              width: "90%",
-              maxWidth: "680px",
-              boxShadow: "0 25px 50px rgba(0,0,0,0.25)",
-              display: "flex",
-              flexDirection: "column",
-              maxHeight: "90vh",
-            }}
-          >
-            <div
-              style={{
-                padding: "24px 32px",
-                borderBottom: "1px solid #e2d8c9",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexShrink: 0,
-              }}
-            >
-              <h3 style={{ margin: 0, color: "#343a40", fontSize: "1.5rem", fontWeight: "bold" }}>העלאת תמונה חדשה</h3>
-              <button
-                onClick={() => !isUploading && setIsModalOpen(false)}
-                style={{
-                  background: "#f8f9fa",
-                  border: "1px solid #e2d8c9",
-                  borderRadius: "50%",
-                  width: "36px",
-                  height: "36px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  color: "#6c757d",
-                  transition: "0.2s",
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-            </div>
+      <div className="modal-actions">
+        <button className="btn btn-danger" onClick={onDelete}>מחק תמונה</button>
+        <button className="btn" onClick={onClose}>סגור</button>
+        <button className="btn btn-primary" onClick={onSave}>שמור שינויים</button>
+      </div>
+    </Modal>
+  );
+}
 
-            <div className="custom-scroll" style={{ padding: "32px", overflowY: "auto", flexGrow: 1 }}>
-              <form id="upload-image-form" onSubmit={handleFinalUpload}>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "16px",
-                    marginBottom: "24px",
-                  }}
-                >
-                  {filePreview ? (
-                    <img
-                      src={filePreview}
-                      alt="Preview"
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "200px",
-                        objectFit: "contain",
-                        borderRadius: "12px",
-                        border: "1px solid #ced4da",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      onClick={() => fileInputRef.current.click()}
-                      style={{
-                        height: "120px",
-                        width: "100%",
-                        border: "2px dashed #ced4da",
-                        borderRadius: "12px",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#6c757d",
-                        backgroundColor: "#faf8f5",
-                        cursor: "pointer",
-                        transition: "0.2s",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#8b2c2c")}
-                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#ced4da")}
-                    >
-                      <svg
-                        width="32"
-                        height="32"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        style={{ marginBottom: "8px" }}
-                      >
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="17 8 12 3 7 8"></polyline>
-                        <line x1="12" y1="3" x2="12" y2="15"></line>
-                      </svg>
-                      לחץ כאן לבחירת תמונה מהמחשב
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    accept="image/*"
-                    style={{ display: "none" }}
-                  />
-                  {filePreview && (
-                    <button
-                      type="button"
-                      style={{
-                        fontSize: "13px",
-                        backgroundColor: "#fff",
-                        border: "1px solid #ced4da",
-                        color: "#495057",
-                        padding: "6px 20px",
-                        borderRadius: "30px",
-                        cursor: "pointer",
-                        fontWeight: "600",
-                        boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
-                      }}
-                      onClick={() => fileInputRef.current.click()}
-                    >
-                      החלף תמונה
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        marginBottom: "8px",
-                        fontWeight: "600",
-                        fontSize: "13.5px",
-                        color: "#495057",
-                      }}
-                    >
-                      שם התמונה <span style={{ color: "#dc3545" }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="לדוגמה: פעילות התנדבות"
-                      value={formData.title}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        borderRadius: "10px",
-                        border: "1px solid #ced4da",
-                        outline: "none",
-                        boxSizing: "border-box",
-                        fontSize: "14px",
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        marginBottom: "8px",
-                        fontWeight: "600",
-                        fontSize: "13.5px",
-                        color: "#495057",
-                      }}
-                    >
-                      קטגוריה <span style={{ color: "#dc3545" }}>*</span>
-                    </label>
-                    <select
-                      className="modal-form-select"
-                      value={formData.category}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
-                      style={{ backgroundColor: "#fff" }}
-                    >
-                      <option value="">-- בחר נושא --</option>
-                      {CATEGORIES.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "8px",
-                      fontWeight: "600",
-                      fontSize: "13.5px",
-                      color: "#495057",
-                    }}
-                  >
-                    הערות / תיאור
-                  </label>
-                  <textarea
-                    placeholder="פרטים נוספים על התמונה..."
-                    value={formData.notes}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                    rows="3"
-                    style={{
-                      width: "100%",
-                      padding: "12px",
-                      borderRadius: "10px",
-                      border: "1px solid #ced4da",
-                      outline: "none",
-                      resize: "none",
-                      boxSizing: "border-box",
-                      fontSize: "14px",
-                    }}
-                  ></textarea>
-                </div>
-              </form>
-            </div>
-
-            <div
-              style={{
-                padding: "20px 32px",
-                borderTop: "1px solid #e2d8c9",
-                backgroundColor: "#faf8f5",
-                borderBottomLeftRadius: "20px",
-                borderBottomRightRadius: "20px",
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "12px",
-                flexShrink: 0,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => !isUploading && setIsModalOpen(false)}
-                disabled={isUploading}
-                style={{
-                  padding: "12px 32px",
-                  borderRadius: "30px",
-                  border: "1px solid #ced4da",
-                  backgroundColor: "#fff",
-                  cursor: isUploading ? "not-allowed" : "pointer",
-                  fontWeight: "600",
-                  color: "#495057",
-                }}
-              >
-                ביטול
-              </button>
-              <button
-                type="submit"
-                form="upload-image-form"
-                disabled={isUploading}
-                style={{
-                  padding: "12px 32px",
-                  borderRadius: "30px",
-                  border: "none",
-                  backgroundColor: "#8b2c2c",
-                  color: "white",
-                  cursor: isUploading ? "not-allowed" : "pointer",
-                  fontWeight: "600",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  boxShadow: "0 4px 12px rgba(139,44,44,0.2)",
-                }}
-              >
-                {isUploading ? "מעלה ושומר..." : "שמור תמונה למאגר"}
-              </button>
-            </div>
-          </div>
+// ─── GENERIC MODAL WRAPPER ────────────────────────────────────────────────────
+function Modal({ onClose, title, maxWidth = "560px", children }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth }}
+      >
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
-      )}
-
-      {/* 2. Image Details & Edit Modal (Lightbox) */}
-      {detailsModal.isOpen && detailsModal.image && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            backgroundColor: "rgba(15,23,42,0.85)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 4000,
-            direction: "rtl",
-            backdropFilter: "blur(6px)",
-          }}
-          onClick={() => setIsUpdating(false) || setDetailsModal({ isOpen: false, image: null })}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: "20px",
-              width: "95%",
-              maxWidth: "900px",
-              boxShadow: "0 25px 50px rgba(0,0,0,0.5)",
-              display: "flex",
-              flexDirection: "column",
-              maxHeight: "95vh",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: "20px 32px",
-                borderBottom: "1px solid #e2d8c9",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                backgroundColor: "#fff",
-                flexWrap: "wrap",
-                gap: "12px",
-              }}
-            >
-              <h3 style={{ margin: 0, color: "#343a40", fontSize: "1.4rem", fontWeight: "bold" }}>פרטי תמונה</h3>
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                {/* ✅ زر جديد - פתח בגלריה */}
-                {detailsModal.image.category && (
-                  <Link
-                    to={`/gallery/album/${encodeURIComponent(detailsModal.image.category)}`}
-                    target="_blank"
-                    style={{
-                      background: "#8B0000",
-                      border: "none",
-                      borderRadius: "30px",
-                      padding: "6px 16px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      cursor: "pointer",
-                      color: "white",
-                      textDecoration: "none",
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      transition: "background 0.3s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#a00000")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "#8B0000")}
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                      <polyline points="21 15 16 10 5 21"></polyline>
-                    </svg>
-                    פתח בגלריה
-                  </Link>
-                )}
-
-                {/* زر - פתח בגודל מלא */}
-                <a
-                  href={detailsModal.image.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    background: "#f8f9fa",
-                    border: "1px solid #e2d8c9",
-                    borderRadius: "30px",
-                    padding: "6px 16px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    cursor: "pointer",
-                    color: "#495057",
-                    textDecoration: "none",
-                    fontSize: "13px",
-                    fontWeight: "600",
-                  }}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                    <polyline points="15 3 21 3 21 9"></polyline>
-                    <line x1="10" y1="14" x2="21" y2="3"></line>
-                  </svg>
-                  פתח בגודל מלא
-                </a>
-
-                {/* زر الإغلاق */}
-                <button
-                  onClick={() => setDetailsModal({ isOpen: false, image: null })}
-                  style={{
-                    background: "#f8f9fa",
-                    border: "1px solid #e2d8c9",
-                    borderRadius: "50%",
-                    width: "36px",
-                    height: "36px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    color: "#6c757d",
-                  }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div
-              className="custom-scroll"
-              style={{ display: "flex", flexWrap: "wrap", overflowY: "auto", flexGrow: 1, backgroundColor: "#faf8f5" }}
-            >
-              <div
-                style={{
-                  flex: "1 1 50%",
-                  minWidth: "300px",
-                  padding: "24px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: "#e9ecef",
-                }}
-              >
-                <img
-                  src={detailsModal.image.url}
-                  alt={detailsModal.image.title}
-                  style={{
-                    maxWidth: "100%",
-                    maxHeight: "500px",
-                    objectFit: "contain",
-                    borderRadius: "12px",
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-                  }}
-                />
-              </div>
-
-              <div
-                style={{
-                  flex: "1 1 50%",
-                  minWidth: "300px",
-                  padding: "32px",
-                  backgroundColor: "#fff",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <div style={{ marginBottom: "24px" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "8px",
-                      fontWeight: "600",
-                      fontSize: "14px",
-                      color: "#495057",
-                    }}
-                  >
-                    שם התמונה
-                  </label>
-                  <input
-                    type="text"
-                    value={detailsModal.image.title}
-                    onChange={(e) =>
-                      setDetailsModal((prev) => ({ isOpen: true, image: { ...prev.image, title: e.target.value } }))
-                    }
-                    placeholder="לדוגמה: פעילות התנדבות"
-                    style={{
-                      ...inputStyle,
-                      fontSize: "16px",
-                      fontWeight: "bold",
-                      backgroundColor: "#fff",
-                      color: "#0f172a",
-                      border: "1px solid #ced4da",
-                    }}
-                  />
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "16px",
-                      alignItems: "center",
-                      color: "#6c757d",
-                      fontSize: "14px",
-                      marginTop: "16px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <label
-                        style={{
-                          whiteSpace: "nowrap",
-                          fontWeight: "600",
-                          fontSize: "14px",
-                          color: "#495057",
-                          margin: 0,
-                        }}
-                      >
-                        קטגוריה:
-                      </label>
-                      <select
-                        className="modal-form-select"
-                        value={detailsModal.image.category}
-                        onChange={(e) =>
-                          setDetailsModal((prev) => ({
-                            isOpen: true,
-                            image: { ...prev.image, category: e.target.value },
-                          }))
-                        }
-                        style={{
-                          ...inputStyle,
-                          width: "auto",
-                          minWidth: "140px",
-                          backgroundColor: "#fdfbf7",
-                          padding: "6px 12px",
-                          paddingLeft: "35px",
-                          borderRadius: "20px",
-                          border: "1px solid #e2d8c9",
-                          fontWeight: "600",
-                          color: "#8b2c2c",
-                          fontSize: "13.5px",
-                          margin: 0,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <option value="">בחר נושא</option>
-                        {CATEGORIES.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <span style={{ borderRight: "1px solid #ced4da", paddingRight: "16px" }}>
-                      הועלה ב: {detailsModal.image.displayDate}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "8px",
-                      fontWeight: "600",
-                      fontSize: "14px",
-                      color: "#495057",
-                    }}
-                  >
-                    הערות ותיאור
-                  </label>
-                  <textarea
-                    value={detailsModal.image.notes}
-                    onChange={(e) =>
-                      setDetailsModal((prev) => ({ isOpen: true, image: { ...prev.image, notes: e.target.value } }))
-                    }
-                    style={{
-                      width: "100%",
-                      flexGrow: 1,
-                      minHeight: "150px",
-                      padding: "16px",
-                      borderRadius: "12px",
-                      border: "1px solid #ced4da",
-                      outline: "none",
-                      resize: "none",
-                      boxSizing: "border-box",
-                      fontSize: "15px",
-                      lineHeight: "1.6",
-                      backgroundColor: "#fdfbf7",
-                    }}
-                    placeholder="הוסף הערות או תיאור לתמונה זו..."
-                  ></textarea>
-                </div>
-
-                <div style={{ marginTop: "24px", display: "flex", gap: "12px" }}>
-                  <button
-                    onClick={handleUpdateImageDetails}
-                    disabled={isUpdating}
-                    style={{
-                      width: "100%",
-                      padding: "14px",
-                      borderRadius: "30px",
-                      border: "none",
-                      backgroundColor: "#8b2c2c",
-                      color: "white",
-                      cursor: isUpdating ? "not-allowed" : "pointer",
-                      fontWeight: "600",
-                      fontSize: "15px",
-                      boxShadow: "0 4px 12px rgba(139,44,44,0.2)",
-                      transition: "0.2s",
-                    }}
-                  >
-                    {isUpdating ? "שומר שינויים..." : "שמור שינויים בפרטים"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Custom Delete Confirmation Modal */}
-      {deleteConfirm.isOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            backgroundColor: "rgba(15,23,42,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 5000,
-            direction: "rtl",
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#fff",
-              padding: "32px",
-              borderRadius: "20px",
-              textAlign: "center",
-              width: "90%",
-              maxWidth: "400px",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#fdecec",
-                width: "64px",
-                height: "64px",
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 20px auto",
-              }}
-            >
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#dc3545"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                <line x1="10" y1="11" x2="10" y2="17"></line>
-                <line x1="14" y1="11" x2="14" y2="17"></line>
-              </svg>
-            </div>
-            <h4 style={{ color: "#343a40", fontWeight: "bold", margin: "0 0 12px 0", fontSize: "1.2rem" }}>
-              מחיקת תמונה
-            </h4>
-            <p style={{ color: "#6c757d", fontSize: "14px", margin: "0 0 30px 0", lineHeight: "1.5" }}>
-              האם אתה בטוח שברצונך למחוק את התמונה <strong>"{deleteConfirm.image?.title}"</strong>? לא ניתן יהיה לשחזר
-              אותה לאחר מכן.
-            </p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button
-                onClick={() => setDeleteConfirm({ isOpen: false, image: null })}
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  borderRadius: "30px",
-                  border: "1px solid #ced4da",
-                  backgroundColor: "#fff",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  color: "#475569",
-                  transition: "all 0.2s",
-                }}
-              >
-                ביטול
-              </button>
-              <button
-                onClick={executeDelete}
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  borderRadius: "30px",
-                  backgroundColor: "#dc3545",
-                  color: "white",
-                  border: "none",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  transition: "all 0.2s",
-                  boxShadow: "0 4px 12px rgba(220,53,69,0.2)",
-                }}
-              >
-                כן, מחק לחלוטין
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </AdminLayout>
+        {children}
+      </div>
+    </div>
   );
 }
