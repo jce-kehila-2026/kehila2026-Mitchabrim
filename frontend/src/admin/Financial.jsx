@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import { db, storage } from "../firebase";
 import {
   collection,
@@ -385,7 +385,7 @@ export default function Financial() {
   };
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/finance_hero.png"
       title="ניהול כספי"
       subtitle="מעקב אחר הכנסות, הוצאות ודוחות כספיים"
       actions={
@@ -2196,6 +2196,6 @@ export default function Financial() {
           </div>
         </div>
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import AdminSidebar from "./AdminSidebar.jsx";
 import AdminTopbar from "./AdminTopbar.jsx";
 
-export default function AdminLayout({ title, subtitle, actions, children }) {
+export default function AdminLayout({ title, subtitle, actions, children, hideTopbar = false }) {
   // Persist collapsed state across navigation
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -19,7 +19,7 @@ export default function AdminLayout({ title, subtitle, actions, children }) {
     <div className={`admin-shell ${collapsed ? "is-collapsed" : ""}`}>
       <AdminSidebar collapsed={collapsed} onToggle={toggle} />
       <div className="admin-main">
-        <AdminTopbar />
+        {!hideTopbar && <AdminTopbar />}
         <div className="admin-content">
           {(title || actions) && (
             <div className="admin-page-header">

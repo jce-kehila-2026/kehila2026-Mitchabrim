@@ -725,3 +725,227 @@
   padding-bottom: 10px;
   direction: rtl;
 }
+
+/* ===== Admin page hero (shared across all admin pages) ===== */
+.admin-hero,
+.elderly-hero {
+  position: relative;
+  min-height: 280px;
+  border-radius: 24px;
+  overflow: hidden;
+  background-image: url('/admin-heroes/default-hero.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 0 18px 45px rgba(139, 45, 38, 0.12);
+  padding: 18px 32px 28px;
+  display: flex;
+  flex-direction: column;
+  direction: rtl;
+  margin-bottom: 24px;
+}
+
+.admin-hero::before,
+.elderly-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to left, rgba(251, 244, 234, 0.78) 0%, rgba(251, 244, 234, 0.35) 55%, rgba(251, 244, 234, 0.05) 100%);
+  pointer-events: none;
+}
+
+/* Top overlay bar — user tools sit on the top-LEFT corner */
+.elderly-hero-topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  align-self: flex-end; /* RTL: flex-end = left side */
+  margin-bottom: 14px;
+}
+
+.hero-notif-btn {
+  position: relative;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(236, 223, 204, 0.85);
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #495057;
+  cursor: pointer;
+  transition: background .15s, transform .15s, box-shadow .15s;
+  box-shadow: 0 2px 8px rgba(80, 35, 25, 0.06);
+}
+.hero-notif-btn:hover {
+  background: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(80, 35, 25, 0.10);
+}
+
+.hero-notif-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #dc3545;
+  color: #fff;
+  border-radius: 9px;
+  border: 2px solid #fff;
+  font-size: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-user-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(236, 223, 204, 0.85);
+  padding: 4px 12px 4px 4px;
+  border-radius: 40px;
+  cursor: pointer;
+  transition: background .15s, transform .15s, box-shadow .15s;
+  box-shadow: 0 2px 8px rgba(80, 35, 25, 0.06);
+}
+.hero-user-chip:hover {
+  background: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(80, 35, 25, 0.10);
+}
+
+.hero-user-name { font-weight: 700; color: #8b2c2c; font-size: 14px; }
+.hero-user-role { color: #6c757d; font-size: 12px; }
+
+.hero-user-avatar {
+  width: 36px;
+  height: 36px;
+  background: #8b2c2c;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.hero-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: #fff;
+  border: 1px solid #e2d8c9;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(139, 44, 44, 0.12);
+  z-index: 1000;
+  overflow: hidden;
+  animation: heroFade .15s ease;
+}
+@keyframes heroFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.hero-dropdown-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f0e6d6;
+  font-weight: 700;
+  color: #8b2c2c;
+  font-size: 14px;
+}
+.hero-dropdown-empty { padding: 24px; text-align: center; color: #6c757d; font-size: 14px; }
+
+.hero-notif-dropdown { width: 320px; max-height: 420px; overflow-y: auto; }
+.hero-notif-item { padding: 12px 16px; border-bottom: 1px solid #f5ece0; cursor: pointer; transition: background .15s; }
+.hero-notif-item:last-child { border-bottom: none; }
+.hero-notif-item:hover { background: #fdf4e9; }
+.hero-notif-item.unread { background: #fff7ec; }
+.hero-notif-title { font-weight: 600; color: #3c2a1e; font-size: 14px; }
+.hero-notif-msg { font-size: 12px; color: #6c757d; margin-top: 4px; }
+
+.hero-user-dropdown { width: 200px; }
+.hero-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #8b2c2c;
+  background: #fff;
+  border: none;
+  width: 100%;
+  text-align: right;
+  font-family: inherit;
+  transition: background .15s;
+}
+.hero-menu-item:hover { background: #fdf4e9; }
+
+/* Hero body — title/subtitle/actions are on the RIGHT (RTL) */
+.admin-hero-body,
+.elderly-hero-body {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start; /* RTL: flex-start = right side */
+}
+
+.admin-hero-title,
+.elderly-hero-title { text-align: right; max-width: 60%; }
+.admin-hero-title h1,
+.elderly-hero-title h1 {
+  font-size: 30px;
+  color: var(--color-burgundy);
+  margin-bottom: 6px;
+  font-family: var(--font-display);
+}
+.admin-hero-title p,
+.elderly-hero-title p {
+  color: var(--color-text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.admin-hero-actions,
+.elderly-hero-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-self: flex-start; /* RTL: right side */
+  margin-top: 16px;
+}
+
+/* When a hero is present we use less top padding on the content area */
+.admin-content:has(> .admin-hero:first-child),
+.admin-content:has(> .elderly-hero:first-child) {
+  padding-top: 20px;
+}
+
+@media (max-width: 900px) {
+  .admin-hero,
+  .elderly-hero { padding: 16px 20px 24px; min-height: 230px; border-radius: 18px; }
+  .admin-hero-title h1,
+  .elderly-hero-title h1 { font-size: 22px; }
+  .admin-hero-title,
+  .elderly-hero-title { max-width: 100%; }
+  .admin-hero::before,
+  .elderly-hero::before {
+    background: linear-gradient(to left, rgba(251, 244, 234, 0.92) 0%, rgba(251, 244, 234, 0.55) 70%, rgba(251, 244, 234, 0.2) 100%);
+  }
+}
+

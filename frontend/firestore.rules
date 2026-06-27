@@ -53,9 +53,9 @@ service cloud.firestore {
     // =========================
     // Users
     // =========================
-    // فقط الأدمن ينشئ/يعدل/يحذف users.
-    // المستخدم يقرأ مستنده فقط.
-    // لا تسمح للمستخدم العادي بإنشاء users/{uid} لنفسه.
+    // Only admin can create/update/delete users.
+    // A signed-in user can read only their own user document.
+    // Admin can read all users.
 
     match /users/{userId} {
       allow get: if isSignedIn()
@@ -64,10 +64,20 @@ service cloud.firestore {
           || isAdmin()
         );
 
-      allow list: if isAdmin();
+      // Allow a signed-in user to query for their OWN user record by email.
+      // This is the login-time fallback when users/{uid} hasn't been mirrored
+      // yet (e.g. the admin invited the email before the auth account was
+      // linked to that uid). Firestore enforces that the query filter matches
+      // the rule, so it can only return the caller's own document.
+      allow list: if isAdmin()
+        || (
+          isSignedIn()
+          && resource.data.email == request.auth.token.email
+        );
 
       allow create, update, delete: if isAdmin();
     }
+
 
     // =========================
     // Legacy allowedUsers
@@ -91,14 +101,18 @@ service cloud.firestore {
       match /projectGroups/{groupId} {
         allow read, write: if isAdmin();
       }
+
+      match /{subDocument=**} {
+        allow read, write: if isAdmin();
+      }
     }
 
     // =========================
     // Volunteers
     // =========================
-    // Admin: كامل الصلاحية.
-    // Volunteer: يقرأ ملفه فقط.
-    // Volunteer: يعدل فقط phone/address/email/updatedAt في ملفه.
+    // Admin: full access.
+    // Volunteer: read own profile only.
+    // Volunteer: update only phone/address/email/updatedAt in own profile.
 
     match /volunteers/{volunteerId} {
       allow get: if isAdmin()
@@ -117,25 +131,39 @@ service cloud.firestore {
     }
 
     // =========================
-    // Elderly
+    // Elderly / Senior Citizens
     // =========================
-    // حاليا Admin فقط لأنها تحتوي بيانات حساسة.
-    // إذا أردت أن يرى المتطوع فقط المواطن/المواطنين المرتبطين به،
-    // يجب إضافة حقل واضح مثل assignedVolunteerAuthUid أو assignedVolunteerId.
+    // Admin only, because this collection contains sensitive personal data.
+
+    // Admin: full access.
+    // Volunteer: read elderly assigned to them (by volId == linkedVolunteerId).
 
     match /elderly/{elderlyId} {
-      allow read, write: if isAdmin();
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volId == linkedVolunteerId()
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volId == linkedVolunteerId()
+        );
+
+      allow create, update, delete: if isAdmin();
     }
+
 
     // =========================
     // Volunteer Tasks
     // =========================
-    // Admin: كامل الصلاحية.
-    // Volunteer: يقرأ مهامه فقط.
-    // ملاحظة مهمة:
-    // لكي يعمل list للمتطوع، يجب أن يكون كود React فيه query مفلتر:
+    // Admin: full access.
+    // Volunteer: read own tasks only.
+    // Important:
+    // Volunteer queries should be filtered in React by:
     // where("volunteerAuthUid", "==", auth.currentUser.uid)
-    // أو:
+    // or:
     // where("volunteerId", "==", linkedVolunteerId)
 
     match /volunteerTasks/{taskId} {
@@ -165,8 +193,8 @@ service cloud.firestore {
     // =========================
     // Volunteer Reports
     // =========================
-    // Volunteer: ينشئ تقرير لنفسه ويقرأ تقاريره فقط.
-    // Admin: كامل الصلاحية.
+    // Volunteer: create own reports and read own reports only.
+    // Admin: full access.
 
     match /volunteerReports/{reportId} {
       allow get: if isAdmin()
@@ -190,8 +218,8 @@ service cloud.firestore {
     // =========================
     // Profile Update Requests
     // =========================
-    // Volunteer: يرسل طلب تعديل بياناته ويقرأ طلباته فقط.
-    // Admin: يقرأ الكل ويوافق/يرفض.
+    // Volunteer: send and read own update requests.
+    // Admin: read/manage all requests.
 
     match /profileUpdateRequests/{reqId} {
       allow get: if isAdmin()
@@ -216,56 +244,83 @@ service cloud.firestore {
     // =========================
     // Admin Notifications
     // =========================
-    // Admin: يقرأ ويدير.
-    // Public/Volunteer: يسمح بإنشاء إشعار فقط موجه للأدمن.
-    // تم تقييد الحقول لتقليل التخريب.
+    // Collection used for admin-facing notifications.
+    // - Admin: full read/update/delete.
+    // - Public site (join_request) and signed-in volunteers
+    //   (profile_update_request) may create notifications, but only with a
+    //   strict, validated payload that matches the actual app code.
 
     match /notifications/{notifId} {
       allow read, update, delete: if isAdmin();
 
-      allow create: if request.resource.data.keys().hasOnly([
-          'audience',
-          'type',
-          'title',
-          'message',
-          'createdAt',
-          'read'
+      allow create: if
+        request.resource.data.keys().hasOnly([
+          'audience', 'type', 'title', 'message',
+          'requestId', 'read', 'createdAt'
         ])
         && request.resource.data.audience == 'admin'
-        && request.resource.data.read == false;
+        && request.resource.data.type in ['join_request', 'profile_update_request']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 1000
+        && request.resource.data.requestId is string
+        && request.resource.data.requestId.size() > 0
+        && request.resource.data.requestId.size() <= 200
+        && request.resource.data.read == false
+        && request.resource.data.createdAt == request.time
+        && (
+          // Public join_request notifications: no auth required.
+          request.resource.data.type == 'join_request'
+          || (
+            // profile_update_request must come from an active volunteer.
+            request.resource.data.type == 'profile_update_request'
+            && isVolunteer()
+          )
+        );
     }
 
-    // =========================
-// Join Requests
-// =========================
-// Public website can submit a join/contact request.
-// Admin only can read and manage requests.
 
-match /joinRequests/{reqId} {
+    // =========================
+    // Join Requests
+    // =========================
+    match /joinRequests/{reqId} {
   allow read, update, delete: if isAdmin();
 
   allow create: if request.resource.data.keys().hasOnly([
-      'firstName',
-      'lastName',
       'fullName',
-      'name',
       'phone',
-      'email',
-      'requestType',
-      'reason',
-      'message',
-      'notes',
+      'note',
+      'type',
       'status',
       'createdAt'
     ])
-    && request.resource.data.status == 'new';
+    && request.resource.data.fullName is string
+    && request.resource.data.phone is string
+    && request.resource.data.note is string
+    && request.resource.data.type is string
+    && request.resource.data.status == 'new'
+    && request.resource.data.createdAt == request.time
+    && request.resource.data.fullName.size() >= 2
+    && request.resource.data.fullName.size() <= 200
+    && request.resource.data.phone.size() >= 5
+    && request.resource.data.phone.size() <= 40
+    && request.resource.data.note.size() <= 2200
+    && request.resource.data.type in [
+      'אזרח ותיק',
+      'פונה עבור אזרח ותיק אחר',
+      'מתעניין בהתנדבות',
+      'איש מקצוע',
+      'אחר'
+    ];
 }
 
     // =========================
     // Volunteer Notifications
     // =========================
-    // Admin: يكتب ويدير.
-    // Volunteer: يقرأ إشعاراته فقط ويستطيع تغيير read فقط.
+    // Admin: create/delete/manage.
+    // Volunteer: read own notifications only and update only read field.
 
     match /volunteerNotifications/{notifId} {
       allow get: if isAdmin()
@@ -293,9 +348,22 @@ match /joinRequests/{reqId} {
     // =========================
     // Public Site Content
     // =========================
-    // محتوى الموقع العام: قراءة للجميع، كتابة للأدمن فقط.
+    // Public content: readable by everyone.
+    // Admin only can edit.
 
     match /siteContent/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =========================
+    // Settings
+    // =========================
+    // Public read is acceptable only if settings contains public data
+    // such as areas/neighborhoods and general public site settings.
+    // Admin only can edit.
+
+    match /settings/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
@@ -325,23 +393,17 @@ match /joinRequests/{reqId} {
     }
 
     // =========================
-    // Settings
+    // Admin fallback for all remaining CRM collections
     // =========================
-    // القراءة العامة مقبولة فقط إذا كانت settings تحتوي معلومات عامة
-    // مثل مناطق وأحياء لا تكشف بيانات شخصية.
-    // الكتابة للأدمن فقط.
-
-    match /settings/{docId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // =========================
-    // Default deny
-    // =========================
+    // This prevents admin pages from breaking when the app uses collections
+    // that are not explicitly listed above.
+    //
+    // Admin can access remaining collections.
+    // Public users and volunteers are blocked unless a collection has
+    // an explicit rule above.
 
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isAdmin();
     }
   }
 }

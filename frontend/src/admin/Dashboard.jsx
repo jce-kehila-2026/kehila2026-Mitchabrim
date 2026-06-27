@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
+import { useAuth } from "../context/AuthContext";
 
 import { db } from "../firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy, limit, onSnapshot } from "firebase/firestore";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const adminId = user?.uid || null;
   
-  const [stats, setStats] = useState({ elderly: "-", volunteers: "-", projects: "-", requests: "-", parliaments: "-" });
+  const [stats, setStats] = useState({ elderly: "-", volunteers: "-", requests: "-" });
+  const [nearestProject, setNearestProject] = useState(null);
   const [requests, setRequests] = useState([]);
   const [profileRequests, setProfileRequests] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -18,6 +22,12 @@ export default function Dashboard() {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [deleteId, setDeleteId] = useState(null);
   const [deleteProfileId, setDeleteProfileId] = useState(null);
+  const [activeTab, setActiveTab] = useState("update"); // update | special | status
+  const [mainTab, setMainTab] = useState("join"); // join | volunteer | tasks
+  const [taskFilter, setTaskFilter] = useState("all"); // all | open | overdue | done
+  const [viewTask, setViewTask] = useState(null);
+  const [editTaskId, setEditTaskId] = useState(null);
+  const [editTaskTitle, setEditTaskTitle] = useState("");
 
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
   const [weather, setWeather] = useState({ temp: "--", text: "טוען...", emoji: "⏳" });
@@ -29,15 +39,31 @@ export default function Dashboard() {
         const volunteersSnap = await getDocs(collection(db, "volunteers"));
         const projectsSnap = await getDocs(collection(db, "projects"));
         const requestsSnap = await getDocs(collection(db, "joinRequests"));
-        const parliamentsSnap = await getDocs(collection(db, "parliaments"));
 
         setStats({
           elderly: elderlySnap.size,
           volunteers: volunteersSnap.size,
-          projects: projectsSnap.size,
           requests: requestsSnap.size,
-          parliaments: parliamentsSnap.size
         });
+
+        // Nearest upcoming/active project
+        const allProjects = projectsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const parseDate = (s) => {
+          if (!s) return null;
+          if (typeof s?.toDate === "function") return s.toDate();
+          const d = new Date(s);
+          return isNaN(d) ? null : d;
+        };
+        const candidates = allProjects
+          .filter((p) => p.status !== "הסתיים" && p.status !== "בוטל")
+          .map((p) => ({ ...p, _d: parseDate(p.date || p.startDate || p.distributionDate) }))
+          .filter((p) => p._d && p._d >= today)
+          .sort((a, b) => a._d - b._d);
+        const fallback = allProjects
+          .filter((p) => p.status === "פעיל" || p.status === "בהכנה")
+          .sort((a, b) => (parseDate(b.createdAt) || 0) - (parseDate(a.createdAt) || 0));
+        setNearestProject(candidates[0] || fallback[0] || null);
 
         const reqDocs = await getDocs(collection(db, "joinRequests"));
         const fetchedRequests = reqDocs.docs.map(d => {
@@ -62,8 +88,9 @@ export default function Dashboard() {
         fetchedRequests.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setRequests(fetchedRequests);
 
-        const taskDocs = await getDocs(collection(db, "tasks"));
-        setTasks(taskDocs.docs.map(d => ({ id: d.id, ...d.data() })));
+        // Personal admin tasks are loaded in a separate effect filtered by adminId.
+
+
 
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -83,6 +110,23 @@ export default function Dashboard() {
     );
     return () => unsub();
   }, []);
+
+  // Live subscription to personal admin tasks (filtered by current admin uid)
+  useEffect(() => {
+    if (!adminId) { setTasks([]); return; }
+    const q = query(collection(db, "tasks"), where("adminId", "==", adminId));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setTasks(list);
+      },
+      (err) => console.warn("personal tasks listen:", err.message)
+    );
+    return () => unsub();
+  }, [adminId]);
+
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -154,21 +198,23 @@ export default function Dashboard() {
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTaskTitle?.trim()) return;
+    if (!adminId) { showToast("לא ניתן לשמור: משתמש לא מחובר"); return; }
 
     try {
-      const docRef = await addDoc(collection(db, "tasks"), {
+      await addDoc(collection(db, "tasks"), {
         title: newTaskTitle.trim(),
         status: "פתוח",
+        adminId,
         createdAt: serverTimestamp()
       });
-      
-      setTasks([{ id: docRef.id, title: newTaskTitle.trim(), status: "פתוח" }, ...tasks]);
+      // onSnapshot will refresh the list automatically
       setNewTaskTitle("");
       showToast("המשימה נשמרה במערכת");
     } catch (error) {
       showToast("שגיאה בשמירת המשימה");
     }
   };
+
 
   const toggleTaskStatus = async (taskId, currentStatus) => {
     let nextStatus = "פתוח";
@@ -190,6 +236,23 @@ export default function Dashboard() {
       showToast("המשימה נמחקה");
     } catch (error) {
       console.error("Error deleting task:", error);
+    }
+  };
+
+  const startEditTask = (t) => {
+    setEditTaskId(t.id);
+    setEditTaskTitle(t.title || "");
+  };
+
+  const saveEditTask = async () => {
+    if (!editTaskId || !editTaskTitle.trim()) { setEditTaskId(null); return; }
+    try {
+      await updateDoc(doc(db, "tasks", editTaskId), { title: editTaskTitle.trim() });
+      setEditTaskId(null);
+      setEditTaskTitle("");
+      showToast("המשימה עודכנה");
+    } catch (e) {
+      showToast("שגיאה בעדכון המשימה");
     }
   };
 
@@ -239,7 +302,7 @@ export default function Dashboard() {
   };
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/dashboard.png"
       title={getGreeting()} 
       subtitle="ניהול ענייני המערכת והקהילה מכאן"
       actions={
@@ -279,118 +342,233 @@ export default function Dashboard() {
         .scrollbox::-webkit-scrollbar-thumb:hover { background: #8b2c2c; }
       `}</style>
 
-      {/* --- Row 1 --- */}
+      {/* --- Stats Row (single, balanced) --- */}
       <div className="stats-grid">
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/elderly")}><StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value={stats.elderly} subtitle="מעבר לניהול אזרחים" /></div>
         <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/volunteers")}><StatsCard icon="🤝" title="מתנדבים פעילים" value={stats.volunteers} subtitle="מעבר לניהול מתנדבים" /></div>
-        <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/projects")}><StatsCard icon="🎁" title="פרויקטים פעילים" value={stats.projects} subtitle="מעבר לפרויקטים" /></div>
-        <div className="dashboard-card-wrapper" onClick={() => document.getElementById("requests-section").scrollIntoView({ behavior: "smooth" })}><StatsCard icon="✉️" title="פניות לטיפול" value={stats.requests} subtitle="גלילה לבקשות פתוחות" /></div>
-      </div>
-
-      {/* --- Row 2 --- */}
-      <div className="stats-grid">
-        <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/parliaments")}><StatsCard icon="🏛️" title="מפגשי פרלמנט השבוע" value={stats.parliaments} subtitle="פרלמנטים פעילים" /></div>
-        <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/media")}><StatsCard icon="🖼️" title="מאגר תמונות" value="←" subtitle="עריכת גלריית תמונות" /></div>
-        <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/links")}><StatsCard icon="🔗" title="מאגר קישורים" value="←" subtitle="טפסים ומסמכי מערכת" /></div>
-        <div className="dashboard-card-wrapper" onClick={() => navigate("/admin/settings")}><StatsCard icon="⚙️" title="הגדרות מערכת" value="←" subtitle="אזורים, קטגוריות וצוות" /></div>
-      </div>
-
-      {/* --- Split Section --- */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", direction: "rtl" }}>
-        
-        {/* Requests Scrollbox */}
-        <div id="requests-section" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <SectionCard title="בקשות הצטרפות אחרונות">
-            <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "220px", overflowY: "auto", paddingLeft: "6px" }}>
-              {requests.length > 0 ? requests.map((r) => (
-                <div key={r.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", borderRadius: "10px", backgroundColor: "#fff" }}>
-                  <div>
-                    <div style={{ fontWeight: "bold", color: "#343a40", fontSize: "14px" }}>{r.name}</div>
-                    <div style={{ color: "#6c757d", fontSize: "12px", marginTop: "2px" }}>{r.type}</div>
+        <div
+          className="dashboard-card-wrapper"
+          onClick={() => navigate(nearestProject ? `/admin/projects/${nearestProject.id}` : "/admin/projects")}
+          title={nearestProject ? `מעבר לפרויקט: ${nearestProject.name || ""}` : "מעבר לפרויקטים"}
+        >
+          <div className="stats-card">
+            <div className="stats-icon">🎁</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <h3>פרויקט קרוב</h3>
+              {nearestProject ? (
+                <>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#3c2a1e", marginTop: 4, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {nearestProject.name || "ללא שם"}
                   </div>
-                  <button onClick={() => setSelectedRequest(r)} style={{ padding: "6px 14px", borderRadius: "6px", backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: "12px", transition: "0.2s" }}>צפייה</button>
-                </div>
-              )) : (
-                <div style={{ padding: "20px", textAlign: "center", color: "#adb5bd", fontSize: "14px" }}>אין בקשות חדשות כרגע 🎉</div>
+                  <div className="stats-sub" style={{ marginTop: 4 }}>
+                    תאריך: {nearestProject.date || nearestProject.startDate || "—"}
+                  </div>
+                  <div className="stats-sub">
+                    סטטוס: {nearestProject.status || "פעיל"}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 14, color: "#6c757d", marginTop: 6 }}>אין פרויקט קרוב כרגע</div>
               )}
             </div>
-          </SectionCard>
+          </div>
+        </div>
+        <div className="dashboard-card-wrapper" onClick={() => { setMainTab("join"); document.getElementById("requests-section")?.scrollIntoView({ behavior: "smooth" }); }}><StatsCard icon="✉️" title="פניות לטיפול" value={stats.requests} subtitle="גלילה לבקשות פתוחות" /></div>
+      </div>
 
-          <SectionCard title="בקשות עדכון פרטים">
-            <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "220px", overflowY: "auto", paddingLeft: "6px" }}>
-              {profileRequests.length > 0 ? profileRequests.map((r) => {
-                const d = r.createdAt?.toDate ? r.createdAt.toDate() : null;
-                const statusMap = {
-                  pending: { label: "ממתין", bg: "#fff3cd", color: "#856404", border: "#ffeeba" },
-                  approved: { label: "אושר", bg: "#e8f5e9", color: "#1e6b2c", border: "#c3e6cb" },
-                  rejected: { label: "נדחה", bg: "#fdecec", color: "#dc3545", border: "#f5c6cb" },
-                };
-                const s = statusMap[r.status] || statusMap.pending;
-                const preview = (r.message || "").length > 60 ? (r.message || "").slice(0, 60) + "…" : (r.message || "");
-                return (
-                  <div key={r.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", borderRadius: "10px", backgroundColor: "#fff", gap: 10 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontWeight: "bold", color: "#343a40", fontSize: "14px" }}>{r.volunteerName || "מתנדב"}</span>
-                        <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 10.5, fontWeight: "bold", backgroundColor: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{s.label}</span>
-                        {d && (
-                          <span style={{ color: "#9e8a7a", fontSize: 11 }}>
-                            {d.toLocaleDateString("he-IL")}
-                          </span>
-                        )}
+      {/* --- Main Tabbed Lower Area --- */}
+      <div id="requests-section" style={{ direction: "rtl" }}>
+        <SectionCard>
+          <div role="tablist" style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid #f1e7d7" }}>
+            {[
+              { k: "join", label: `בקשות הצטרפות${requests.length ? ` (${requests.length})` : ""}` },
+              { k: "volunteer", label: "בקשות מתנדבים" },
+              { k: "tasks", label: "משימות אישיות" },
+            ].map((t) => {
+              const active = mainTab === t.k;
+              return (
+                <button
+                  key={t.k}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setMainTab(t.k)}
+                  style={{
+                    padding: "10px 22px", borderRadius: 999,
+                    border: active ? "1px solid #8b2c2c" : "1px solid #e6d9c4",
+                    background: active ? "#8b2c2c" : "#fff",
+                    color: active ? "#fff" : "#5a3a2a",
+                    fontWeight: 700, fontSize: 14, cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    boxShadow: active ? "0 4px 12px rgba(139,44,44,0.18)" : "none",
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Join Requests Tab */}
+          {mainTab === "join" && (
+            <div>
+              <div style={{ fontSize: 13, color: "#6c757d", marginBottom: 10 }}>
+                {requests.length > 0 ? `${requests.length} בקשות חדשות` : "אין בקשות חדשות כרגע"}
+              </div>
+              <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 400, overflowY: "auto", paddingLeft: 6 }}>
+                {requests.length > 0 ? requests.map((r) => (
+                  <div key={r.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: "#fff", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <div style={{ fontWeight: "bold", color: "#343a40", fontSize: 14 }}>{r.name}</div>
+                      <div style={{ color: "#6c757d", fontSize: 12, marginTop: 2 }}>
+                        {r.type}{r.createdAt ? ` • ${r.createdAt.toLocaleDateString("he-IL")}` : ""}
                       </div>
-                      <div style={{ color: "#6c757d", fontSize: "12px", marginTop: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview || "ללא הודעה"}</div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <button
-                        onClick={() => navigate(`/admin/profile-update-requests?id=${r.id}`)}
-                        style={{ padding: "6px 12px", borderRadius: "6px", backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: "12px" }}
-                      >
-                        צפייה
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteProfileId(r.id)}
-                        className="icon-btn-danger"
-                        title="מחיקה"
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: "bold", padding: 0 }}
-                      >
-                        ✕
-                      </button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => setSelectedRequest(r)} style={{ padding: "6px 14px", borderRadius: 6, backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: 12 }}>צפייה</button>
+                      <button onClick={() => { showToast("הפנייה אושרה"); executeDeleteRequest(r.id); }} style={{ padding: "6px 14px", borderRadius: 6, backgroundColor: "#1e6b2c", border: "none", cursor: "pointer", fontWeight: "bold", color: "#fff", fontSize: 12 }}>אישור</button>
+                      <button onClick={() => setDeleteId(r.id)} style={{ padding: "6px 14px", borderRadius: 6, backgroundColor: "#fff", border: "1px solid #dc3545", cursor: "pointer", fontWeight: "bold", color: "#dc3545", fontSize: 12 }}>דחייה</button>
                     </div>
                   </div>
-                );
-              }) : (
-                <div style={{ padding: "16px", textAlign: "center", color: "#adb5bd", fontSize: "13px" }}>אין בקשות עדכון פרטים כרגע</div>
-              )}
+                )) : (
+                  <div style={{ padding: 20, textAlign: "center", color: "#adb5bd", fontSize: 14 }}>אין בקשות חדשות כרגע 🎉</div>
+                )}
+              </div>
             </div>
-          </SectionCard>
-        </div>
+          )}
 
-        {/* Tasks Scrollbox */}
-        <div>
-          <SectionCard title="משימות והתראות">
-            <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "320px", overflowY: "auto", paddingLeft: "6px" }}>
-              {tasks.length > 0 ? tasks.map((t) => (
-                <div key={t.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", borderRadius: "10px", backgroundColor: "#fff" }}>
-                  <div style={{ color: t.status === "בוצע" ? "#adb5bd" : "#495057", fontSize: "13.5px", fontWeight: "500", flex: 1, paddingLeft: "10px", textDecoration: t.status === "בוצע" ? "line-through" : "none" }}>{t.title}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <span onClick={() => toggleTaskStatus(t.id, t.status)} style={{ padding: "4px 12px", borderRadius: "20px", fontSize: "11.5px", fontWeight: "bold", cursor: "pointer", transition: "0.2s", ...getBadgeStyle(t.status) }}>{t.status}</span>
-                    <button type="button" onClick={() => handleDeleteTask(t.id)} className="icon-btn-danger" style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: "bold", padding: 0, display: "flex", alignItems: "center" }}>✕</button>
-                  </div>
-                </div>
-              )) : (
-                <div style={{ padding: "10px", textAlign: "center", color: "#adb5bd", fontSize: "14px" }}>אין משימות פתוחות. איזה כיף!</div>
-              )}
+          {/* Volunteer Requests Tab (sub-categories) */}
+          {mainTab === "volunteer" && (
+            <div>
+              <div role="tablist" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+                {[
+                  { k: "update",  label: "בקשות עדכון פרטים" },
+                  { k: "special", label: "בקשות מיוחדות מהמתנדב" },
+                  { k: "status",  label: "מצב הבקשה" },
+                ].map((t) => {
+                  const active = activeTab === t.k;
+                  return (
+                    <button
+                      key={t.k}
+                      onClick={() => setActiveTab(t.k)}
+                      style={{
+                        padding: "6px 14px", borderRadius: 999,
+                        border: active ? "1px solid #8b2c2c" : "1px solid #e6d9c4",
+                        background: active ? "#fdecec" : "#fff",
+                        color: active ? "#8b2c2c" : "#5a3a2a",
+                        fontWeight: 700, fontSize: 12, cursor: "pointer",
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ minHeight: 180 }}>
+                {activeTab === "update" && (
+                  <ProfileRequestList
+                    items={profileRequests.filter((r) => !r.type || r.type === "update")}
+                    navigate={navigate}
+                    setDeleteProfileId={setDeleteProfileId}
+                    emptyText="אין בקשות עדכון פרטים כרגע"
+                  />
+                )}
+                {activeTab === "special" && (
+                  <ProfileRequestList
+                    items={profileRequests.filter((r) => r.type === "special")}
+                    navigate={navigate}
+                    setDeleteProfileId={setDeleteProfileId}
+                    emptyText="אין בקשות מיוחדות מהמתנדבים כרגע"
+                  />
+                )}
+                {activeTab === "status" && (
+                  <StatusSummary items={profileRequests} />
+                )}
+              </div>
             </div>
-            <form onSubmit={handleAddTask} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", border: "1px dashed #ced4da", borderRadius: "10px", backgroundColor: "#faf8f5", marginTop: "12px" }}>
-              <input type="text" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="הוסף משימה חדשה ללוח..." style={{ background: "transparent", border: "none", outline: "none", flex: 1, fontSize: "13px", color: "#495057", fontFamily: "inherit" }} />
-              <button type="submit" style={{ backgroundColor: "#8b2c2c", color: "white", border: "none", borderRadius: "50%", width: "24px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "16px", fontWeight: "bold", padding: 0 }}>+</button>
-            </form>
-          </SectionCard>
-        </div>
+          )}
 
+          {/* Volunteer Tasks Tab */}
+          {mainTab === "tasks" && (
+            <div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+                {[
+                  { k: "all", label: `הכל (${tasks.length})` },
+                  { k: "open", label: `פתוחות (${tasks.filter(t => t.status === "פתוח").length})` },
+                  { k: "overdue", label: `דחופות (${tasks.filter(t => t.status === "דחוף").length})` },
+                  { k: "done", label: `הושלמו (${tasks.filter(t => t.status === "בוצע").length})` },
+                ].map((f) => {
+                  const active = taskFilter === f.k;
+                  return (
+                    <button key={f.k} onClick={() => setTaskFilter(f.k)} style={{
+                      padding: "6px 14px", borderRadius: 999,
+                      border: active ? "1px solid #8b2c2c" : "1px solid #e6d9c4",
+                      background: active ? "#fdecec" : "#fff",
+                      color: active ? "#8b2c2c" : "#5a3a2a",
+                      fontWeight: 700, fontSize: 12, cursor: "pointer",
+                    }}>{f.label}</button>
+                  );
+                })}
+              </div>
+              <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 360, overflowY: "auto", paddingLeft: 6 }}>
+                {(() => {
+                  const filtered = tasks.filter(t => {
+                    if (taskFilter === "open") return t.status === "פתוח";
+                    if (taskFilter === "overdue") return t.status === "דחוף";
+                    if (taskFilter === "done") return t.status === "בוצע";
+                    return true;
+                  });
+                  if (!filtered.length) return <div style={{ padding: 20, textAlign: "center", color: "#adb5bd", fontSize: 14 }}>אין משימות להצגה</div>;
+                  return filtered.map((t) => {
+                    const isEditing = editTaskId === t.id;
+                    const statusDotColor = t.status === "דחוף" ? "#dc3545" : t.status === "בוצע" ? "#1e6b2c" : "#c9a227";
+                    return (
+                      <div key={t.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: "#fff", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 180, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span title={t.status || "פתוח"} style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: statusDotColor, flexShrink: 0 }} />
+                          {isEditing ? (
+                            <input
+                              autoFocus
+                              value={editTaskTitle}
+                              onChange={(e) => setEditTaskTitle(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") saveEditTask(); if (e.key === "Escape") setEditTaskId(null); }}
+                              style={{ flex: 1, padding: "6px 8px", border: "1px solid #c9a227", borderRadius: 6, fontSize: 13.5, fontFamily: "inherit" }}
+                            />
+                          ) : (
+                            <span style={{ color: t.status === "בוצע" ? "#adb5bd" : "#495057", fontSize: 13.5, fontWeight: 500, textDecoration: t.status === "בוצע" ? "line-through" : "none" }}>{t.title}</span>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {isEditing ? (
+                            <>
+                              <button onClick={saveEditTask} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#1e6b2c", border: "none", cursor: "pointer", fontWeight: "bold", color: "#fff", fontSize: 12 }}>שמירה</button>
+                              <button onClick={() => setEditTaskId(null)} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#fff", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: 12 }}>ביטול</button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => setViewTask(t)} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: 12 }}>צפייה</button>
+                              <button onClick={() => startEditTask(t)} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#fff7ec", border: "1px solid #f0c98a", cursor: "pointer", fontWeight: "bold", color: "#a07050", fontSize: 12 }}>עריכה</button>
+                              {t.status !== "בוצע" && (
+                                <button onClick={() => updateDoc(doc(db, "tasks", t.id), { status: "בוצע" }).then(() => showToast("סומן כהושלם"))} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#e8f5e9", border: "1px solid #c3e6cb", cursor: "pointer", fontWeight: "bold", color: "#1e6b2c", fontSize: 12 }}>סמן כהושלם</button>
+                              )}
+                              <button type="button" onClick={() => handleDeleteTask(t.id)} className="icon-btn-danger" title="מחיקה" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, fontWeight: "bold", padding: 0 }}>✕</button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+
+                })()}
+              </div>
+              <form onSubmit={handleAddTask} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px dashed #ced4da", borderRadius: 10, backgroundColor: "#faf8f5", marginTop: 12 }}>
+                <input type="text" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="הוסף משימה חדשה ללוח..." style={{ background: "transparent", border: "none", outline: "none", flex: 1, fontSize: 13, color: "#495057", fontFamily: "inherit" }} />
+                <button type="submit" style={{ backgroundColor: "#8b2c2c", color: "white", border: "none", borderRadius: "50%", width: 24, height: 22, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 16, fontWeight: "bold", padding: 0 }}>+</button>
+              </form>
+            </div>
+          )}
+        </SectionCard>
       </div>
+
 
       {/* --- Quick Preview Modal --- */}
       {selectedRequest && (
@@ -465,6 +643,114 @@ export default function Dashboard() {
         </div>
       )}
 
-    </AdminLayout>
+      {/* --- Personal Task View Modal --- */}
+      {viewTask && (
+        <div onClick={() => setViewTask(null)} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, direction: "rtl" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: "#fff", borderRadius: 16, padding: 24, width: "90%", maxWidth: 420, boxShadow: "0 10px 25px rgba(0,0,0,0.15)" }}>
+            <h3 style={{ margin: "0 0 6px 0", color: "#8b2c2c", fontWeight: "bold", fontSize: "1.15rem" }}>פרטי משימה אישית</h3>
+            <p style={{ color: "#6c757d", fontSize: 13, margin: "0 0 16px 0" }}>משימה פרטית שנשמרה על ידך</p>
+            <div style={{ backgroundColor: "#faf8f5", padding: 16, borderRadius: 8, marginBottom: 18 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#343a40", marginBottom: 10, whiteSpace: "pre-wrap" }}>{viewTask.title}</div>
+              <div style={{ fontSize: 12.5, color: "#6c757d" }}>
+                סטטוס: <strong style={{ color: "#495057" }}>{viewTask.status || "פתוח"}</strong>
+              </div>
+              {viewTask.createdAt?.toDate && (
+                <div style={{ fontSize: 12.5, color: "#6c757d", marginTop: 4 }}>
+                  נוצר ב־{viewTask.createdAt.toDate().toLocaleString("he-IL")}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => { startEditTask(viewTask); setViewTask(null); }} style={{ padding: "8px 18px", borderRadius: 8, border: "1px solid #f0c98a", backgroundColor: "#fff7ec", color: "#a07050", fontWeight: "bold", cursor: "pointer" }}>עריכה</button>
+              <button onClick={() => setViewTask(null)} style={{ padding: "8px 20px", borderRadius: 8, border: "none", backgroundColor: "#8b2c2c", color: "#fff", fontWeight: "bold", cursor: "pointer" }}>סגירה</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </AdminPageLayout>
+  );
+}
+
+function ProfileRequestList({ items, navigate, setDeleteProfileId, emptyText }) {
+  const statusMap = {
+    pending:  { label: "ממתין", bg: "#fff3cd", color: "#856404", border: "#ffeeba" },
+    approved: { label: "אושר",  bg: "#e8f5e9", color: "#1e6b2c", border: "#c3e6cb" },
+    rejected: { label: "נדחה",  bg: "#fdecec", color: "#dc3545", border: "#f5c6cb" },
+  };
+  if (!items.length) {
+    return <div style={{ padding: "20px", textAlign: "center", color: "#adb5bd", fontSize: "13px" }}>{emptyText}</div>;
+  }
+  return (
+    <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 260, overflowY: "auto", paddingLeft: 6 }}>
+      {items.map((r) => {
+        const d = r.createdAt?.toDate ? r.createdAt.toDate() : null;
+        const s = statusMap[r.status] || statusMap.pending;
+        const preview = (r.message || "").length > 60 ? (r.message || "").slice(0, 60) + "…" : (r.message || "");
+        return (
+          <div key={r.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: "#fff", gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: "bold", color: "#343a40", fontSize: 14 }}>{r.volunteerName || "מתנדב"}</span>
+                <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 10.5, fontWeight: "bold", backgroundColor: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{s.label}</span>
+                {d && <span style={{ color: "#9e8a7a", fontSize: 11 }}>{d.toLocaleDateString("he-IL")}</span>}
+              </div>
+              <div style={{ color: "#6c757d", fontSize: 12, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview || "ללא הודעה"}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => navigate(`/admin/profile-update-requests?id=${r.id}`)}
+                style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: 12 }}
+              >
+                צפייה
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteProfileId(r.id)}
+                className="icon-btn-danger"
+                title="מחיקה"
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, fontWeight: "bold", padding: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatusSummary({ items }) {
+  const counts = items.reduce(
+    (acc, r) => {
+      const k = r.status || "pending";
+      acc[k] = (acc[k] || 0) + 1;
+      acc.total += 1;
+      return acc;
+    },
+    { total: 0, pending: 0, approved: 0, rejected: 0 }
+  );
+  const cards = [
+    { k: "total",    label: "סה״כ בקשות", color: "#8b2c2c", bg: "#fdecec" },
+    { k: "pending",  label: "ממתינות",     color: "#856404", bg: "#fff3cd" },
+    { k: "approved", label: "אושרו",       color: "#1e6b2c", bg: "#e8f5e9" },
+    { k: "rejected", label: "נדחו",        color: "#dc3545", bg: "#fdecec" },
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
+      {cards.map((c) => (
+        <div
+          key={c.k}
+          style={{
+            background: c.bg, borderRadius: 12, padding: "14px 12px",
+            textAlign: "center", border: "1px solid rgba(0,0,0,0.04)",
+          }}
+        >
+          <div style={{ fontSize: 24, fontWeight: 800, color: c.color }}>{counts[c.k] || 0}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#5a3a2a", marginTop: 4 }}>{c.label}</div>
+        </div>
+      ))}
+    </div>
   );
 }

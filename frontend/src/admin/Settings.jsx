@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
 // Firebase imports
@@ -535,7 +535,7 @@ export default function Settings() {
   const safePhones = Array.isArray(phones) ? phones : [""];
 
   return (
-    <AdminLayout title="הגדרות" subtitle="ניהול הגדרות מערכת, אזורים, שכונות והרשאות">
+    <AdminPageLayout heroImage="/admin-heroes/setting_hero.png" title="הגדרות" subtitle="ניהול הגדרות מערכת, אזורים, שכונות והרשאות">
       
       {toastMessage && (
         <div className="admin-toast">
@@ -867,6 +867,6 @@ export default function Settings() {
         </div>
       )}
 
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }

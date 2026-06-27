@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer.js";
-import { getReportsForVolunteer } from "@/services/reportsService.js";
+import { useAuth } from "@/context/AuthContext.jsx";
+import { getReportsForAuthUid } from "@/services/reportsService.js";
 import {
   Calendar, Tag, User, Search, Plus, ChevronLeft,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const FILTERS = [
 
 export default function VolunteerReportsHistory() {
   const { volunteer, loading: volLoading, linked } = useCurrentVolunteer();
+  const { user } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -36,20 +38,21 @@ export default function VolunteerReportsHistory() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      if (!volunteer?.id) { setReports([]); setLoading(false); return; }
+      if (!user?.uid) { setReports([]); setLoading(false); return; }
       setLoading(true);
       try {
-        const list = await getReportsForVolunteer(volunteer.id);
+        const list = await getReportsForAuthUid(user.uid);
         if (!cancelled) setReports(list);
       } catch (err) {
-        console.error("getReportsForVolunteer error:", err);
+        console.error("getReportsForAuthUid error:", err);
+        if (!cancelled) setReports([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [volunteer?.id]);
+  }, [user?.uid]);
 
   const filtered = useMemo(() => {
     return reports.filter((r) => {

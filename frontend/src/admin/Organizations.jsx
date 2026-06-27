@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
@@ -201,7 +201,7 @@ export default function Organizations() {
   /* ========== Render ========== */
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/organizations.png"
       title="ניהול ארגונים ואנשי קשר"
       subtitle="ניהול גופים, שותפים ואנשי קשר של ארגונים העובדים עם המיזם."
       actions={
@@ -365,7 +365,7 @@ export default function Organizations() {
           onClose={() => setShowPrint(false)}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

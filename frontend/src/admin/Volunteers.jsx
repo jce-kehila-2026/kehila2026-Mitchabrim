@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
@@ -377,7 +377,7 @@ export default function Volunteers() {
   ========================= */
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/volunteers.png"
       title="ניהול מתנדבים"
       subtitle="ניהול מתנדבים, קבוצות התנדבות, שיוך לאזרחים ותיקים, סטטוס פעילות וביטוח."
       actions={
@@ -590,7 +590,7 @@ export default function Volunteers() {
           onRemoveVolunteer={handleRemoveVolunteerFromGroup}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

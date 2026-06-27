@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer.js";
-import { getElderly } from "@/services/elderlyService.js";
+import { getElderlyForVolunteer } from "@/services/elderlyService.js";
 import { createVolunteerReport } from "@/services/reportsService.js";
 import { useAuth } from "@/context/AuthContext.jsx";
 import {
@@ -27,7 +27,7 @@ export default function VolunteerReportForm() {
   const { user } = useAuth();
   const { volunteer, loading: volLoading, linked, error: volError } = useCurrentVolunteer();
 
-  const [allElderly, setAllElderly] = useState([]);
+  const [myElderly, setMyElderly] = useState([]);
   const [elderlyLoading, setElderlyLoading] = useState(true);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
@@ -37,30 +37,22 @@ export default function VolunteerReportForm() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (!volunteer?.id) return;
       try {
         setElderlyLoading(true);
-        const list = await getElderly();
-        if (!cancelled) setAllElderly(list);
+        const list = await getElderlyForVolunteer(volunteer.id);
+        if (!cancelled) setMyElderly(list);
       } catch (err) {
         console.error("Failed to load elderly:", err);
+        if (!cancelled) setMyElderly([]);
       } finally {
         if (!cancelled) setElderlyLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [volunteer?.id]);
 
-  const myElderly = useMemo(() => {
-    if (!volunteer) return [];
-    const idsFromVolunteer = Array.isArray(volunteer.elderlyIds) ? volunteer.elderlyIds : [];
-    return allElderly.filter((e) => {
-      if (idsFromVolunteer.includes(e.id)) return true;
-      if (e.volId && e.volId === volunteer.id) return true;
-      if (e.assignedVolunteerId && e.assignedVolunteerId === volunteer.id) return true;
-      return false;
-    });
-  }, [allElderly, volunteer]);
 
   const set = (k) => (e) => setForm((prev) => ({ ...prev, [k]: e.target.value }));
 
