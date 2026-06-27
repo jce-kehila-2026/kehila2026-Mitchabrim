@@ -85,8 +85,31 @@ export async function createTask(data, createdBy = null) {
     updatedAt: serverTimestamp(),
   };
   const docRef = await addDoc(tasksCollection, payload);
+
+  // Create a single notification for the volunteer (only at creation time,
+  // so refreshing the admin page does not duplicate notifications).
+  if (payload.volunteerAuthUid) {
+    try {
+      await addDoc(collection(db, "volunteerNotifications"), {
+        volunteerAuthUid: payload.volunteerAuthUid,
+        volunteerId: payload.volunteerId,
+        type: "task_assigned",
+        title: "משימה חדשה שובצה אליך",
+        message: payload.title
+          ? `שובצה אליך משימה חדשה: ${payload.title}`
+          : "שובצה אליך משימה חדשה. ניתן לצפות בה במסך המשימות שלי.",
+        taskId: docRef.id,
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.warn("createTask: notification failed:", err.message);
+    }
+  }
+
   return { id: docRef.id, ...payload };
 }
+
 
 export async function updateTask(taskId, patch) {
   const ref = doc(db, "volunteerTasks", taskId);

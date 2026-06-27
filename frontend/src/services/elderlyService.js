@@ -7,8 +7,10 @@ import {
   doc,
   serverTimestamp,
   query,
+  where,
   orderBy,
 } from "firebase/firestore";
+
 
 import { db } from "../firebase";
 import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
@@ -29,6 +31,21 @@ export async function getElderly() {
     ...docItem.data(),
   }));
 }
+
+/**
+ * Returns only the elderly assigned to a specific volunteer (volId match).
+ * Safe to call from the volunteer site — matches the Firestore rule.
+ */
+export async function getElderlyForVolunteer(volunteerId) {
+  if (!volunteerId) return [];
+  const q = query(elderlyCollection, where("volId", "==", volunteerId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((docItem) => ({
+    id: docItem.id,
+    ...docItem.data(),
+  }));
+}
+
 
 export async function createElderly(elderlyData) {
   const clean = sanitizeFormData(elderlyData);
