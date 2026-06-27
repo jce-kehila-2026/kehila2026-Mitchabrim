@@ -23,11 +23,10 @@ export default function Media() {
   const [filePreview, setFilePreview] = useState(null);
 
   const [formData, setFormData] = useState({
-  title: "",
-  category: "",
-  notes: "",
-  isPublic: false,
-});
+    title: "",
+    category: "",
+    notes: "",
+  });
 
   const [toastMessage, setToastMessage] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, image: null });
@@ -58,11 +57,11 @@ export default function Media() {
   };
 
   const handleOpenModal = () => {
-  setSelectedFile(null);
-  setFilePreview(null);
-  setFormData({ title: "", category: "", notes: "", isPublic: false });
-  setIsModalOpen(true);
-};
+    setSelectedFile(null);
+    setFilePreview(null);
+    setFormData({ title: "", category: "", notes: "" });
+    setIsModalOpen(true);
+  };
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -107,14 +106,13 @@ export default function Media() {
       const todayDate = new Date().toLocaleDateString("he-IL");
 
       const newImageDoc = {
-  title: formData.title.trim(),
-  category: formData.category,
-  notes: formData.notes.trim(),
-  url: url,
-  uploadedAt: serverTimestamp(),
-  displayDate: todayDate,
-  isPublic: formData.isPublic || false,
-};
+        title: formData.title.trim(),
+        category: formData.category,
+        notes: formData.notes.trim(),
+        url: url,
+        uploadedAt: serverTimestamp(),
+        displayDate: todayDate,
+      };
 
       const docRef = await addDoc(collection(db, "images"), newImageDoc);
       setImagesList((prevList) => [...prevList, { id: docRef.id, ...newImageDoc }]);
@@ -158,22 +156,6 @@ export default function Media() {
     }
   };
 
-  const toggleIsPublic = async (e, img) => {
-    e.stopPropagation();
-    try {
-      const imageRef = doc(db, "images", img.id);
-      const newStatus = !img.isPublic;
-      await updateDoc(imageRef, { isPublic: newStatus });
-      setImagesList((prevList) =>
-        prevList.map((item) => (item.id === img.id ? { ...item, isPublic: newStatus } : item))
-      );
-      showToast(newStatus ? "התמונה צורפה למوقع הציבורי בהצלחה!" : "התמונה הוסרה מהאתר הציבורי בהצלחה!");
-    } catch (error) {
-      console.error("Error updating image public status:", error);
-      showToast("שגיאה בעדכון סטטוס התמונה.");
-    }
-  };
-
   const handleOpenDetails = (img) => {
     setDetailsModal({ isOpen: true, image: { ...img } });
   };
@@ -188,7 +170,6 @@ export default function Media() {
         title: detailsModal.image.title.trim(),
         category: detailsModal.image.category,
         notes: detailsModal.image.notes.trim(),
-        isPublic: detailsModal.image.isPublic || false,
       });
 
       setImagesList((prevList) =>
@@ -199,7 +180,6 @@ export default function Media() {
                 title: detailsModal.image.title.trim(),
                 category: detailsModal.image.category,
                 notes: detailsModal.image.notes.trim(),
-                isPublic: detailsModal.image.isPublic || false,
               }
             : img,
         ),
@@ -211,98 +191,6 @@ export default function Media() {
       showToast("שגיאה בעדכון פרטי התמונה.");
     } finally {
       setIsUpdating(false);
-    }
-  };
-
-  const handleSeedMockImages = async () => {
-    if (!window.confirm("האם אתה בטוח שברצונך להוסיף 35 תמונות לדוגמה (7 לכל קטגוריה) למאגר?")) return;
-    
-    showToast("מתחיל להוסיף תמונות לדוגמה...");
-    let addedCount = 0;
-    
-    const mock_urls = {
-      "פרלמנטים": [
-        "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1531545514256-b1400bc00f31?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80"
-      ],
-      "מתנדבים": [
-        "https://images.unsplash.com/photo-1573497620053-ea5300f94f21?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1469571486292-0ba58a3f068b?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1509099836639-18ba1795216d?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=800&auto=format&fit=crop&q=80"
-      ],
-      "חגים": [
-        "https://images.unsplash.com/photo-1543007630-9710e4a00a20?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1513507804186-01a60f249e47?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1512568400610-62da28bc8a13?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1482862549707-f63cb32c5fd9?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1507504038482-76210374c27f?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1512418490979-92798cec1380?w=800&auto=format&fit=crop&q=80"
-      ],
-      "שיווק": [
-        "https://images.unsplash.com/photo-1542744094-3a31f103e35f?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1533750516457-a7f992034fec?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800&auto=format&fit=crop&q=80"
-      ],
-      "כרטיסי ברכה": [
-        "https://images.unsplash.com/photo-1513151233558-d860c5398176?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1506784983877-45594efa4cbe?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1512909006721-3d6018887383?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800&auto=format&fit=crop&q=80",
-        "https://images.unsplash.com/photo-1527529482837-4698179dc6ce?w=800&auto=format&fit=crop&q=80"
-      ]
-    };
-
-    try {
-      const addedDocs = [];
-      for (const category of CATEGORIES) {
-        const urls = mock_urls[category];
-        for (let i = 0; i < urls.length; i++) {
-          const url = urls[i];
-          const today = new Date();
-          today.setDate(today.getDate() - i);
-          const displayDate = today.toLocaleDateString("he-IL");
-          
-          const newDoc = {
-            title: `${category} - תמונה לדוגמה ${i + 1}`,
-            category: category,
-            notes: `תמונת תרגול עבור קטגוריית ${category}.`,
-            url: url,
-            uploadedAt: serverTimestamp(),
-            displayDate: displayDate,
-            isPublic: true
-          };
-          
-          const docRef = await addDoc(collection(db, "images"), newDoc);
-          addedDocs.push({
-            id: docRef.id,
-            ...newDoc,
-            uploadedAt: { seconds: Math.floor(today.getTime() / 1000) }
-          });
-          addedCount++;
-        }
-      }
-      
-      setImagesList((prevList) => [...prevList, ...addedDocs]);
-      showToast(`בהצלחה! נוספו ${addedCount} תמונות לדוגמה.`);
-    } catch (error) {
-      console.error("Error seeding mock images:", error);
-      showToast("שגיאה בהוספת תמונות לדוגמה.");
     }
   };
 
@@ -342,35 +230,22 @@ export default function Media() {
       title="ניהול תמונות"
       subtitle="ניהול תמונות האתר, גלריות ותמונות מוצגות"
       actions={
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button className="action-btn-primary" onClick={handleOpenModal}>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            העלאת תמונה
-          </button>
-          
-          <button 
-            className="action-btn-primary" 
-            onClick={handleSeedMockImages}
-            style={{ 
-              backgroundColor: "#2e7d32", 
-              boxShadow: "0 4px 12px rgba(46,125,50,0.2)" 
-            }}
+        <button className="action-btn-primary" onClick={handleOpenModal}>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            🌱 הוסף תמונות לדוגמה
-          </button>
-        </div>
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          העלאת תמונה
+        </button>
       }
     >
       <style>{`
@@ -597,60 +472,6 @@ export default function Media() {
                 </svg>
               </button>
 
-              <button
-                onClick={(e) => toggleIsPublic(e, img)}
-                title={img.isPublic ? "הסר מהאתר הציבורי" : "צרף לאתר הציבורי"}
-                style={{
-                  position: "absolute",
-                  top: 8,
-                  right: 8,
-                  background: img.isPublic ? "#2e7d32" : "rgba(255, 255, 255, 0.9)",
-                  color: img.isPublic ? "#ffffff" : "#495057",
-                  border: `1px solid ${img.isPublic ? "#2e7d32" : "#ced4da"}`,
-                  borderRadius: "50%",
-                  width: 30,
-                  height: 30,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                  zIndex: 5,
-                  transition: "0.2s",
-                }}
-              >
-                {img.isPublic ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                  </svg>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
-                )}
-              </button>
-
               <div
                 style={{
                   aspectRatio: "4/3",
@@ -681,11 +502,6 @@ export default function Media() {
                   }}
                 >
                   <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedCategory(img.category);
-                    }}
-                    title={`סנן לפי קטגוריה: ${img.category}`}
                     style={{
                       backgroundColor: "#fdfbf7",
                       padding: "2px 6px",
@@ -693,16 +509,6 @@ export default function Media() {
                       border: "1px solid #e2d8c9",
                       fontWeight: "600",
                       color: "#8b2c2c",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#8b2c2c";
-                      e.currentTarget.style.color = "#ffffff";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#fdfbf7";
-                      e.currentTarget.style.color = "#8b2c2c";
                     }}
                   >
                     {img.category}
@@ -983,17 +789,6 @@ export default function Media() {
                       fontSize: "14px",
                     }}
                   ></textarea>
-                  <div className="field" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-  <label style={{ margin: 0, fontWeight: "600", fontSize: "13.5px", color: "#495057" }}>
-    🌐 הצג באתר הציבורי:
-  </label>
-  <input
-    type="checkbox"
-    checked={formData.isPublic || false}
-    onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
-    style={{ width: "20px", height: "20px", accentColor: "#8B0000", cursor: "pointer" }}
-  />
-</div>
                 </div>
               </form>
             </div>
@@ -1327,27 +1122,6 @@ export default function Media() {
                     }}
                     placeholder="הוסף הערות או תיאור לתמונה זו..."
                   ></textarea>
-
-                  <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "10px" }}>
-                    <input
-                      type="checkbox"
-                      id="modal-is-public"
-                      checked={detailsModal.image.isPublic || false}
-                      onChange={(e) =>
-                        setDetailsModal((prev) => ({
-                          isOpen: true,
-                          image: { ...prev.image, isPublic: e.target.checked },
-                        }))
-                      }
-                      style={{ width: "18px", height: "18px", accentColor: "#8b2c2c", cursor: "pointer" }}
-                    />
-                    <label
-                      htmlFor="modal-is-public"
-                      style={{ fontWeight: "600", fontSize: "14px", color: "#495057", cursor: "pointer", margin: 0 }}
-                    >
-                      🌐 הצג באתר הציבורי (בגלריה הציבורית)
-                    </label>
-                  </div>
                 </div>
 
                 <div style={{ marginTop: "24px", display: "flex", gap: "12px" }}>
