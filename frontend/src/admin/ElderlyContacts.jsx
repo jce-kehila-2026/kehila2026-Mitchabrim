@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
@@ -177,7 +177,7 @@ export default function ElderlyContacts() {
   /* ========== Render ========== */
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/elderly-contacts.png"
       title="ניהול אנשי קשר לקשישים"
       subtitle="ניהול אנשי קשר המקושרים לאזרחים ותיקים, כגון עו״סים, בני משפחה, שכנים ואנשי קשר נוספים."
       actions={
@@ -360,7 +360,7 @@ export default function ElderlyContacts() {
           onClose={() => setShowPrint(false)}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

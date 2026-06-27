@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
@@ -315,7 +315,7 @@ export default function Projects() {
 
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/projects.png"
       title="פרויקטים"
       subtitle="ניהול פרויקטי חלוקה, אירועים ופעילויות מיוחדות — מעקב חבילות ומסירה לפי שכונות."
       actions={
@@ -391,7 +391,7 @@ export default function Projects() {
           onClose={() => setShowPrint(false)}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 
@@ -561,7 +561,7 @@ function GroupsListView({ onBack, allGroups = [], volunteersByGroupId = {} }) {
       }))
     : [];
   return (
-    <AdminLayout title="רשימות לפי קבוצות" subtitle="קבוצות מתנדבים במערכת">
+    <AdminPageLayout heroImage="/admin-heroes/projects.png" title="רשימות לפי קבוצות" subtitle="קבוצות מתנדבים במערכת">
       <button className="back-link" onClick={onBack}>→ חזרה לפרויקטים</button>
       {!group ? (
         <SectionCard title="קבוצות מתנדבים">
@@ -594,7 +594,7 @@ function GroupsListView({ onBack, allGroups = [], volunteersByGroupId = {} }) {
           </SectionCard>
         </>
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 
@@ -953,7 +953,7 @@ function ProjectDetail({
 
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/projects.png"
       title={project.name}
       subtitle={`${project.type} • ${project.year} • תאריך חלוקה: ${project.date}`}
       actions={
@@ -1409,7 +1409,7 @@ function ProjectDetail({
           onSave={(updated) => { onUpdate(updated); setShowEdit(false); }}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

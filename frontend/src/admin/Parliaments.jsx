@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
@@ -251,7 +251,7 @@ export default function Parliaments() {
   }));
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/parliaments.png"
       title="פרלמנטים"
       subtitle="ניהול מפגשי פרלמנט, משתתפים ונוכחות"
       actions={
@@ -357,7 +357,7 @@ export default function Parliaments() {
           areaOptions={areaOptions}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 
@@ -528,7 +528,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
   }
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/parliaments.png"
       title={parl.name}
       subtitle={`${parl.location} • מפגש הבא: ${parl.nextDate || "—"}`}
       actions={<button className="btn btn-primary" onClick={() => setShowEdit(true)}>עריכת פרטים</button>}
@@ -646,7 +646,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
           onDelete={() => handleDeleteMeeting(editMeeting)}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 
@@ -718,7 +718,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
   };
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/parliaments.png"
       title={`${parl.name} — פגישה מס׳ ${meetingNumber}`}
       subtitle={`${meeting.date || ""} ${meeting.startTime ? "• " + meeting.startTime : ""} ${meeting.location ? "• " + meeting.location : ""}`}
     >
@@ -841,7 +841,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
           onDelete={() => handleDeleteExpense(editExpense.id)}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

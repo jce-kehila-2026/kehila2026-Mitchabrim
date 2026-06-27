@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SiteSectionCard from "@/components/admin/site-content/SiteSectionCard.jsx";
 import { TextField, TextareaField, ImageField } from "@/components/admin/site-content/fields.jsx";
 import {
@@ -72,16 +72,16 @@ export default function SiteContent() {
 
   if (loading) {
     return (
-      <AdminLayout title="ניהול האתר הראשי" subtitle="טוען..." actions={actions}>
+      <AdminPageLayout heroImage="/admin-heroes/site-content.png" title="ניהול האתר הראשי" subtitle="טוען..." actions={actions}>
         <div className="sc-loading">טוען תוכן...</div>
-      </AdminLayout>
+      </AdminPageLayout>
     );
   }
 
   const c = content;
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/site-content.png"
       title="ניהול האתר הראשי"
       subtitle="עריכת כל הטקסטים והתמונות באתר הציבורי — בסדר המופיע בעמוד הבית"
       actions={actions}
@@ -388,6 +388,6 @@ export default function SiteContent() {
           {global.saving ? "שומר..." : "שמירת כל השינויים"}
         </button>
       </div>
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }

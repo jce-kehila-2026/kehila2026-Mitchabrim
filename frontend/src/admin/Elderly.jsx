@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
+
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
@@ -203,9 +204,10 @@ export default function Elderly() {
   const withoutCount = data.length - connectedCount;
 
   return (
-    <AdminLayout
+    <AdminPageLayout
       title="ניהול אזרחים ותיקים"
       subtitle="ניהול רשימת האזרחים הוותיקים, שיוך לאזורים ושכונות, סטטוס התנדבות ופרטים אישיים."
+      heroImage="/admin-heroes/elderly-hero-bg.png"
       actions={
         <>
           <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ הוספת אזרח ותיק</button>
@@ -213,6 +215,7 @@ export default function Elderly() {
         </>
       }
     >
+
       {loadError && (
         <div style={{
           background: "#fef3c7", border: "1px solid #fde68a", color: "#92400e",
@@ -321,7 +324,7 @@ export default function Elderly() {
         <VolunteerQuickModal entry={openVolunteer} onClose={() => setOpenVolunteer(null)} />
       )}
       {showPrint && <PrintReportModal items={sorted} onClose={() => setShowPrint(false)} />}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

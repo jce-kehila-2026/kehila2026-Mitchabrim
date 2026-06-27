@@ -1,6 +1,6 @@
 // src/admin/Reports.jsx
 import { useState, useEffect, useMemo } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { db } from "../firebase";
 import { collection, getDocs } from "firebase/firestore";
@@ -2041,7 +2041,7 @@ export default function Reports() {
   const [active, setActive] = useState(null);
 
   return (
-    <AdminLayout title="דוחות" subtitle="נתונים וסטטיסטיקות מהמערכת">
+    <AdminPageLayout heroImage="/admin-heroes/reports.png" title="דוחות" subtitle="נתונים וסטטיסטיקות מהמערכת">
       {active ? (
         active === "financial" ? (
           <FinancialChooser onBack={() => setActive(null)} />
@@ -2051,6 +2051,6 @@ export default function Reports() {
       ) : (
         <ReportsGrid onOpen={setActive} />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }

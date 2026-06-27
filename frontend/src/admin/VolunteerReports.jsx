@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
@@ -42,7 +42,7 @@ export default function VolunteerReports() {
   const [tab, setTab] = useState("reports");
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/volunteer-reports.png"
       title="דוחות ומשימות המתנדבים"
       subtitle="ניהול הדוחות שהוגשו ומשימות שהוקצו למתנדבים"
     >
@@ -62,7 +62,7 @@ export default function VolunteerReports() {
       </div>
 
       {tab === "reports" ? <ReportsTab user={user} /> : <TasksTab user={user} />}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

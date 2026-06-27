@@ -1,6 +1,6 @@
 // src/admin/Links.jsx
 import { useState, useEffect } from "react";
-import AdminLayout from "../components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "../components/admin/SectionCard.jsx";
 import SearchFilters from "../components/admin/SearchFilters.jsx";
 import DataTable from "../components/admin/DataTable.jsx";
@@ -163,7 +163,7 @@ export default function Links() {
   };
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/links_hero.png"
       title="מאגר קישורים"
       subtitle="קישורים חשובים ונגישים לצוות"
       actions={
@@ -341,6 +341,6 @@ export default function Links() {
           </div>
         </div>
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }

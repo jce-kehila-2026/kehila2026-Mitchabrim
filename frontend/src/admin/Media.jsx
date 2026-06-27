@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
 // Import Firebase tools
@@ -202,7 +202,7 @@ export default function Media() {
 
   const displayedImages = imagesList
     .filter((img) => {
-      const matchesSearch = img.title.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = (img.title || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       const matchesCategory = selectedCategory === "" || img.category === selectedCategory;
       return matchesSearch && matchesCategory;
     })
@@ -226,7 +226,7 @@ export default function Media() {
   };
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage="/admin-heroes/gallery_hero.png"
       title="ניהול תמונות"
       subtitle="ניהול תמונות האתר, גלריות ותמונות מוצגות"
       actions={
@@ -1253,6 +1253,6 @@ export default function Media() {
           </div>
         </div>
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
