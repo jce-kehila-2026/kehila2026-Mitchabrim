@@ -45,10 +45,10 @@ export default function Home() {
       <PublicNavbar />
       <HeroSection />
       <AboutSection />
+      <PartnersSection />
       <ActivitiesSection />
       <QuoteSection />
       <GallerySection />
-      <PartnersSection />
       <TeamSection />
       <PressSection />
       <JoinRequestSection />

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
 import jerusalemMunicipality from "@/assets/partners/jerusalem-municipality.svg";
 import welfareElderly from "@/assets/partners/welfare-elderly.svg";
 import thirdAgeDepartment from "@/assets/partners/third-age-department.svg";
 import shefer from "@/assets/partners/shefer.svg";
 import giloCommunityCenter from "@/assets/partners/gilo-community-center.svg";
+import communityAdministrations from "@/assets/partners/community-administrations.svg";
 import beitIsraelMechina from "@/assets/partners/beit-israel-mechina.svg";
 import beitIsraelStudents from "@/assets/partners/beit-israel-students.svg";
 import schools from "@/assets/partners/schools.svg";
@@ -16,82 +17,140 @@ const PARTNERS = [
   { name: "אגף חברה - המחלקה לגיל השלישי", logo: thirdAgeDepartment },
   { name: "עמותת שפר", logo: shefer },
   { name: "מינהל קהילתי גילה", logo: giloCommunityCenter },
+  { name: "מינהלים קהילתיים", logo: communityAdministrations },
   { name: "קהילת בית ישראל - מכינות קדם צבאיות", logo: beitIsraelMechina },
   { name: "קהילת בית ישראל - כפרי הסטודנטים", logo: beitIsraelStudents },
   { name: "בתי ספר בשכונות", logo: schools },
   { name: "חברת חשמל", logo: electricCompany },
 ];
 
-// Border tone cycles for the large circles.
-const TONES = ["peach", "sage", "gold", "peach"];
+const TONES = ["peach", "sage", "gold"];
 
-// Visible large-circle layouts. `top` is % within the wave wrap;
-// the wave SVG path is tuned to pass through these vertical centers.
-const LARGE_DESKTOP = [
-  { left: 14, top: 42 },
-  { left: 38, top: 62 },
-  { left: 62, top: 42 },
-  { left: 86, top: 62 },
-];
-const LARGE_TABLET = [
-  { left: 18, top: 42 },
-  { left: 50, top: 62 },
-  { left: 82, top: 42 },
-];
-const LARGE_MOBILE = [
-  { left: 28, top: 45 },
-  { left: 72, top: 60 },
-];
+// Wave geometry – must stay in sync between the SVG path and the JS y-formula.
+const SVG_VB_W = 1000;
+const SVG_VB_H = 240;
+const SVG_CY = 120;
+const SVG_AMP = 42;
+const WAVE_PERIODS = 2; // number of full sine periods across the viewBox width
 
-// Small decorative wave dots — placed BETWEEN the large circles, ON the wave.
-const DECOR_DESKTOP = [
-  { left: 26, top: 56 },
-  { left: 50, top: 50 },
-  { left: 74, top: 56 },
-];
-const DECOR_TABLET = [
-  { left: 34, top: 56 },
-  { left: 66, top: 56 },
-];
-const DECOR_MOBILE = [{ left: 50, top: 54 }];
+// Per-mode tuning. Spacing must comfortably exceed the circle diameter so
+// circles never overlap during the flow.
+const MODES = {
+  desktop: { spacing: 300, speed: 42, circle: 132 },
+  tablet:  { spacing: 250, speed: 34, circle: 116 },
+  mobile:  { spacing: 200, speed: 26, circle: 96  },
+};
 
-function useLayout() {
-  const compute = () => {
-    const w = typeof window !== "undefined" ? window.innerWidth : 1280;
-    if (w < 640) return { large: LARGE_MOBILE, decor: DECOR_MOBILE, mode: "mobile" };
-    if (w < 1024) return { large: LARGE_TABLET, decor: DECOR_TABLET, mode: "tablet" };
-    return { large: LARGE_DESKTOP, decor: DECOR_DESKTOP, mode: "desktop" };
-  };
-  const [layout, setLayout] = useState(compute);
-  useEffect(() => {
-    const onResize = () => setLayout(compute());
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return layout;
+function getMode() {
+  if (typeof window === "undefined") return "desktop";
+  const w = window.innerWidth;
+  if (w < 640) return "mobile";
+  if (w < 1024) return "tablet";
+  return "desktop";
+}
+
+// Build a multi-period cubic-bezier sine path matching the JS y formula.
+function buildWavePath() {
+  const cy = SVG_CY;
+  const a = SVG_AMP;
+  const w = SVG_VB_W;
+  const halves = WAVE_PERIODS * 2;
+  const segW = w / halves;
+  // Bezier control offset that closely approximates a sine half-wave.
+  const k = a * 1.32;
+  let d = `M 0 ${cy}`;
+  for (let s = 0; s < halves; s++) {
+    const dir = s % 2 === 0 ? -1 : 1; // first half rises (sin > 0 → y decreases)
+    const x0 = s * segW;
+    const x1 = (s + 1) * segW;
+    const cp1x = x0 + segW * 0.36;
+    const cp2x = x1 - segW * 0.36;
+    d += ` C ${cp1x} ${cy + dir * k} ${cp2x} ${cy + dir * k} ${x1} ${cy}`;
+  }
+  return d;
 }
 
 export default function PartnersSection() {
-  const { large, decor, mode } = useLayout();
   const { content } = useSiteContent();
   const p = content.partners;
-  const total = PARTNERS.length;
-  const [start, setStart] = useState(0);
-  const [paused, setPaused] = useState(false);
+
+  const wrapRef = useRef(null);
+  const cardRefs = useRef([]);
+  const offsetRef = useRef(0);
 
   useEffect(() => {
-    if (paused) return;
-    const id = setInterval(() => setStart((s) => (s + 1) % total), 3500);
-    return () => clearInterval(id);
-  }, [paused, total]);
+    let raf = 0;
+    let last = performance.now();
+    let mode = getMode();
 
-  const visiblePartners = useMemo(
-    () => large.map((_, i) => PARTNERS[(start + i) % total]),
-    [large, start, total]
-  );
+    const onResize = () => { mode = getMode(); };
+    window.addEventListener("resize", onResize);
+
+    const tick = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+
+      const wrap = wrapRef.current;
+      if (wrap) {
+        const W = wrap.clientWidth;
+        const H = wrap.clientHeight;
+        const conf = MODES[mode];
+        const spacing = conf.spacing;
+        const speed = conf.speed;
+        const circle = conf.circle;
+        const N = PARTNERS.length;
+
+        // Conveyor length: long enough that off-screen cards have room to
+        // reset on the right before reappearing. Ensures only the leftmost
+        // visible card ever leaves first → correct exit order.
+        const total = Math.max(N * spacing, W + spacing * 2);
+        const ampPx = (SVG_AMP / SVG_VB_H) * H;
+        const cyPx = (SVG_CY / SVG_VB_H) * H;
+        const fade = spacing * 0.45;
+
+        offsetRef.current = (offsetRef.current + speed * dt) % total;
+
+        for (let i = 0; i < cardRefs.current.length; i++) {
+          const el = cardRefs.current[i];
+          if (!el) continue;
+
+          // Phase 0..total. Higher phase = further left along the flow.
+          const phase = (((i * spacing + offsetRef.current) % total) + total) % total;
+          // Cards start off-screen right (x = total - spacing) and travel to
+          // x = -spacing where they wrap. Single, monotonic mapping ⇒ no
+          // reordering / early disappearance.
+          const x = total - spacing - phase;
+
+          // Sine matches the SVG path exactly (same periods + amplitude).
+          const y = cyPx - ampPx * Math.sin((x / W) * Math.PI * 2 * WAVE_PERIODS);
+
+          let op = 1;
+          if (x < fade) op = Math.max(0, x / fade);
+          else if (x > W - fade) op = Math.max(0, (W - x) / fade);
+          if (x < -spacing || x > W + spacing) op = 0;
+
+          // Anchor: circle's CENTER sits on (x, y). The label flows below,
+          // moving as one unit with the circle.
+          el.style.transform =
+            `translate3d(${x}px, ${y - circle / 2}px, 0) translateX(-50%)`;
+          el.style.width = `${circle + 80}px`;
+          el.style.opacity = String(op);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
+  const wavePath = buildWavePath();
 
   return (
-    <section id="partners" className={`pub-section partners-section partners-section--${mode}`}>
+    <section id="partners" className="pub-section partners-section">
       <div className="container">
         <div className="partners-header">
           <span className="section-eyebrow">{p.eyebrow}</span>
@@ -100,20 +159,18 @@ export default function PartnersSection() {
         </div>
 
         <div
-          className="partners-wave-wrap"
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
+          className="partners-wave-wrap partners-wave-wrap--flow"
+          ref={wrapRef}
+          aria-label="שותפים"
         >
-          {/* Soft wave behind the circles. Path tuned so it weaves through
-              the alternating circle centers (42% / 62%). */}
           <svg
             className="partners-wave-svg"
-            viewBox="0 0 1000 220"
+            viewBox={`0 0 ${SVG_VB_W} ${SVG_VB_H}`}
             preserveAspectRatio="none"
             aria-hidden="true"
           >
             <path
-              d="M0,110 C70,90 110,90 140,92 S240,140 380,138 S520,90 620,92 S760,140 860,138 S970,110 1000,110"
+              d={wavePath}
               fill="none"
               stroke="#d97a4a"
               strokeOpacity="0.45"
@@ -122,48 +179,23 @@ export default function PartnersSection() {
             />
           </svg>
 
-          {decor.map((d, i) => (
-            <span
-              key={`decor-${i}`}
-              className="wave-decor"
-              style={{ left: `${d.left}%`, top: `${d.top}%` }}
-              aria-hidden="true"
-            />
-          ))}
-
-          {large.map((pos, i) => {
-            const p = visiblePartners[i];
+          {PARTNERS.map((partner, i) => {
             const tone = TONES[i % TONES.length];
             return (
               <div
-                key={`slot-${i}`}
-                className={`wave-slot wave-slot--${tone}`}
-                style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+                key={partner.name}
+                ref={(el) => (cardRefs.current[i] = el)}
+                className={`wave-slot wave-slot--flow wave-slot--${tone}`}
               >
-                <article
-                  key={`${p.name}-${start}-${i}`}
-                  className="wave-partner"
-                  title={p.name}
-                >
-                  <div className="wave-partner-logo">
-                    <img src={p.logo} alt={p.name} loading="lazy" />
+                <article className="wave-partner" title={partner.name}>
+                  <div className="wave-partner-circle">
+                    <img src={partner.logo} alt={partner.name} loading="lazy" />
                   </div>
-                  <h4 className="wave-partner-name">{p.name}</h4>
+                  <h4 className="wave-partner-name">{partner.name}</h4>
                 </article>
               </div>
             );
           })}
-        </div>
-
-        <div className="partners-dots" role="tablist" aria-label="שותפים">
-          {PARTNERS.map((_, i) => (
-            <button
-              key={i}
-              className={`partners-dot ${i === start ? "active" : ""}`}
-              onClick={() => setStart(i)}
-              aria-label={`שותף ${i + 1}`}
-            />
-          ))}
         </div>
       </div>
     </section>

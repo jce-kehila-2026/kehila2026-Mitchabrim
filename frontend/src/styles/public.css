@@ -2790,8 +2790,8 @@ section.pub-section,
 .partners-wave-wrap {
   position: relative;
   width: 100%;
-  max-width: 1120px;
-  height: 240px;
+  max-width: 1180px;
+  height: 280px;
   margin: 6px auto 0;
 }
 .partners-wave-svg {
@@ -2802,140 +2802,78 @@ section.pub-section,
   pointer-events: none;
 }
 
-.wave-decor {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #d97a4a;
-  opacity: 0.55;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 4px rgba(217, 122, 74, 0.1);
-  pointer-events: none;
-}
-
+/* Each slot holds a circle + a label below; both move together. */
 .wave-slot {
   position: absolute;
-  transform: translate(-50%, -50%);
-  width: 160px;
+  top: 0;
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .wave-partner {
-  position: relative;
-  width: 152px;
-  height: 152px;
-  border-radius: 50%;
-  background: #fdf4e9;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 14px 12px;
-  box-sizing: border-box;
+  justify-content: flex-start;
   text-align: center;
-  box-shadow: 0 10px 22px rgba(120, 70, 30, 0.09);
-  transition:
-    transform 280ms ease,
-    box-shadow 280ms ease;
-  animation: wavePartnerIn 600ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  width: 100%;
+  gap: 10px;
 }
-.wave-slot--peach .wave-partner {
-  border: 1.5px solid rgba(217, 122, 74, 0.55);
-}
-.wave-slot--sage .wave-partner {
-  border: 1.5px solid rgba(120, 140, 90, 0.55);
-}
-.wave-slot--gold .wave-partner {
-  border: 1.5px solid rgba(190, 145, 60, 0.55);
-}
-
-.wave-partner:hover {
-  transform: translateY(-3px) scale(1.03);
-  box-shadow: 0 16px 28px rgba(120, 70, 30, 0.13);
-}
-.wave-partner-logo {
-  width: 56px;
-  height: 56px;
+.wave-partner-circle {
+  width: 132px;
+  height: 132px;
   border-radius: 50%;
-  background: #fffaf2;
+  background: #fdf4e9;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 8px;
-  box-shadow: inset 0 0 0 1px rgba(180, 120, 70, 0.12);
+  padding: 14px;
+  box-sizing: border-box;
+  box-shadow: 0 10px 22px rgba(120, 70, 30, 0.09);
+  transition: transform 280ms ease, box-shadow 280ms ease;
 }
-.wave-partner-logo img {
-  max-width: 70%;
-  max-height: 70%;
+.wave-slot--peach .wave-partner-circle {
+  border: 1.5px solid rgba(217, 122, 74, 0.55);
+}
+.wave-slot--sage .wave-partner-circle {
+  border: 1.5px solid rgba(120, 140, 90, 0.55);
+}
+.wave-slot--gold .wave-partner-circle {
+  border: 1.5px solid rgba(190, 145, 60, 0.55);
+}
+.wave-partner:hover .wave-partner-circle {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 16px 28px rgba(120, 70, 30, 0.13);
+}
+.wave-partner-circle img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 .wave-partner-name {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--color-burgundy-deep, #5a1f1f);
   line-height: 1.3;
-  max-width: 124px;
-}
-
-@keyframes wavePartnerIn {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.94);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.partners-dots {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 18px;
-}
-.partners-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(122, 60, 40, 0.22);
-  cursor: pointer;
-  transition:
-    background 200ms ease,
-    transform 200ms ease,
-    width 200ms ease;
-  padding: 0;
-}
-.partners-dot.active {
-  background: var(--color-accent, #d97a4a);
-  width: 20px;
-  border-radius: 6px;
+  max-width: 180px;
 }
 
 @media (max-width: 1023px) {
   .partners-wave-wrap {
-    height: 210px;
+    height: 240px;
   }
-  .wave-slot {
-    width: 140px;
-  }
-  .wave-partner {
-    width: 132px;
-    height: 132px;
-    padding: 12px 10px;
-  }
-  .wave-partner-logo {
-    width: 48px;
-    height: 48px;
-    margin-bottom: 6px;
+  .wave-partner-circle {
+    width: 116px;
+    height: 116px;
+    padding: 12px;
   }
   .wave-partner-name {
-    font-size: 11.5px;
-    max-width: 108px;
+    font-size: 12px;
+    max-width: 160px;
   }
 }
 
@@ -2944,25 +2882,28 @@ section.pub-section,
     padding: 52px 0 44px;
   }
   .partners-wave-wrap {
-    height: 200px;
+    height: 210px;
   }
-  .wave-slot {
-    width: 130px;
-  }
-  .wave-partner {
-    width: 124px;
-    height: 124px;
-    padding: 10px 8px;
-  }
-  .wave-partner-logo {
-    width: 44px;
-    height: 44px;
-    margin-bottom: 4px;
+  .wave-partner-circle {
+    width: 96px;
+    height: 96px;
+    padding: 10px;
   }
   .wave-partner-name {
     font-size: 11px;
-    max-width: 100px;
+    max-width: 140px;
   }
+}
+
+/* Continuous right-to-left flow variant — positions driven by JS rAF. */
+.partners-wave-wrap--flow {
+  overflow: hidden;
+}
+.wave-slot--flow {
+  opacity: 0;
+  will-change: transform, opacity;
+  transition: none;
+  animation: none;
 }
 
 /* ---------- Contact Section ---------- */
