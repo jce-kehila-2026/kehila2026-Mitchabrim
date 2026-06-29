@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
 import { Link } from "react-router-dom";
-import { db } from "../../firebase";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { db, auth } from "../../firebase";
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
 
 export default function GallerySection() {
   const { content } = useSiteContent();
@@ -19,7 +19,8 @@ export default function GallerySection() {
       try {
         const q = query(
           collection(db, "images"),
-          where("isPublic", "==", true)
+          where("isPublic", "==", true),
+          limit(500)
         );
         const querySnapshot = await getDocs(q);
         const fetched = [];
@@ -36,7 +37,11 @@ export default function GallerySection() {
 
         setImages(fetched);
       } catch (error) {
-        console.error("Error fetching gallery images:", error);
+        const authState = auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous";
+        console.error(
+          `[GallerySection] Failed to fetch Firestore collection 'images' with where("isPublic","==",true). Auth: ${authState}. Code: ${error?.code}`,
+          error
+        );
       } finally {
         setLoading(false);
       }

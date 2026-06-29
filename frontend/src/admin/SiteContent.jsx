@@ -72,7 +72,7 @@ export default function SiteContent() {
 
   if (loading) {
     return (
-      <AdminPageLayout heroImage="/admin-heroes/site-content.png" title="ניהול האתר הראשי" subtitle="טוען..." actions={actions}>
+      <AdminPageLayout heroImage="/admin-heroes/main_website_hero.png" title="ניהול האתר הראשי" subtitle="טוען..." actions={actions}>
         <div className="sc-loading">טוען תוכן...</div>
       </AdminPageLayout>
     );
@@ -81,7 +81,7 @@ export default function SiteContent() {
   const c = content;
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/site-content.png"
+    <AdminPageLayout heroImage="/admin-heroes/main_website_hero.png"
       title="ניהול האתר הראשי"
       subtitle="עריכת כל הטקסטים והתמונות באתר הציבורי — בסדר המופיע בעמוד הבית"
       actions={actions}

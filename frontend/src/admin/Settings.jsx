@@ -655,7 +655,6 @@ export default function Settings() {
                   <tr style={{ backgroundColor: "#fdfbf7", borderBottom: "2px solid #e9ecef" }}>
                     <th style={{ padding: "12px", textAlign: "right", color: "#8b2c2c" }}>שם</th>
                     <th style={{ padding: "12px", textAlign: "right", color: "#8b2c2c" }}>אימייל</th>
-                    <th style={{ padding: "12px", textAlign: "right", color: "#8b2c2c" }}>תפקיד</th>
                     <th style={{ padding: "12px", textAlign: "right", color: "#8b2c2c" }}>סטטוס</th>
                     <th style={{ padding: "12px", textAlign: "right", color: "#8b2c2c" }}>פעולות</th>
                   </tr>
@@ -665,12 +664,6 @@ export default function Settings() {
                     <tr key={u?.id || `fallback-key-${index}`} style={{ borderBottom: "1px solid #eee" }}>
                       <td style={{ padding: "12px" }}>{u?.displayName || "—"}</td>
                       <td dir="ltr" style={{ padding: "12px", textAlign: "right", color: "#495057" }}>{u?.email || "—"}</td>
-                      <td style={{ padding: "12px" }}>
-                        <select style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #ced4da", outline: "none" }} value={u?.role || "volunteer"} onChange={(e) => handleRoleDropdownChange(u, e.target.value)}>
-                          <option value="volunteer">מתנדב</option>
-                          <option value="admin">מנהל</option>
-                        </select>
-                      </td>
                       <td style={{ padding: "12px" }}>
                         <span style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", background: u?.active ? "#e8f5e9" : "#fdecec", color: u?.active ? "#1e6b2c" : "#9b1c1c" }}>
                           {u?.active ? "פעיל" : "לא פעיל"}
@@ -683,7 +676,7 @@ export default function Settings() {
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan="5" style={{ textAlign: "center", padding: "20px", color: "#6c757d" }}>לא נמצאו משתמשים התואמים לחיפוש שלך.</td></tr>
+                    <tr><td colSpan="4" style={{ textAlign: "center", padding: "20px", color: "#6c757d" }}>לא נמצאו משתמשים התואמים לחיפוש שלך.</td></tr>
                   )}
                 </tbody>
               </table>

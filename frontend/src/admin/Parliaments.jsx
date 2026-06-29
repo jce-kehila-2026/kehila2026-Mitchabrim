@@ -63,7 +63,6 @@ function isThisWeek(dateStr) {
 export default function Parliaments() {
   const [parliaments, setParliaments] = useState([]);
   const [participantsMap, setParticipantsMap] = useState({});
-  const [nextMeetingMap, setNextMeetingMap] = useState({}); // pid -> "YYYY-MM-DD" of next upcoming meeting
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -77,6 +76,7 @@ export default function Parliaments() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({
     area: "",
+    locations: [],
     status: "",
     dateFrom: "",
     dateTo: "",
@@ -90,28 +90,20 @@ export default function Parliaments() {
       try {
         const list = await getParliaments();
         setParliaments(list || []);
-        // Load participants + meetings for every parliament so counts/nextDate are live
-        const today = new Date().toISOString().slice(0, 10);
-        const pMap = {};
-        const nMap = {};
-        await Promise.all(
+        // Load participants for every parliament so counts are live
+        const entries = await Promise.all(
           (list || []).map(async (p) => {
             try {
-              const [parts, meets] = await Promise.all([
-                getParticipants(p.id).catch(() => []),
-                getMeetings(p.id).catch(() => []),
-              ]);
-              pMap[p.id] = parts;
-              const upcoming = meets
-                .filter((m) => m.date && m.date >= today)
-                .sort((a, b) => String(a.date).localeCompare(String(b.date))
-                  || String(a.startTime || "").localeCompare(String(b.startTime || "")));
-              nMap[p.id] = upcoming.length ? upcoming[0].date : "";
-            } catch { /* ignore */ }
+              const parts = await getParticipants(p.id);
+              return [p.id, parts];
+            } catch {
+              return [p.id, []];
+            }
           }),
         );
-        setParticipantsMap(pMap);
-        setNextMeetingMap(nMap);
+        const map = {};
+        entries.forEach(([id, arr]) => (map[id] = arr));
+        setParticipantsMap(map);
       } catch (err) {
         console.warn("Failed to load parliaments:", err);
         setLoadError("טעינת הנתונים מהשרת נכשלה.");
@@ -176,20 +168,20 @@ export default function Parliaments() {
     return parliaments.map((p) => ({
       ...p,
       members: (participantsMap[p.id] || []).length,
-      nextDate: nextMeetingMap[p.id] || "",
     }));
-  }, [parliaments, participantsMap, nextMeetingMap]);
+  }, [parliaments, participantsMap]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return decorated.filter((p) => {
       if (filters.area && p.area !== filters.area) return false;
+      if (filters.locations.length && !filters.locations.includes(p.location)) return false;
       if (filters.status && p.status !== filters.status) return false;
       if (filters.dateFrom && p.nextDate && p.nextDate < filters.dateFrom) return false;
       if (filters.dateTo && p.nextDate && p.nextDate > filters.dateTo) return false;
       if (q) {
         const hay = [
-          p.name, p.location, p.area, p.status, p.nextDate, p.notes,
+          p.name, p.location, p.area, p.status, p.nextDate, p.nextTime, p.notes,
           ...(p.coordinators || []),
         ].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -253,10 +245,13 @@ export default function Parliaments() {
   const totalParticipants = decorated.reduce((s, p) => s + (p.members || 0), 0);
   const existingNames = decorated.map((p) => p.name);
 
-  const filterLabelStyle = { fontSize: 12, color: "var(--color-text-muted, #6b7280)", marginBottom: 4, display: "block" };
+  const toggleLocation = (loc) => setFilters((prev) => ({
+    ...prev,
+    locations: prev.locations.includes(loc) ? prev.locations.filter((l) => l !== loc) : [...prev.locations, loc],
+  }));
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/parliaments.png"
+    <AdminPageLayout heroImage="/admin-heroes/parliaments_hero.png"
       title="פרלמנטים"
       subtitle="ניהול מפגשי פרלמנט, משתתפים ונוכחות"
       actions={
@@ -276,6 +271,7 @@ export default function Parliaments() {
       </div>
 
       <SectionCard title="רשימת פרלמנטים">
+        {/* Custom search + filter row (mirrors print modal filters) */}
         <div className="search-filter-panel">
           <div className="search-input-wrapper">
             <input
@@ -285,37 +281,40 @@ export default function Parliaments() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="filters-row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
-            <label>
-              <span style={filterLabelStyle}>אזור</span>
-              <select className="filter-pill" value={filters.area} onChange={(e) => setFilters({ ...filters, area: e.target.value })}>
-                <option value="">הכל</option>
-                {areaOptions.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </label>
-            <label>
-              <span style={filterLabelStyle}>סטטוס</span>
-              <select className="filter-pill" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
-                <option value="">הכל</option>
-                {STATUS_OPTIONS.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </label>
-            <label>
-              <span style={filterLabelStyle}>מתאריך</span>
-              <input type="date" className="filter-pill" value={filters.dateFrom}
-                onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} />
-            </label>
-            <label>
-              <span style={filterLabelStyle}>עד תאריך</span>
-              <input type="date" className="filter-pill" value={filters.dateTo}
-                onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
-            </label>
-            {(search || filters.area || filters.status || filters.dateFrom || filters.dateTo) && (
-              <button className="filter-pill" onClick={() => { setSearch(""); setFilters({ area: "", status: "", dateFrom: "", dateTo: "" }); }}>נקה</button>
+          <div className="filters-row" style={{ flexWrap: "wrap" }}>
+            <select className="filter-pill" value={filters.area} onChange={(e) => setFilters({ ...filters, area: e.target.value })}>
+              <option value="">אזור</option>
+              {areaOptions.map((o) => <option key={o}>{o}</option>)}
+            </select>
+            <select className="filter-pill" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
+              <option value="">סטטוס</option>
+              {STATUS_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+            </select>
+            <select
+              className="filter-pill"
+              value=""
+              onChange={(e) => { if (e.target.value) toggleLocation(e.target.value); }}
+            >
+              <option value="">מיקום (בחר/הסר)</option>
+              {LOCATION_OPTIONS.map((o) => (
+                <option key={o} value={o}>{filters.locations.includes(o) ? "✓ " : ""}{o}</option>
+              ))}
+            </select>
+            <input type="date" className="filter-pill" value={filters.dateFrom}
+              onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} />
+            <input type="date" className="filter-pill" value={filters.dateTo}
+              onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
+            {(search || filters.area || filters.status || filters.locations.length || filters.dateFrom || filters.dateTo) && (
+              <button className="filter-pill" onClick={() => { setSearch(""); setFilters({ area: "", locations: [], status: "", dateFrom: "", dateTo: "" }); }}>נקה</button>
             )}
           </div>
           {filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo && (
             <div className="form-warning">תאריך "מתאריך" חייב להיות מוקדם או שווה ל"עד תאריך".</div>
+          )}
+          {filters.locations.length > 0 && (
+            <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 6 }}>
+              מיקומים נבחרים: {filters.locations.join(", ")}
+            </div>
           )}
         </div>
 
@@ -330,17 +329,16 @@ export default function Parliaments() {
                 </button>
               ),
             },
-            { key: "nextDate", label: sortableHeader("nextDate", "מפגש הבא"), render: (r) => r.nextDate || "—" },
-            { key: "area", label: sortableHeader("area", "אזור") },
             { key: "location", label: sortableHeader("location", "מיקום") },
+            { key: "area", label: sortableHeader("area", "אזור") },
             { key: "coordinator", label: sortableHeader("coordinator", "מלווה"), render: (r) => (r.coordinators || []).join(", ") },
             { key: "members", label: sortableHeader("members", "משתתפים") },
+            { key: "nextDate", label: sortableHeader("nextDate", "מפגש הבא"), render: (r) => r.nextDate || "—" },
             { key: "status", label: sortableHeader("status", "סטטוס"), render: (r) => <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span> },
           ]}
           data={sorted}
         />
       </SectionCard>
-
 
       {showAdd && (
         <ParliamentFormModal
@@ -447,11 +445,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
   );
 
   const sortedMeetings = useMemo(
-    () => [...meetings].sort((a, b) => {
-      const d = String(a.date || "").localeCompare(String(b.date || ""));
-      if (d !== 0) return d;
-      return String(a.startTime || "").localeCompare(String(b.startTime || ""));
-    }),
+    () => [...meetings].sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))),
     [meetings],
   );
 
@@ -459,11 +453,6 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
     const today = new Date().toISOString().slice(0, 10);
     return sortedMeetings.filter((m) => m.date && m.date <= today).length;
   }, [sortedMeetings]);
-
-  const expensesTotalAll = useMemo(
-    () => sortedMeetings.reduce((s, m) => s + (meetingExpenseTotal[m.id] || 0), 0),
-    [sortedMeetings, meetingExpenseTotal],
-  );
 
   const existingNames = allParliaments.filter((p) => p.id !== parl.id).map((p) => p.name);
 
@@ -538,14 +527,10 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
     );
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const upcomingMeeting = sortedMeetings.find((m) => m.date && m.date >= todayStr);
-  const nextDateLabel = upcomingMeeting ? upcomingMeeting.date : "—";
-
   return (
-    <AdminPageLayout heroImage="/admin-heroes/parliaments.png"
+    <AdminPageLayout heroImage="/admin-heroes/parliaments_hero.png"
       title={parl.name}
-      subtitle={`${parl.location} • מפגש הבא: ${nextDateLabel}`}
+      subtitle={`${parl.location} • מפגש הבא: ${parl.nextDate || "—"}`}
       actions={<button className="btn btn-primary" onClick={() => setShowEdit(true)}>עריכת פרטים</button>}
     >
       <button className="back-link" onClick={onBack}>→ חזרה לפרלמנטים</button>
@@ -553,7 +538,6 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
       <div className="stats-grid">
         <StatsCard icon="👥" title="משתתפים" value={String(sortedParticipants.length)} />
         <StatsCard icon="📅" title="פגישות שהתקיימו" value={`${meetingsHeld} מתוך ${sortedMeetings.length}`} />
-        <StatsCard icon="💰" title="סכום הוצאות" value={`${expensesTotalAll.toLocaleString()} ₪`} />
       </div>
 
       <div className="tabs">
@@ -596,7 +580,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
             columns={[
               { key: "num", label: "מס׳ הפגישה", render: (r) => (
                 <button className="cell-link" onClick={() => setOpenMeeting(r)}>
-                  פגישה {sortedMeetings.findIndex((m) => m.id === r.id) + 1}
+                  {sortedMeetings.findIndex((m) => m.id === r.id) + 1}
                 </button>
               )},
               { key: "date", label: "תאריך הפגישה", render: (r) => r.date || "—" },
@@ -706,8 +690,6 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
   const confirmed = participants.filter((p) => attFor(p.id).confirmed === "כן").length;
   const notComing = participants.filter((p) => attFor(p.id).confirmed === "לא").length;
   const waiting = participants.length - confirmed - notComing;
-  const arrivedCount = participants.filter((p) => attFor(p.id).arrived === "כן").length;
-  const expensesTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const sortedExpenses = useMemo(
     () => [...expenses].sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))),
@@ -736,7 +718,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
   };
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/parliaments.png"
+    <AdminPageLayout heroImage="/admin-heroes/parliaments_hero.png"
       title={`${parl.name} — פגישה מס׳ ${meetingNumber}`}
       subtitle={`${meeting.date || ""} ${meeting.startTime ? "• " + meeting.startTime : ""} ${meeting.location ? "• " + meeting.location : ""}`}
     >
@@ -746,8 +728,6 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
         <StatsCard icon="✅" title="אישרו הגעה" value={String(confirmed)} />
         <StatsCard icon="❌" title="לא יגיעו" value={String(notComing)} />
         <StatsCard icon="⏳" title="ממתינים לאישור" value={String(waiting)} />
-        <StatsCard icon="🚶" title="הגיעו לפגישה" value={String(arrivedCount)} />
-        <StatsCard icon="💰" title="הוצאות הפגישה" value={`${expensesTotal.toLocaleString()} ₪`} />
       </div>
 
       <div className="tabs">
@@ -872,6 +852,8 @@ const REQUIRED_LABELS = {
   location: "מיקום",
   area: "אזור",
   status: "סטטוס",
+  nextDate: "תאריך מפגש הבא",
+  nextTime: "שעת מפגש",
   coordinators: "מלווה",
 };
 
@@ -882,6 +864,8 @@ function ParliamentFormModal({ title, initial, existingNames = [], onClose, onSa
       location: "",
       area: "",
       coordinators: [""],
+      nextDate: "",
+      nextTime: "",
       status: "פעיל",
       notes: "",
     },
@@ -905,6 +889,8 @@ function ParliamentFormModal({ title, initial, existingNames = [], onClose, onSa
     if (!trimmed(f.location)) missing.push(REQUIRED_LABELS.location);
     if (!trimmed(f.area)) missing.push(REQUIRED_LABELS.area);
     if (!trimmed(f.status)) missing.push(REQUIRED_LABELS.status);
+    if (!trimmed(f.nextDate)) missing.push(REQUIRED_LABELS.nextDate);
+    if (!trimmed(f.nextTime)) missing.push(REQUIRED_LABELS.nextTime);
     const coords = (f.coordinators || []).map((c) => (c || "").trim()).filter(Boolean);
     if (coords.length === 0) missing.push(REQUIRED_LABELS.coordinators);
 
@@ -965,28 +951,29 @@ function ParliamentFormModal({ title, initial, existingNames = [], onClose, onSa
               {STATUS_OPTIONS.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
+          <div className="field">
+            <label>תאריך מפגש הבא *</label>
+            <input type="date" className="input" value={f.nextDate} onChange={(e) => setF({ ...f, nextDate: e.target.value })} />
+          </div>
+          <div className="field">
+            <label>שעת מפגש *</label>
+            <input type="time" className="input" value={f.nextTime} onChange={(e) => setF({ ...f, nextTime: e.target.value })} />
+          </div>
         </div>
 
         <div className="field">
           <label>מלווה *</label>
-          {(f.coordinators || []).map((c, i) => {
-            const otherSelected = (f.coordinators || [])
-              .filter((_, idx) => idx !== i)
-              .map((x) => (x || "").trim())
-              .filter(Boolean);
-            const availableOptions = volunteerOptions.filter((v) => !otherSelected.includes(v));
-            return (
-              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                <select className="select" value={c || ""} onChange={(e) => setCoord(i, e.target.value)}>
-                  <option value="">בחר מלווה</option>
-                  {availableOptions.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-                {(f.coordinators || []).length > 1 && (
-                  <button type="button" className="btn" onClick={() => removeCoord(i)}>הסר</button>
-                )}
-              </div>
-            );
-          })}
+          {(f.coordinators || []).map((c, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+              <select className="select" value={c || ""} onChange={(e) => setCoord(i, e.target.value)}>
+                <option value="">בחר מלווה</option>
+                {volunteerOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              {(f.coordinators || []).length > 1 && (
+                <button type="button" className="btn" onClick={() => removeCoord(i)}>הסר</button>
+              )}
+            </div>
+          ))}
           <button type="button" className="btn" onClick={addCoord}>+ עוד מלווים</button>
         </div>
 

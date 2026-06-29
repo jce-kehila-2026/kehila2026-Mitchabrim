@@ -24,7 +24,6 @@ export default function Financial() {
   // Basic Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
-  const [filterYear, setFilterYear] = useState("all"); // حالة جديدة لفلتر السنة
 
   // Advanced Filters
   const [filterFundingSource, setFilterFundingSource] = useState("all");
@@ -39,7 +38,6 @@ export default function Financial() {
   const [isEditReceiptModalOpen, setIsEditReceiptModalOpen] = useState(false);
 
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [showProjectSuggestions, setShowProjectSuggestions] = useState(false); // حالة جديدة لاقتراحات المشاريع
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -85,23 +83,12 @@ export default function Financial() {
   // ==========================================
   // CALCULATIONS & FILTERING
   // ==========================================
-  // استخراج السنوات المتاحة من البيانات
-  const availableYears = useMemo(() => {
-    const years = transactions.filter(t => t.date).map(t => t.date.substring(0, 4));
-    return ["all", ...new Set(years)].sort((a, b) => b.localeCompare(a));
-  }, [transactions]);
-
-  // تحديث الحسابات لتأخذ فلتر السنة بعين الاعتبار
   const globalTotals = useMemo(() => {
     let income = 0;
     let expenses = 0;
     let donations = 0;
     transactions.forEach((item) => {
       if (item.type === "קבלה_בלבד") return;
-
-      // تطبيق فلتر السنة على الإحصائيات العلوية
-      if (filterYear !== "all" && item.date && !item.date.startsWith(filterYear)) return;
-
       const amountVal = parseFloat(item.amount) || 0;
       if (item.type === "הוצאה") expenses += amountVal;
       else if (item.type === "תרומה") {
@@ -110,26 +97,16 @@ export default function Financial() {
       } else if (item.type === "הכנסה") income += amountVal;
     });
     return { income, expenses, donations, balance: income - expenses };
-  }, [transactions, filterYear]);
+  }, [transactions]);
 
   const uniqueSources = useMemo(() => {
     const sourcesList = transactions.filter((t) => t.type !== "קבלה_בלבד" && t.source).map((t) => t.source.trim());
     return [...new Set(sourcesList)];
   }, [transactions]);
 
-  // استخراج المشاريع الفريدة للقائمة المنسدلة
-  const uniqueProjects = useMemo(() => {
-    const projs = transactions.filter(t => t.type !== "קבלה_בלבד" && t.project).map(t => t.project.trim());
-    return [...new Set(projs)].filter(p => p !== "");
-  }, [transactions]);
-
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
       if (t.type === "קבלה_בלבד") return false;
-
-      // تطبيق فلتر السنة على الجدول
-      const matchesYear = filterYear === "all" || (t.date && t.date.startsWith(filterYear));
-
       const matchesType = filterType === "all" || t.type === filterType;
       const matchesFundingSource = filterFundingSource === "all" || t.fundingSource === filterFundingSource;
       const matchesProject =
@@ -149,9 +126,9 @@ export default function Financial() {
         (t.notes && t.notes.toLowerCase().includes(searchLower)) ||
         (t.receiptName && t.receiptName.toLowerCase().includes(searchLower));
 
-      return matchesYear && matchesType && matchesFundingSource && matchesProject && matchesMin && matchesMax && matchesSearch;
+      return matchesType && matchesFundingSource && matchesProject && matchesMin && matchesMax && matchesSearch;
     });
-  }, [transactions, filterType, filterFundingSource, filterProject, filterMinAmount, filterMaxAmount, searchTerm, filterYear]);
+  }, [transactions, filterType, filterFundingSource, filterProject, filterMinAmount, filterMaxAmount, searchTerm]);
 
   const uploadedReceipts = useMemo(() => {
     let allReceipts = [];
@@ -391,8 +368,7 @@ export default function Financial() {
     const blob = new Blob([BOM + header + rows], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    // تم إضافة فلتر السنة لاسم الملف
-    link.download = `דוח_כספי_${filterYear === "all" ? "כל_השנים" : filterYear}_${new Date().toISOString().split("T")[0]}.csv`;
+    link.download = `דוח_כספי_${new Date().toISOString().split("T")[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -414,22 +390,6 @@ export default function Financial() {
       subtitle="מעקב אחר הכנסות, הוצאות ודוחות כספיים"
       actions={
         <div style={{ display: "flex", gap: "14px", direction: "rtl", alignItems: "center" }}>
-          
-          {/* --- القائمة المنسدلة لاختيار السنة --- */}
-          <select 
-            value={filterYear} 
-            onChange={(e) => setFilterYear(e.target.value)}
-            style={{
-              padding: "8px 16px", borderRadius: "30px", border: "1px solid #cbd5e1", 
-              backgroundColor: "#fff", color: "#475569", fontWeight: "600", fontSize: "14px",
-              outline: "none", cursor: "pointer", marginLeft: "10px"
-            }}
-          >
-            {availableYears.map(year => (
-              <option key={year} value={year}>{year === "all" ? "כל השנים" : `שנת ${year}`}</option>
-            ))}
-          </select>
-
           <button onClick={() => setIsAddModalOpen(true)} className="action-btn-primary">
             <svg
               width="18"
@@ -1430,9 +1390,7 @@ export default function Financial() {
                 )}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
-                  
-                  {/* --- حقل المشروع تم تحويله إلى قائمة منسدلة ذكية (Autocomplete) --- */}
-                  <div className="autocomplete-wrapper">
+                  <div>
                     <label
                       style={{
                         display: "block",
@@ -1447,13 +1405,7 @@ export default function Financial() {
                     <input
                       type="text"
                       value={formData.project}
-                      onChange={(e) => {
-                        setFormData({ ...formData, project: e.target.value });
-                        setShowProjectSuggestions(true);
-                      }}
-                      onFocus={() => setShowProjectSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowProjectSuggestions(false), 200)}
-                      placeholder="הזן פרויקט קיים או חדש..."
+                      onChange={(e) => setFormData({ ...formData, project: e.target.value })}
                       style={{
                         width: "100%",
                         padding: "12px",
@@ -1464,32 +1416,7 @@ export default function Financial() {
                         fontSize: "14px",
                       }}
                     />
-
-                    {showProjectSuggestions &&
-                      uniqueProjects.filter(
-                        (p) => p.toLowerCase().includes(formData.project.toLowerCase()) && p !== formData.project,
-                      ).length > 0 && (
-                        <ul className="autocomplete-dropdown custom-scroll">
-                          {uniqueProjects
-                            .filter(
-                              (p) => p.toLowerCase().includes(formData.project.toLowerCase()) && p !== formData.project,
-                            )
-                            .map((proj, idx) => (
-                              <li
-                                key={idx}
-                                className="autocomplete-item"
-                                onClick={() => {
-                                  setFormData({ ...formData, project: proj });
-                                  setShowProjectSuggestions(false);
-                                }}
-                              >
-                                {proj}
-                              </li>
-                            ))}
-                        </ul>
-                      )}
                   </div>
-
                   <div>
                     <label
                       style={{

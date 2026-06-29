@@ -39,18 +39,9 @@ export default function ForgotPassword() {
 
   return (
     <div className="login-page">
-      {/* 🔹 زر العودة - ثابت في أعلى يسار الصفحة */}
-      <div className="back-to-home-wrapper">
-        <Link to="/" className="back-to-home-btn" title="חזרה לעמוד הראשי">
-          <span className="back-arrow">←</span>
-          <span className="btn-text">חזרה לעמוד הראשי</span>
-        </Link>
-      </div>
-
       <div className="login-container">
         <div className="login-box">
           <img src="/logo.png" className="logo" alt="מתחברים" />
-          
           <div className="header-text">
             <h1>שכחתי את הסיסמה</h1>
             <p>נישלח לך קישור לאימייל לאיפוס הסיסמה</p>

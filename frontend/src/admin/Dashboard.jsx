@@ -302,7 +302,7 @@ export default function Dashboard() {
   };
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/dashboard.png"
+    <AdminPageLayout heroImage="/admin-heroes/dashboard_hero.png"
       title={getGreeting()} 
       subtitle="ניהול ענייני המערכת והקהילה מכאן"
       actions={

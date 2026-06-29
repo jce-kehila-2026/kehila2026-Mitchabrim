@@ -2041,7 +2041,7 @@ export default function Reports() {
   const [active, setActive] = useState(null);
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/reports.png" title="דוחות" subtitle="נתונים וסטטיסטיקות מהמערכת">
+    <AdminPageLayout heroImage="/admin-heroes/reports_hero.png" title="דוחות" subtitle="נתונים וסטטיסטיקות מהמערכת">
       {active ? (
         active === "financial" ? (
           <FinancialChooser onBack={() => setActive(null)} />
