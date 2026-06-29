@@ -12,12 +12,7 @@
 
 import { db } from "../firebase";
 import { initializeApp, deleteApp, getApps, getApp } from "firebase/app";
-import {
-  getAuth,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-  signOut,
-} from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "firebase/auth";
 import {
   collection,
   doc,
@@ -36,8 +31,7 @@ const COLLECTION = "users";
 const normalizeEmail = (email) => (email || "").trim().toLowerCase();
 const emailToId = (email) => normalizeEmail(email).replace(/[^a-z0-9]/g, "_");
 
-const isUserActive = (u) =>
-  u?.status != null ? u.status === "active" : u?.active === true;
+const isUserActive = (u) => (u?.status != null ? u.status === "active" : u?.active === true);
 
 const resolveEmail = (u) => {
   const e = normalizeEmail(u?.email);
@@ -50,9 +44,7 @@ const normalizeUser = (id, data) => ({
   id,
   ...data,
   email: resolveEmail(data),
-  displayName:
-    data.displayName ||
-    (data.fullName && !String(data.fullName).includes("@") ? data.fullName : ""),
+  displayName: data.displayName || (data.fullName && !String(data.fullName).includes("@") ? data.fullName : ""),
   active: isUserActive(data),
 });
 
@@ -67,12 +59,15 @@ const getSecondaryAuth = () => {
   return { app, auth: getAuth(app) };
 };
 const teardownSecondary = async ({ app, auth }) => {
-  try { await signOut(auth); } catch {}
-  try { await deleteApp(app); } catch {}
+  try {
+    await signOut(auth);
+  } catch {}
+  try {
+    await deleteApp(app);
+  } catch {}
 };
 
-const randomPassword = () =>
-  `Tmp!${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}A1`;
+const randomPassword = () => `Tmp!${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}A1`;
 
 /**
  * Main login lookup. Order:
@@ -96,9 +91,7 @@ export const resolveUserAccess = async ({ uid, email }) => {
     }
 
     if (normalized) {
-      const byEmail = await getDocs(
-        query(collection(db, COLLECTION), where("email", "==", normalized))
-      );
+      const byEmail = await getDocs(query(collection(db, COLLECTION), where("email", "==", normalized)));
       if (!byEmail.empty) {
         const d = byEmail.docs[0];
         const user = normalizeUser(d.id, d.data());
@@ -114,9 +107,7 @@ export const resolveUserAccess = async ({ uid, email }) => {
         return { success: true, user };
       }
 
-      const byFullName = await getDocs(
-        query(collection(db, COLLECTION), where("fullName", "==", normalized))
-      );
+      const byFullName = await getDocs(query(collection(db, COLLECTION), where("fullName", "==", normalized)));
       if (!byFullName.empty) {
         const d = byFullName.docs[0];
         const user = normalizeUser(d.id, d.data());
@@ -148,8 +139,7 @@ export const resolveUserAccess = async ({ uid, email }) => {
   }
 };
 
-export const getAllowedUserByEmail = async (email) =>
-  resolveUserAccess({ uid: null, email });
+export const getAllowedUserByEmail = async (email) => resolveUserAccess({ uid: null, email });
 
 export const listAllowedUsers = async () => {
   try {
@@ -184,16 +174,36 @@ export const inviteUser = async ({ email, displayName, role, active = true, link
     return { success: false, error: "יש לבחור פרופיל מתנדב לקישור" };
   }
 
+  // Duplicate-email guard: block if any users doc already has this email.
+  try {
+    const dupEmail = await getDocs(query(collection(db, COLLECTION), where("email", "==", normalized)));
+    if (!dupEmail.empty) {
+      return { success: false, error: "אימייל זה כבר קיים במערכת" };
+    }
+  } catch (e) {
+    console.warn("duplicate email check failed:", e.message);
+  }
+
+  // Duplicate-volunteer-link guard: block if another user is already linked.
+  if (role === "volunteer" && linkedVolunteerId) {
+    try {
+      const dupLink = await getDocs(
+        query(collection(db, COLLECTION), where("linkedVolunteerId", "==", linkedVolunteerId)),
+      );
+      if (!dupLink.empty) {
+        return { success: false, error: "מתנדב זה כבר מקושר למשתמש אחר" };
+      }
+    } catch (e) {
+      console.warn("duplicate volunteer link check failed:", e.message);
+    }
+  }
+
   const secondary = getSecondaryAuth();
   try {
     let uid;
     let createdNewAuth = false;
     try {
-      const cred = await createUserWithEmailAndPassword(
-        secondary.auth,
-        normalized,
-        randomPassword()
-      );
+      const cred = await createUserWithEmailAndPassword(secondary.auth, normalized, randomPassword());
       uid = cred.user.uid;
       createdNewAuth = true;
     } catch (err) {
