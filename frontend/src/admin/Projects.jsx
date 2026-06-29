@@ -696,6 +696,7 @@ function ProjectDetail({
   const [projectVolunteers, setProjectVolunteers] = useState({});
   const [showAddGroup, setShowAddGroup] = useState(false);
   const [showAddVolunteer, setShowAddVolunteer] = useState(false);
+  const [showAddVolunteerToGroup, setShowAddVolunteerToGroup] = useState(false);
   const [showAddElderlyToGroup, setShowAddElderlyToGroup] = useState(false);
   const [showPrintGroup, setShowPrintGroup] = useState(false);
 
@@ -1187,7 +1188,14 @@ function ProjectDetail({
               <StatsCard icon="🎁" title="כמות חבילות" value={rows.filter((r) => r.receives === "כן").length} />
               <StatsCard icon="📦" title="נמסרו" value={rows.filter((r) => r.delivery === "נמסר").length} />
             </div>
-            <SectionCard title={`מתנדבים בקבוצה — ${group.name}`}>
+            <SectionCard
+              title={`מתנדבים בקבוצה — ${group.name}`}
+              actions={
+                <button className="btn btn-primary" onClick={() => setShowAddVolunteerToGroup(true)}>
+                  + הוספת מתנדבים לקבוצה
+                </button>
+              }
+            >
               <DataTable
                 columns={[
                   { key: "name",   label: "שם מלא" },
@@ -1268,6 +1276,24 @@ function ProjectDetail({
                 data={rows}
               />
             </SectionCard>
+            {showAddVolunteerToGroup && (
+              <SelectVolunteersForGroupModal
+                group={group}
+                allVolunteers={allVolunteers}
+                allGroups={allGroups}
+                excludeIds={projectVolunteers[group.id] || []}
+                onClose={() => setShowAddVolunteerToGroup(false)}
+                onAdd={async (ids) => {
+                  try {
+                    await addVolunteersToGroup(group.id, ids);
+                    setShowAddVolunteerToGroup(false);
+                  } catch (err) {
+                    console.error("Failed to add volunteers to group", err);
+                    alert("הוספת המתנדבים לקבוצה נכשלה");
+                  }
+                }}
+              />
+            )}
             {showAddElderlyToGroup && (
               <SelectElderlyForGroupModal
                 group={group}
@@ -2336,6 +2362,130 @@ function SelectElderlyForGroupModal({
                           ) : (
                             <span className="badge badge-green">אינו בפרויקט — יתווסף</span>
                           )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-actions">
+          <button
+            className="btn btn-primary"
+            disabled={selected.length === 0}
+            onClick={() => onAdd(selected)}
+          >
+            הוספה לקבוצה
+          </button>
+          <button className="btn" onClick={onClose}>ביטול</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+/* ============================================================
+   Select existing volunteers to add to a project group.
+   - Shows all volunteers in the system, excluding ones already
+     linked to this project group (via projectVolunteers).
+   - Mirrors the elderly-selection modal in UX & style.
+============================================================ */
+
+function SelectVolunteersForGroupModal({
+  group,
+  allVolunteers = [],
+  allGroups = [],
+  excludeIds = [],
+  onClose,
+  onAdd,
+}) {
+  const excludeSet = new Set(excludeIds);
+  const groupNameById = useMemo(() => {
+    const m = {};
+    allGroups.forEach((g) => { m[g.id] = g.name; });
+    return m;
+  }, [allGroups]);
+
+  const [selected, setSelected] = useState([]);
+  const [search, setSearch] = useState("");
+  const toggle = (id) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const available = allVolunteers.filter((v) => !excludeSet.has(v.id));
+
+  const filtered = available.filter((v) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    const grpName = v.group || groupNameById[v.groupId] || "";
+    return (
+      (volName(v) || "").toLowerCase().includes(s) ||
+      (volPhone(v) || "").toLowerCase().includes(s) ||
+      (v.neighborhood || "").toLowerCase().includes(s) ||
+      (v.address || "").toLowerCase().includes(s) ||
+      (grpName || "").toLowerCase().includes(s) ||
+      (volStatus(v) || "").toLowerCase().includes(s)
+    );
+  });
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>הוספת מתנדבים לקבוצה: {group.name}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="form-section">
+          <div className="field">
+            <input
+              className="input"
+              placeholder="חיפוש לפי שם, טלפון, שכונה, כתובת, קבוצה או סטטוס..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#666", padding: "16px" }}>
+              אין מתנדבים זמינים להוספה לקבוצה זו
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>שם מלא</th>
+                    <th>טלפון</th>
+                    <th>שכונה</th>
+                    <th>כתובת</th>
+                    <th>קבוצה</th>
+                    <th>סטטוס</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((v) => {
+                    const grpName = v.group || groupNameById[v.groupId] || "—";
+                    const status = volStatus(v);
+                    return (
+                      <tr key={v.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(v.id)}
+                            onChange={() => toggle(v.id)}
+                          />
+                        </td>
+                        <td>{volName(v) || "—"}</td>
+                        <td>{volPhone(v) || "—"}</td>
+                        <td>{v.neighborhood || "—"}</td>
+                        <td>{v.address || "—"}</td>
+                        <td>{grpName}</td>
+                        <td>
+                          <span className={`badge ${status === "פעיל" ? "badge-green" : "badge-gray"}`}>
+                            {status || "—"}
+                          </span>
                         </td>
                       </tr>
                     );

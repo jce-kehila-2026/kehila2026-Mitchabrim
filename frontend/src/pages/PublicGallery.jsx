@@ -9,7 +9,12 @@ import "../styles/public.css";
 
 export default function PublicGallery() {
   const [searchParams, setSearchParams] = useSearchParams();
+
   const initialCategory = searchParams.get("category") || "הכל";
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +80,7 @@ export default function PublicGallery() {
           <p style={{ color: "#666", fontSize: "1.1rem" }}>
             כל התמונות שהועלו לאתר על ידי הקהילה
           </p>
-          <Link to="/" className="btn btn-outline" style={{ marginTop: "12px" }}>
+          <Link to="/#gallery" className="btn btn-outline" style={{ marginTop: "12px" }}>
             ← חזרה לעמוד הבית
           </Link>
         </div>
