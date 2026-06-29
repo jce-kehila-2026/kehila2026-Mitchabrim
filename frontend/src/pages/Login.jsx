@@ -1,4 +1,3 @@
-// src/pages/Login.jsx
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login, getCurrentUser } from "../services/authService";
@@ -68,18 +67,9 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      {/* 🔹 زر العودة إلى الصفحة الرئيسية - خارج الصندوق الأبيض */}
-      <div className="back-to-home-wrapper">
-        <Link to="/" className="back-to-home-btn" title="חזרה לעמוד הראשי">
-          <span className="back-arrow">←</span>
-          <span className="btn-text">חזרה לעמוד הראשי</span>
-        </Link>
-      </div>
-
       <div className="login-container">
         <div className="login-box">
           <img src="/logo.png" className="logo" alt="מתחברים" />
-          
           <div className="header-text">
           </div>
           <hr />

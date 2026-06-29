@@ -8,7 +8,6 @@ body {
 }
 
 .login-page {
-    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -294,46 +293,5 @@ hr {
     }
     .header-text h1 {
         font-size: 24px;
-    }
-}
-
-/* زر العودة إلى الصفحة الرئيسية */
-.back-to-home-wrapper {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    z-index: 100;
-}
-
-.back-to-home-btn {
-    background-color: #8B0000;
-    color: #ffffff;
-    border: 2px solid #8B0000;
-    border-radius: 0;
-    padding: 10px 20px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    font-weight: bold;
-    font-size: 15px;
-    transition: background-color 0.3s ease, color 0.3s ease;
-}
-
-.back-to-home-btn:hover {
-    background-color: #ffffff;
-    color: #8B0000;
-}
-
-@media (max-width: 560px) {
-    .back-to-home-wrapper {
-        position: static;
-        margin-top: 20px;
-        margin-bottom: 10px;
-        align-self: flex-start;
-        padding-left: 20px;
-        width: 100%;
-        display: flex;
-        justify-content: flex-start;
     }
 }
