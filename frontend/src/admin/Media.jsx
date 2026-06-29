@@ -360,16 +360,7 @@ export default function Media() {
             העלאת תמונה
           </button>
           
-          <button 
-            className="action-btn-primary" 
-            onClick={handleSeedMockImages}
-            style={{ 
-              backgroundColor: "#2e7d32", 
-              boxShadow: "0 4px 12px rgba(46,125,50,0.2)" 
-            }}
-          >
-            🌱 הוסף תמונות לדוגמה
-          </button>
+          
         </div>
       }
     >
