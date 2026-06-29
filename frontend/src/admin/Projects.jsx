@@ -315,7 +315,7 @@ export default function Projects() {
 
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/projects.png"
+    <AdminPageLayout heroImage="/admin-heroes/projects_hero.png"
       title="פרויקטים"
       subtitle="ניהול פרויקטי חלוקה, אירועים ופעילויות מיוחדות — מעקב חבילות ומסירה לפי שכונות."
       actions={
@@ -561,7 +561,7 @@ function GroupsListView({ onBack, allGroups = [], volunteersByGroupId = {} }) {
       }))
     : [];
   return (
-    <AdminPageLayout heroImage="/admin-heroes/projects.png" title="רשימות לפי קבוצות" subtitle="קבוצות מתנדבים במערכת">
+    <AdminPageLayout heroImage="/admin-heroes/projects_hero.png" title="רשימות לפי קבוצות" subtitle="קבוצות מתנדבים במערכת">
       <button className="back-link" onClick={onBack}>→ חזרה לפרויקטים</button>
       {!group ? (
         <SectionCard title="קבוצות מתנדבים">
@@ -953,7 +953,7 @@ function ProjectDetail({
 
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/projects.png"
+    <AdminPageLayout heroImage="/admin-heroes/projects_hero.png"
       title={project.name}
       subtitle={`${project.type} • ${project.year} • תאריך חלוקה: ${project.date}`}
       actions={

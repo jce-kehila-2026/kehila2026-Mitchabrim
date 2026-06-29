@@ -42,7 +42,7 @@ export default function VolunteerReports() {
   const [tab, setTab] = useState("reports");
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/volunteer-reports.png"
+    <AdminPageLayout heroImage="/admin-heroes/volunteer_reports_tasks_hero.png"
       title="דוחות ומשימות המתנדבים"
       subtitle="ניהול הדוחות שהוגשו ומשימות שהוקצו למתנדבים"
     >

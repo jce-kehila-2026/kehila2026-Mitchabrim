@@ -201,7 +201,7 @@ export default function Organizations() {
   /* ========== Render ========== */
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/organizations.png"
+    <AdminPageLayout heroImage="/admin-heroes/organizations_hero.png"
       title="ניהול ארגונים ואנשי קשר"
       subtitle="ניהול גופים, שותפים ואנשי קשר של ארגונים העובדים עם המיזם."
       actions={

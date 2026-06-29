@@ -377,7 +377,7 @@ export default function Volunteers() {
   ========================= */
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/volunteers.png"
+    <AdminPageLayout heroImage="/admin-heroes/volunteers_hero.png"
       title="ניהול מתנדבים"
       subtitle="ניהול מתנדבים, קבוצות התנדבות, שיוך לאזרחים ותיקים, סטטוס פעילות וביטוח."
       actions={
