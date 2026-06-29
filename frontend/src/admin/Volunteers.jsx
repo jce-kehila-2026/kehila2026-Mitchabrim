@@ -72,9 +72,9 @@ const BASE_FILTERS = [
   {
     key: "status",
     label: "סטטוס",
-    options: VOLUNTEER_STATUS_OPTIONS,
+    options: ["", ...VOLUNTEER_STATUS_OPTIONS],
   },
-  { key: "insurance", label: "ביטוח", options: ["כן", "לא"] },
+  { key: "insurance", label: "ביטוח", options: ["", "כן", "לא"] },
 ];
 
 const REPORTS_SEED = {};
@@ -118,6 +118,9 @@ export default function Volunteers() {
   // Filter state (area + neighborhood are wired to actual filtering).
   const [filterArea, setFilterArea] = useState("");
   const [filterNeighborhood, setFilterNeighborhood] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterInsurance, setFilterInsurance] = useState("");
+  const [search, setSearch] = useState("");
 
   // Reset neighborhood when area changes if it's no longer valid for that area.
   useEffect(() => {
@@ -182,12 +185,21 @@ export default function Volunteers() {
   }, [volunteers]);
 
   const visibleVolunteers = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return sorted.filter((v) => {
       if (filterArea && v.area !== filterArea) return false;
       if (filterNeighborhood && v.neighborhood !== filterNeighborhood) return false;
+      if (filterStatus && v.status !== filterStatus) return false;
+      if (filterInsurance && (v.insurance || "לא") !== filterInsurance) return false;
+      if (q) {
+        const assigned = (elderlyByVolunteer.get(v.id) || []).map((e) => e.name).join(" ");
+        const hay = [v.name, v.phone, v.group, v.neighborhood, v.area, assigned]
+          .filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
     });
-  }, [sorted, filterArea, filterNeighborhood]);
+  }, [sorted, filterArea, filterNeighborhood, filterStatus, filterInsurance, search, elderlyByVolunteer]);
 
   const openVolunteer = sorted.find((v) => v.id === openVolunteerId) || null;
 
@@ -441,6 +453,8 @@ export default function Volunteers() {
           {areasEmpty && <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>}
           <SearchFilters
             searchPlaceholder="חיפוש לפי שם, טלפון, קבוצה, שכונה או אזרח ותיק משויך..."
+            searchValue={search}
+            onSearchChange={(e) => setSearch(e.target.value)}
             filters={[
               {
                 key: "area",
@@ -456,9 +470,19 @@ export default function Volunteers() {
                 onChange: (e) => setFilterNeighborhood(e.target.value),
                 options: ["", ...getNeighborhoods(filterArea)],
               },
-              ...BASE_FILTERS,
+              {
+                ...BASE_FILTERS[0],
+                value: filterStatus,
+                onChange: (e) => setFilterStatus(e.target.value),
+              },
+              {
+                ...BASE_FILTERS[1],
+                value: filterInsurance,
+                onChange: (e) => setFilterInsurance(e.target.value),
+              },
             ]}
           />
+
 
           {loading ? (
             <p style={{ padding: 20 }}>טוען מתנדבים...</p>

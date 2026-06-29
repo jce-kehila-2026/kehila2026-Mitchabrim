@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import AdminLayout from "@/components/admin/AdminLayout.jsx";
+import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
+import parliamentsHero from "@/assets/parliaments-hero.png";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
@@ -256,7 +257,7 @@ export default function Parliaments() {
   const filterLabelStyle = { fontSize: 12, color: "var(--color-text-muted, #6b7280)", marginBottom: 4, display: "block" };
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage={parliamentsHero}
       title="פרלמנטים"
       subtitle="ניהול מפגשי פרלמנט, משתתפים ונוכחות"
       actions={
@@ -359,7 +360,7 @@ export default function Parliaments() {
           areaOptions={areaOptions}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 
@@ -543,7 +544,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
   const nextDateLabel = upcomingMeeting ? upcomingMeeting.date : "—";
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage={parliamentsHero}
       title={parl.name}
       subtitle={`${parl.location} • מפגש הבא: ${nextDateLabel}`}
       actions={<button className="btn btn-primary" onClick={() => setShowEdit(true)}>עריכת פרטים</button>}
@@ -662,7 +663,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
           onDelete={() => handleDeleteMeeting(editMeeting)}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 
@@ -736,7 +737,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
   };
 
   return (
-    <AdminLayout
+    <AdminPageLayout heroImage={parliamentsHero}
       title={`${parl.name} — פגישה מס׳ ${meetingNumber}`}
       subtitle={`${meeting.date || ""} ${meeting.startTime ? "• " + meeting.startTime : ""} ${meeting.location ? "• " + meeting.location : ""}`}
     >
@@ -861,7 +862,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
           onDelete={() => handleDeleteExpense(editExpense.id)}
         />
       )}
-    </AdminLayout>
+    </AdminPageLayout>
   );
 }
 

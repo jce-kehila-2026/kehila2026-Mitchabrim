@@ -302,7 +302,7 @@ export default function Elderly() {
                 <button className="link-btn" onClick={() => setOpenId(r.id)}>{fullName(r)}</button>
               ),
             },
-            { key: "area", label: "אזור" },
+            { key: "idNum", label: "ת.ז.", render: (r) => r.idNum || "—" },
             { key: "neighborhood", label: "שכונה" },
             { key: "mobile", label: "טלפון", render: (r) => r.mobile || r.homePhone || "—" },
             {
@@ -493,7 +493,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
 /* ===== Form modal (add / edit) ===== */
 const NUMERIC_FIELDS = ["idNum", "mobile", "homePhone"];
 const REQUIRED_LABELS = {
-  firstName: "שם פרטי", lastName: "שם משפחה", idNum: "ת.ז",
+  firstName: "שם פרטי", lastName: "שם משפחה", mobile: "טלפון נייד",
 };
 
 function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave }) {
@@ -587,13 +587,13 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const handleSave = () => {
     const required = Object.keys(REQUIRED_LABELS);
     const empty = required.filter((k) => !String(f[k] ?? "").trim());
-    const dup = existingIds.some((x) => x.idNum === f.idNum && x.id !== (initial?.id));
+    const dup = f.idNum && existingIds.some((x) => x.idNum === f.idNum && x.id !== (initial?.id));
 
     // logical validation
     const errs = {};
     const fn = validateName(f.firstName); if (fn) errs.firstName = fn;
     const ln = validateName(f.lastName); if (ln) errs.lastName = ln;
-    const idErr = validateId(f.idNum); if (idErr) errs.idNum = idErr;
+    if (f.idNum) { const idErr = validateId(f.idNum); if (idErr) errs.idNum = idErr; }
     if (f.mobile) {
       const digits = String(f.mobile).replace(/\D/g, "");
       if (digits.length !== 10) errs.mobile = "יש להזין 10 ספרות";
