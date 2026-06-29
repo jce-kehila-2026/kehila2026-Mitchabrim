@@ -9,6 +9,7 @@ import Home from "./pages/Home.jsx";
 import ActivityDetail from "./pages/ActivityDetail.jsx";
 import Login from "./pages/Login.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
+import PublicGallery from "./pages/PublicGallery.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 import Dashboard from "./admin/Dashboard.jsx";
@@ -48,6 +49,7 @@ export default function App() {
       <Route path="/our-work/:slug" element={<ActivityDetail />} />
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/public-gallery" element={<PublicGallery />} />
 
       {/* Legacy redirect — single login button only */}
       <Route path="/volunteer/login" element={<Navigate to="/login" replace />} />
