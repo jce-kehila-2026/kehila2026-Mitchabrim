@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
-
+import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
@@ -74,9 +73,13 @@ export default function Elderly() {
     isEmpty: areasEmpty,
   } = useAreasAndNeighborhoods();
 
-  // Filters (only area/neighborhood are wired to actual filtering).
+  // Filters
   const [filterArea, setFilterArea] = useState("");
   const [filterNeighborhood, setFilterNeighborhood] = useState("");
+  const [filterMarital, setFilterMarital] = useState("");
+  const [filterVolStatus, setFilterVolStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [search, setSearch] = useState("");
 
   // If the area changes and the previously-selected neighborhood is no longer
   // valid for the new area, reset it.
@@ -116,12 +119,23 @@ export default function Elderly() {
   );
 
   const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return sorted.filter((e) => {
       if (filterArea && e.area !== filterArea) return false;
       if (filterNeighborhood && e.neighborhood !== filterNeighborhood) return false;
+      if (filterMarital && e.marital !== filterMarital) return false;
+      if (filterVolStatus && e.volStatus !== filterVolStatus) return false;
+      if (filterStatus && e.status !== filterStatus) return false;
+      if (q) {
+        const hay = [
+          fullName(e), e.idNum, e.mobile, e.homePhone, e.neighborhood,
+          e.area, e.address, e.notes, e.volName,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
     });
-  }, [sorted, filterArea, filterNeighborhood]);
+  }, [sorted, filterArea, filterNeighborhood, filterMarital, filterVolStatus, filterStatus, search]);
 
   const openElderly = sorted.find((e) => e.id === openId) || null;
 
@@ -204,10 +218,9 @@ export default function Elderly() {
   const withoutCount = data.length - connectedCount;
 
   return (
-    <AdminPageLayout
+    <AdminLayout
       title="ניהול אזרחים ותיקים"
       subtitle="ניהול רשימת האזרחים הוותיקים, שיוך לאזורים ושכונות, סטטוס התנדבות ופרטים אישיים."
-      heroImage="/admin-heroes/elderly-hero-bg.png"
       actions={
         <>
           <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ הוספת אזרח ותיק</button>
@@ -215,7 +228,6 @@ export default function Elderly() {
         </>
       }
     >
-
       {loadError && (
         <div style={{
           background: "#fef3c7", border: "1px solid #fde68a", color: "#92400e",
@@ -243,6 +255,8 @@ export default function Elderly() {
         )}
         <SearchFilters
           searchPlaceholder="חיפוש לפי שם, טלפון, ת.ז, שכונה או הערות..."
+          searchValue={search}
+          onSearchChange={(e) => setSearch(e.target.value)}
           filters={[
             {
               label: "אזור",
@@ -256,10 +270,24 @@ export default function Elderly() {
               onChange: (e) => setFilterNeighborhood(e.target.value),
               options: ["", ...getNeighborhoods(filterArea)],
             },
-            { label: "סטטוס מתנדב", options: VOLUNTEER_STATUS_OPTIONS },
-            { label: "מצב משפחתי", options: MARITAL_OPTIONS },
-            { label: "סיוע", options: ASSISTANCE_OPTIONS },
-            { label: "סטטוס", options: STATUS_OPTIONS },
+            {
+              label: "מצב משפחתי",
+              value: filterMarital,
+              onChange: (e) => setFilterMarital(e.target.value),
+              options: ["", ...MARITAL_OPTIONS],
+            },
+            {
+              label: "סטטוס מתנדב",
+              value: filterVolStatus,
+              onChange: (e) => setFilterVolStatus(e.target.value),
+              options: ["", ...VOLUNTEER_STATUS_OPTIONS],
+            },
+            {
+              label: "סטטוס",
+              value: filterStatus,
+              onChange: (e) => setFilterStatus(e.target.value),
+              options: ["", ...STATUS_OPTIONS],
+            },
           ]}
         />
         <DataTable
@@ -271,8 +299,8 @@ export default function Elderly() {
                 <button className="link-btn" onClick={() => setOpenId(r.id)}>{fullName(r)}</button>
               ),
             },
-            { key: "neighborhood", label: "שכונה" },
             { key: "area", label: "אזור" },
+            { key: "neighborhood", label: "שכונה" },
             { key: "mobile", label: "טלפון", render: (r) => r.mobile || r.homePhone || "—" },
             {
               key: "volStatus",
@@ -324,7 +352,7 @@ export default function Elderly() {
         <VolunteerQuickModal entry={openVolunteer} onClose={() => setOpenVolunteer(null)} />
       )}
       {showPrint && <PrintReportModal items={sorted} onClose={() => setShowPrint(false)} />}
-    </AdminPageLayout>
+    </AdminLayout>
   );
 }
 
@@ -462,12 +490,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
 /* ===== Form modal (add / edit) ===== */
 const NUMERIC_FIELDS = ["idNum", "mobile", "homePhone"];
 const REQUIRED_LABELS = {
-  firstName: "שם פרטי", lastName: "שם משפחה", idNum: "ת.ז", birth: "תאריך לידה",
-  marital: "מצב משפחתי", mobile: "טלפון נייד", homePhone: "טלפון בית",
-  area: "אזור", neighborhood: "שכונה",
-  lastContact: "תאריך יצירת קשר אחרונה",
-  volStatus: "סטטוס מתנדב", volName: "שם מתנדב",
-  country: "ארץ לידה", language: "שפת דיבור", status: "סטטוס",
+  firstName: "שם פרטי", lastName: "שם משפחה", idNum: "ת.ז",
 };
 
 function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave }) {
@@ -559,7 +582,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const [fieldErrors, setFieldErrors] = useState({});
 
   const handleSave = () => {
-    const required = Object.keys(REQUIRED_LABELS).filter((k) => k !== "volName" || showVolName);
+    const required = Object.keys(REQUIRED_LABELS);
     const empty = required.filter((k) => !String(f[k] ?? "").trim());
     const dup = existingIds.some((x) => x.idNum === f.idNum && x.id !== (initial?.id));
 
@@ -568,12 +591,13 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
     const fn = validateName(f.firstName); if (fn) errs.firstName = fn;
     const ln = validateName(f.lastName); if (ln) errs.lastName = ln;
     const idErr = validateId(f.idNum); if (idErr) errs.idNum = idErr;
-    if (f.mobile) { const e1 = validatePhone(f.mobile, { required: false }); if (e1) errs.mobile = e1; }
-    if (f.homePhone) { const e2 = validatePhone(f.homePhone, { required: false }); if (e2) errs.homePhone = e2; }
-    if (f.birth && !/^\d{2}\/\d{2}\/\d{4}$/.test(String(f.birth).trim())) {
-      // accept DD/MM/YYYY format only
-      const parts = String(f.birth).trim().split(/[\/\-]/);
-      if (parts.length !== 3) errs.birth = "תאריך לא תקין (DD/MM/YYYY)";
+    if (f.mobile) {
+      const digits = String(f.mobile).replace(/\D/g, "");
+      if (digits.length !== 10) errs.mobile = "יש להזין 10 ספרות";
+    }
+    if (f.homePhone) {
+      const e2 = validatePhone(f.homePhone, { required: false });
+      if (e2) errs.homePhone = e2;
     }
     setFieldErrors(errs);
     setMissing(empty);
@@ -617,7 +641,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               <NumericMsg k="idNum" />
               {fieldErrors.idNum && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.idNum}</div>}
             </div>
-            <div className="field"><label>תאריך לידה</label><input className="input" type="text" value={f.birth} onChange={set("birth")} placeholder="DD/MM/YYYY" />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
+            <div className="field"><label>תאריך לידה</label><input className="input" type="date" value={f.birth} onChange={set("birth")} />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
             <div className="field">
               <label>מצב משפחתי</label>
               <select className="select" value={f.marital} onChange={set("marital")}>
@@ -956,10 +980,13 @@ function VolunteerSelect({ volunteers, loading, error, valueId, valueName, onCha
         type="button"
         className="select"
         onClick={() => setOpen((o) => !o)}
-        style={{ width: "100%", textAlign: "start", cursor: "pointer", background: "#fff" }}
+        style={{ width: "100%", textAlign: "start", cursor: "pointer", background: "#fff", paddingInlineEnd: 28 }}
       >
         {loading ? "טוען מתנדבים…" : displayText}
       </button>
+      <span aria-hidden="true" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#6b7280" }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </span>
 
       {open && (
         <div
@@ -1085,10 +1112,13 @@ function ContactPersonSelect({ contactPersons, loading, error, valueId, onChange
         type="button"
         className="select"
         onClick={() => setOpen((o) => !o)}
-        style={{ width: "100%", textAlign: "start", cursor: "pointer", background: "#fff" }}
+        style={{ width: "100%", textAlign: "start", cursor: "pointer", background: "#fff", paddingInlineEnd: 28 }}
       >
         {loading ? "טוען אנשי קשר…" : displayText}
       </button>
+      <span aria-hidden="true" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#6b7280" }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </span>
 
       {open && (
         <div
