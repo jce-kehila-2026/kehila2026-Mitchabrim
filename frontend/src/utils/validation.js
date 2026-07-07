@@ -25,6 +25,10 @@ export const VAL_MSG = {
   dateInvalid: "תאריך לא תקין",
   numberInvalid: "ערך מספרי לא תקין",
   numberPositive: "יש להזין מספר חיובי",
+  urlInvalid: "כתובת אתר אינה תקינה (יש לכלול http:// או https://)",
+  fileTooLarge: "הקובץ גדול מדי",
+  fileTypeInvalid: "סוג הקובץ אינו נתמך",
+  fileMissing: "לא נבחר קובץ",
 };
 
 /** Strip all non-digit characters. */
@@ -119,6 +123,53 @@ export function validateDate(v, { required = true } = {}) {
   return "";
 }
 
+/**
+ * URL: must be http(s) or a plain domain (we auto-prepend https:// via normalizeUrl elsewhere).
+ * Accepts both "example.com" and "https://example.com/path?x=1".
+ */
+export function isValidUrl(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return false;
+  const withScheme = /^https?:\/\//i.test(s) ? s : `https://${s}`;
+  try {
+    const u = new URL(withScheme);
+    // Must have a hostname with at least one dot (e.g. example.com)
+    return !!u.hostname && u.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
+export function validateUrl(v, { required = true } = {}) {
+  const s = String(v ?? "").trim();
+  if (!s) return required ? VAL_MSG.required : "";
+  if (!isValidUrl(s)) return VAL_MSG.urlInvalid;
+  return "";
+}
+
+/**
+ * File validator. Returns an error message or empty string.
+ * @param {File} file
+ * @param {{ maxMB?: number, types?: string[] }} opts
+ *   types: array of MIME type prefixes or exact matches (e.g. ["image/", "application/pdf"]).
+ */
+export function validateFile(file, { maxMB = 10, types = [] } = {}) {
+  if (!file) return VAL_MSG.fileMissing;
+  if (types.length > 0) {
+    const t = String(file.type || "").toLowerCase();
+    const ok = types.some((allowed) => {
+      const a = String(allowed).toLowerCase();
+      return a.endsWith("/") ? t.startsWith(a) : t === a;
+    });
+    if (!ok) return VAL_MSG.fileTypeInvalid;
+  }
+  if (typeof maxMB === "number" && maxMB > 0) {
+    const maxBytes = maxMB * 1024 * 1024;
+    if (file.size > maxBytes) return `${VAL_MSG.fileTooLarge} (מקסימום ${maxMB}MB)`;
+  }
+  return "";
+}
+
 /* ------------------------------------------------------------------ */
 /* DOM input filters — wire to onInput / onChange to block characters  */
 /* ------------------------------------------------------------------ */
@@ -143,12 +194,15 @@ export default {
   isValidEmail,
   isValidNumber,
   isValidDate,
+  isValidUrl,
   validatePhone,
   validateId,
   validateName,
   validateEmail,
   validateNumber,
   validateDate,
+  validateUrl,
+  validateFile,
   filterDigits,
   filterName,
 };
