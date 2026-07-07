@@ -5,8 +5,24 @@ import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { useAuth } from "../context/AuthContext";
 
-import { db } from "../firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { getElderly } from "../services/elderlyService";
+import { getVolunteers } from "../services/volunteersService";
+import { getProjects } from "../services/projectsService";
+import {
+  getJoinRequests,
+  deleteJoinRequest,
+} from "../services/joinRequestsService";
+import {
+  subscribeAllProfileUpdateRequests,
+  deleteProfileUpdateRequest,
+} from "../services/profileUpdateRequestsService";
+import {
+  subscribeAdminTasks,
+  createAdminTask,
+  updateAdminTaskStatus,
+  updateAdminTaskTitle,
+  deleteAdminTask,
+} from "../services/adminTasksService";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -35,19 +51,21 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const elderlySnap = await getDocs(collection(db, "elderly"));
-        const volunteersSnap = await getDocs(collection(db, "volunteers"));
-        const projectsSnap = await getDocs(collection(db, "projects"));
-        const requestsSnap = await getDocs(collection(db, "joinRequests"));
+        const [elderlyList, volunteersList, allProjects, joinReqList] =
+          await Promise.all([
+            getElderly(),
+            getVolunteers(),
+            getProjects(),
+            getJoinRequests(),
+          ]);
 
         setStats({
-          elderly: elderlySnap.size,
-          volunteers: volunteersSnap.size,
-          requests: requestsSnap.size,
+          elderly: elderlyList.length,
+          volunteers: volunteersList.length,
+          requests: joinReqList.length,
         });
 
         // Nearest upcoming/active project
-        const allProjects = projectsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const parseDate = (s) => {
           if (!s) return null;
@@ -65,9 +83,7 @@ export default function Dashboard() {
           .sort((a, b) => (parseDate(b.createdAt) || 0) - (parseDate(a.createdAt) || 0));
         setNearestProject(candidates[0] || fallback[0] || null);
 
-        const reqDocs = await getDocs(collection(db, "joinRequests"));
-        const fetchedRequests = reqDocs.docs.map(d => {
-          const data = d.data();
+        const fetchedRequests = joinReqList.map((data) => {
           let cleanNote = data.note || data.reason || data.message || "";
           let requestType = data.type || "לא צוין";
           if (cleanNote.startsWith(requestType + " - ")) {
@@ -75,7 +91,7 @@ export default function Dashboard() {
           }
 
           return {
-            id: d.id,
+            id: data.id,
             name: `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.fullName || "ללא שם",
             type: requestType,
             note: cleanNote || "ללא הודעה",
@@ -102,11 +118,10 @@ export default function Dashboard() {
 
   // Live subscription to profile update requests
   useEffect(() => {
-    const q = query(collection(db, "profileUpdateRequests"), orderBy("createdAt", "desc"), limit(50));
-    const unsub = onSnapshot(
-      q,
-      (snap) => setProfileRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      (err) => console.warn("profileUpdateRequests listen:", err.message)
+    const unsub = subscribeAllProfileUpdateRequests(
+      (items) => setProfileRequests(items),
+      (err) => console.warn("profileUpdateRequests listen:", err.message),
+      { max: 50 }
     );
     return () => unsub();
   }, []);
@@ -114,14 +129,9 @@ export default function Dashboard() {
   // Live subscription to personal admin tasks (filtered by current admin uid)
   useEffect(() => {
     if (!adminId) { setTasks([]); return; }
-    const q = query(collection(db, "tasks"), where("adminId", "==", adminId));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setTasks(list);
-      },
+    const unsub = subscribeAdminTasks(
+      adminId,
+      (list) => setTasks(list),
       (err) => console.warn("personal tasks listen:", err.message)
     );
     return () => unsub();
@@ -201,12 +211,7 @@ export default function Dashboard() {
     if (!adminId) { showToast("לא ניתן לשמור: משתמש לא מחובר"); return; }
 
     try {
-      await addDoc(collection(db, "tasks"), {
-        title: newTaskTitle.trim(),
-        status: "פתוח",
-        adminId,
-        createdAt: serverTimestamp()
-      });
+      await createAdminTask({ adminId, title: newTaskTitle });
       // onSnapshot will refresh the list automatically
       setNewTaskTitle("");
       showToast("המשימה נשמרה במערכת");
@@ -222,7 +227,7 @@ export default function Dashboard() {
     else if (currentStatus === "דחוף") nextStatus = "בוצע";
 
     try {
-      await updateDoc(doc(db, "tasks", taskId), { status: nextStatus });
+      await updateAdminTaskStatus(taskId, nextStatus);
       setTasks(tasks.map(t => t.id === taskId ? { ...t, status: nextStatus } : t));
     } catch (error) {
       console.error("Error updating task:", error);
@@ -231,7 +236,7 @@ export default function Dashboard() {
 
   const handleDeleteTask = async (taskId) => {
     try {
-      await deleteDoc(doc(db, "tasks", taskId));
+      await deleteAdminTask(taskId);
       setTasks(tasks.filter((t) => t.id !== taskId));
       showToast("המשימה נמחקה");
     } catch (error) {
@@ -247,7 +252,7 @@ export default function Dashboard() {
   const saveEditTask = async () => {
     if (!editTaskId || !editTaskTitle.trim()) { setEditTaskId(null); return; }
     try {
-      await updateDoc(doc(db, "tasks", editTaskId), { title: editTaskTitle.trim() });
+      await updateAdminTaskTitle(editTaskId, editTaskTitle);
       setEditTaskId(null);
       setEditTaskTitle("");
       showToast("המשימה עודכנה");
@@ -258,7 +263,7 @@ export default function Dashboard() {
 
   const executeDeleteProfileRequest = async (id) => {
     try {
-      await deleteDoc(doc(db, "profileUpdateRequests", id));
+      await deleteProfileUpdateRequest(id);
       setProfileRequests((prev) => prev.filter((r) => r.id !== id));
       setDeleteProfileId(null);
       showToast("הבקשה נמחקה בהצלחה");
@@ -270,7 +275,7 @@ export default function Dashboard() {
 
   const executeDeleteRequest = async (requestId) => {
     try {
-      await deleteDoc(doc(db, "joinRequests", requestId));
+      await deleteJoinRequest(requestId);
       setRequests(requests.filter((r) => r.id !== requestId));
       setSelectedRequest(null);
       setDeleteId(null);
@@ -548,7 +553,7 @@ export default function Dashboard() {
                               <button onClick={() => setViewTask(t)} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: 12 }}>צפייה</button>
                               <button onClick={() => startEditTask(t)} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#fff7ec", border: "1px solid #f0c98a", cursor: "pointer", fontWeight: "bold", color: "#a07050", fontSize: 12 }}>עריכה</button>
                               {t.status !== "בוצע" && (
-                                <button onClick={() => updateDoc(doc(db, "tasks", t.id), { status: "בוצע" }).then(() => showToast("סומן כהושלם"))} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#e8f5e9", border: "1px solid #c3e6cb", cursor: "pointer", fontWeight: "bold", color: "#1e6b2c", fontSize: 12 }}>סמן כהושלם</button>
+                                <button onClick={() => updateAdminTaskStatus(t.id, "בוצע").then(() => showToast("סומן כהושלם"))} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#e8f5e9", border: "1px solid #c3e6cb", cursor: "pointer", fontWeight: "bold", color: "#1e6b2c", fontSize: 12 }}>סמן כהושלם</button>
                               )}
                               <button type="button" onClick={() => handleDeleteTask(t.id)} className="icon-btn-danger" title="מחיקה" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, fontWeight: "bold", padding: 0 }}>✕</button>
                             </>

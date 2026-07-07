@@ -2,10 +2,17 @@ import { useState, useRef, useEffect } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
-// Import Firebase tools
-import { storage, db } from "../firebase";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { collection, addDoc, getDocs, doc, deleteDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+// Firestore + Storage access is encapsulated in the images service.
+import {
+  getAllImages,
+  uploadImage,
+  updateImage,
+  deleteImage as deleteImageService,
+  toggleImagePublic,
+  createImageDoc,
+} from "@/services/imagesService";
+import { validateFile } from "@/utils/validation";
+import { sanitizeText } from "@/utils/sanitize";
 
 const CATEGORIES = ["פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"];
 
@@ -39,11 +46,7 @@ export default function Media() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "images"));
-        const fetchedImages = [];
-        querySnapshot.forEach((doc) => {
-          fetchedImages.push({ id: doc.id, ...doc.data() });
-        });
+        const fetchedImages = await getAllImages();
         setImagesList(fetchedImages);
       } catch (error) {
         console.error("Error fetching images:", error);
@@ -68,6 +71,13 @@ export default function Media() {
     const file = event.target.files[0];
     if (!file) return;
 
+    const fileErr = validateFile(file, { maxMB: 10, types: ["image/"] });
+    if (fileErr) {
+      showToast(fileErr);
+      event.target.value = "";
+      return;
+    }
+
     setSelectedFile(file);
 
     const reader = new FileReader();
@@ -88,7 +98,10 @@ export default function Media() {
       showToast("אנא בחר קובץ תמונה");
       return;
     }
-    if (!formData.title.trim()) {
+    const fileErr = validateFile(selectedFile, { maxMB: 10, types: ["image/"] });
+    if (fileErr) { showToast(fileErr); return; }
+    const cleanTitle = sanitizeText(formData.title, 200);
+    if (!cleanTitle) {
       showToast("אנא הזן שם לתמונה");
       return;
     }
@@ -100,24 +113,15 @@ export default function Media() {
     setIsUploading(true);
 
     try {
-      const imageRef = ref(storage, `images/${Date.now()}_${selectedFile.name}`);
-      await uploadBytes(imageRef, selectedFile);
-      const url = await getDownloadURL(imageRef);
-
-      const todayDate = new Date().toLocaleDateString("he-IL");
-
-      const newImageDoc = {
-  title: formData.title.trim(),
-  category: formData.category,
-  notes: formData.notes.trim(),
-  url: url,
-  uploadedAt: serverTimestamp(),
-  displayDate: todayDate,
-  isPublic: formData.isPublic || false,
-};
-
-      const docRef = await addDoc(collection(db, "images"), newImageDoc);
-      setImagesList((prevList) => [...prevList, { id: docRef.id, ...newImageDoc }]);
+      const cleanNotes = sanitizeText(formData.notes, 1000);
+      const created = await uploadImage({
+        file: selectedFile,
+        title: cleanTitle,
+        category: formData.category,
+        notes: cleanNotes,
+        isPublic: formData.isPublic || false,
+      });
+      setImagesList((prevList) => [...prevList, created]);
 
       showToast("התמונה הועלתה ונשמרה בהצלחה!");
       setIsModalOpen(false);
@@ -139,9 +143,7 @@ export default function Media() {
     if (!imageToDelete) return;
 
     try {
-      await deleteDoc(doc(db, "images", imageToDelete.id));
-      const imageStorageRef = ref(storage, imageToDelete.url);
-      await deleteObject(imageStorageRef);
+      await deleteImageService(imageToDelete);
 
       setImagesList((prevList) => prevList.filter((img) => img.id !== imageToDelete.id));
 
@@ -161,9 +163,8 @@ export default function Media() {
   const toggleIsPublic = async (e, img) => {
     e.stopPropagation();
     try {
-      const imageRef = doc(db, "images", img.id);
       const newStatus = !img.isPublic;
-      await updateDoc(imageRef, { isPublic: newStatus });
+      await toggleImagePublic(img.id, newStatus);
       setImagesList((prevList) =>
         prevList.map((item) => (item.id === img.id ? { ...item, isPublic: newStatus } : item))
       );
@@ -181,13 +182,14 @@ export default function Media() {
   const handleUpdateImageDetails = async () => {
     if (!detailsModal.image) return;
     setIsUpdating(true);
+    const cleanTitle = sanitizeText(detailsModal.image.title, 200);
+    const cleanNotes = sanitizeText(detailsModal.image.notes, 1000);
+    if (!cleanTitle) { showToast("אנא הזן שם לתמונה"); setIsUpdating(false); return; }
     try {
-      const imageRef = doc(db, "images", detailsModal.image.id);
-
-      await updateDoc(imageRef, {
-        title: detailsModal.image.title.trim(),
+      await updateImage(detailsModal.image.id, {
+        title: cleanTitle,
         category: detailsModal.image.category,
-        notes: detailsModal.image.notes.trim(),
+        notes: cleanNotes,
         isPublic: detailsModal.image.isPublic || false,
       });
 
@@ -196,9 +198,9 @@ export default function Media() {
           img.id === detailsModal.image.id
             ? {
                 ...img,
-                title: detailsModal.image.title.trim(),
+                title: cleanTitle,
                 category: detailsModal.image.category,
-                notes: detailsModal.image.notes.trim(),
+                notes: cleanNotes,
                 isPublic: detailsModal.image.isPublic || false,
               }
             : img,
@@ -278,21 +280,17 @@ export default function Media() {
           today.setDate(today.getDate() - i);
           const displayDate = today.toLocaleDateString("he-IL");
           
-          const newDoc = {
+          const created = await createImageDoc({
             title: `${category} - תמונה לדוגמה ${i + 1}`,
             category: category,
             notes: `תמונת תרגול עבור קטגוריית ${category}.`,
             url: url,
-            uploadedAt: serverTimestamp(),
             displayDate: displayDate,
-            isPublic: true
-          };
-          
-          const docRef = await addDoc(collection(db, "images"), newDoc);
+            isPublic: true,
+          });
           addedDocs.push({
-            id: docRef.id,
-            ...newDoc,
-            uploadedAt: { seconds: Math.floor(today.getTime() / 1000) }
+            ...created,
+            uploadedAt: { seconds: Math.floor(today.getTime() / 1000) },
           });
           addedCount++;
         }

@@ -13,6 +13,8 @@ import {
   formatDate, 
   normalizeUrl 
 } from "../services/linkService.js";
+import { validateUrl } from "@/utils/validation";
+import { sanitizeText } from "@/utils/sanitize";
 
 const CATEGORIES = ["עירייה", "ביטוח מתנדבים", "רישום משתתפי פרלמנט", "עדכון מפגשי פרלמנט", "קנבה", "מתנדבים", "ביטוח", "הדרכה", "מקורות", "אחר"];
 
@@ -118,13 +120,18 @@ export default function Links() {
 
   const handleAddLink = async (e) => {
     e.preventDefault();
+    const title = sanitizeText(formData.title, 200);
+    if (!title) { showAlert("❌ יש להזין כותרת", "error"); return; }
+    if (!formData.category) { showAlert("❌ יש לבחור קטגוריה", "error"); return; }
+    const urlErr = validateUrl(formData.url);
+    if (urlErr) { showAlert(`❌ ${urlErr}`, "error"); return; }
     const url = normalizeUrl(formData.url);
     try {
       await addLink({
-        title: formData.title.trim(),
+        title,
         url: url,
         category: formData.category,
-        description: formData.description?.trim() || "",
+        description: sanitizeText(formData.description, 500),
         createdBy: user?.email || "unknown",
       });
       setShowForm(false);
@@ -138,13 +145,18 @@ export default function Links() {
 
   const handleUpdateLink = async (e) => {
     e.preventDefault();
+    const title = sanitizeText(formData.title, 200);
+    if (!title) { showAlert("❌ יש להזין כותרת", "error"); return; }
+    if (!formData.category) { showAlert("❌ יש לבחור קטגוריה", "error"); return; }
+    const urlErr = validateUrl(formData.url);
+    if (urlErr) { showAlert(`❌ ${urlErr}`, "error"); return; }
     const url = normalizeUrl(formData.url);
     try {
       await updateLink(editingLink.id, {
-        title: formData.title.trim(),
+        title,
         url: url,
         category: formData.category,
-        description: formData.description?.trim() || "",
+        description: sanitizeText(formData.description, 500),
       });
       setEditingLink(null);
       setFormData({ title: "", url: "", category: "", description: "" });

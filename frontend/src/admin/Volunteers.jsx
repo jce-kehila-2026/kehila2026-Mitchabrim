@@ -47,6 +47,7 @@ import {
   filterDigits,
   filterName,
 } from "@/utils/validation";
+import { sanitizeFormData } from "@/utils/sanitize";
 
 const LETTERS_RE = /^[\u0590-\u05FF\u0600-\u06FFa-zA-Z\s'"\-]+$/;
 const isLettersOnly = (v) => LETTERS_RE.test((v || "").trim());
@@ -221,7 +222,7 @@ export default function Volunteers() {
 
   const handleAddVolunteer = async (newVolunteer) => {
     try {
-      const savedVolunteer = await createVolunteer(newVolunteer);
+      const savedVolunteer = await createVolunteer(sanitizeFormData(newVolunteer));
 
       setVolunteers((prev) => [savedVolunteer, ...prev]);
 
@@ -240,9 +241,10 @@ export default function Volunteers() {
 
   const handleUpdateVolunteer = async (updatedVolunteer) => {
     try {
-      await editVolunteer(updatedVolunteer.id, updatedVolunteer);
+      const clean = sanitizeFormData(updatedVolunteer);
+      await editVolunteer(clean.id, clean);
 
-      setVolunteers((prev) => prev.map((v) => (v.id === updatedVolunteer.id ? { ...v, ...updatedVolunteer } : v)));
+      setVolunteers((prev) => prev.map((v) => (v.id === clean.id ? { ...v, ...clean } : v)));
 
       setOpenVolunteerId(null);
     } catch (err) {
@@ -253,7 +255,7 @@ export default function Volunteers() {
 
   const handleCreateGroup = async (newGroup) => {
     try {
-      const savedGroup = await createVolunteerGroup(newGroup);
+      const savedGroup = await createVolunteerGroup(sanitizeFormData(newGroup));
 
       setGroups((prev) => [savedGroup, ...prev]);
       setShowCreateGroup(false);
@@ -265,9 +267,10 @@ export default function Volunteers() {
 
   const handleUpdateGroup = async (updatedGroup) => {
     try {
-      await editVolunteerGroup(updatedGroup.id, updatedGroup);
+      const clean = sanitizeFormData(updatedGroup);
+      await editVolunteerGroup(clean.id, clean);
 
-      setGroups((prev) => prev.map((g) => (g.id === updatedGroup.id ? { ...g, ...updatedGroup } : g)));
+      setGroups((prev) => prev.map((g) => (g.id === clean.id ? { ...g, ...clean } : g)));
     } catch (err) {
       console.error(err);
       alert("שגיאה בעדכון הקבוצה");

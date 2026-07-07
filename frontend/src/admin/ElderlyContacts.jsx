@@ -25,6 +25,7 @@ const STATUS_OPTIONS = ["פעיל", "לא פעיל"];
 const LINK_OPTIONS = ["מקושר לאזרח ותיק", "לא מקושר"];
 
 import { validatePhone, validateEmail, validateName, filterDigits, filterName } from "@/utils/validation";
+import { sanitizeFormData } from "@/utils/sanitize";
 const Req = () => <span style={{ color: "#dc2626", marginInlineStart: 4 }}>*</span>;
 const FieldError = ({ msg }) =>
   msg ? <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{msg}</div> : null;
@@ -138,11 +139,12 @@ export default function ElderlyContacts() {
 
   const handleSave = async (form, editingId) => {
     try {
+      const clean = sanitizeFormData(form);
       if (editingId) {
-        const saved = await updateElderlyContact(editingId, form);
+        const saved = await updateElderlyContact(editingId, clean);
         setContacts((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...saved } : c)));
       } else {
-        const saved = await createElderlyContact(form);
+        const saved = await createElderlyContact(clean);
         setContacts((prev) => [saved, ...prev]);
       }
       setShowAdd(false);

@@ -1,18 +1,12 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
-import { db, storage } from "../firebase";
 import {
-  collection,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  query,
-  orderBy,
-} from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+  subscribeFinancialTransactions,
+  createFinancialTransaction,
+  updateFinancialTransaction,
+  deleteFinancialTransaction,
+  uploadReceiptFile,
+} from "@/services/financialService";
 
 export default function Financial() {
   // ==========================================
@@ -68,16 +62,9 @@ export default function Financial() {
   // FIREBASE DATA FETCHING
   // ==========================================
   useEffect(() => {
-    const q = query(collection(db, "financialTransactions"), orderBy("date", "desc"));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const dataList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setTransactions(dataList);
-      },
-      (error) => {
-        console.error("Error fetching financial data:", error);
-      },
+    const unsubscribe = subscribeFinancialTransactions(
+      (dataList) => setTransactions(dataList),
+      (error) => console.error("Error fetching financial data:", error)
     );
     return () => unsubscribe();
   }, []);
@@ -212,7 +199,6 @@ export default function Financial() {
         receiptUrl: "",
         receiptName: "",
         notes: formData.notes.trim(),
-        createdAt: serverTimestamp(),
       };
 
       if (formData.type === "תרומה" || formData.type === "הכנסה") {
@@ -223,7 +209,7 @@ export default function Financial() {
         }
       }
 
-      await addDoc(collection(db, "financialTransactions"), newTransaction);
+      await createFinancialTransaction(newTransaction);
       setIsAddModalOpen(false);
       setFormData({
         type: "תרומה",
@@ -247,7 +233,7 @@ export default function Financial() {
 
   const handleDeleteTransaction = async (id) => {
     try {
-      await deleteDoc(doc(db, "financialTransactions", id));
+      await deleteFinancialTransaction(id);
       setDeleteId(null);
       showToast("הפעולה נמחקה מהמערכת!");
     } catch (error) {
@@ -263,9 +249,7 @@ export default function Financial() {
     }
     setIsUploading(true);
     try {
-      const fileRef = ref(storage, `receipts/${Date.now()}_${uploadFile.name}`);
-      await uploadBytes(fileRef, uploadFile);
-      const downloadUrl = await getDownloadURL(fileRef);
+      const { url: downloadUrl } = await uploadReceiptFile(uploadFile);
 
       const finalReceiptName = uploadData.receiptName.trim() || uploadFile.name;
       const finalReceiptNum = uploadData.receiptNumber.trim() || "ללא מספר";
@@ -279,11 +263,11 @@ export default function Financial() {
           number: finalReceiptNum,
           id: Date.now().toString(),
         };
-        await updateDoc(doc(db, "financialTransactions", uploadData.transactionId), {
+        await updateFinancialTransaction(uploadData.transactionId, {
           attachments: [...currentAttachments, newAttachment],
         });
       } else {
-        await addDoc(collection(db, "financialTransactions"), {
+        await createFinancialTransaction({
           type: "קבלה_בלבד",
           amount: 0,
           source: "—",
@@ -293,7 +277,6 @@ export default function Financial() {
           receiptName: finalReceiptName,
           receipt: finalReceiptNum,
           notes: "קבלה עצמאית במאגר",
-          createdAt: serverTimestamp(),
         });
       }
       setIsUploadModalOpen(false);
@@ -324,15 +307,15 @@ export default function Financial() {
 
       if (isStandalone) {
         if (newTxId) {
-          await updateDoc(doc(db, "financialTransactions", newTxId), { receiptUrl, receiptName, receipt });
-          await deleteDoc(doc(db, "financialTransactions", oldTxId));
+          await updateFinancialTransaction(newTxId, { receiptUrl, receiptName, receipt });
+          await deleteFinancialTransaction(oldTxId);
         }
       } else {
         if (newTxId) {
-          await updateDoc(doc(db, "financialTransactions", newTxId), { receiptUrl, receiptName, receipt });
-          await updateDoc(doc(db, "financialTransactions", oldTxId), { receiptUrl: "", receiptName: "", receipt: "" });
+          await updateFinancialTransaction(newTxId, { receiptUrl, receiptName, receipt });
+          await updateFinancialTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
         } else {
-          await addDoc(collection(db, "financialTransactions"), {
+          await createFinancialTransaction({
             type: "קבלה_בלבד",
             amount: 0,
             source: "—",
@@ -342,9 +325,8 @@ export default function Financial() {
             receiptName,
             receipt,
             notes: "קבלה עצמאית במאגר",
-            createdAt: serverTimestamp(),
           });
-          await updateDoc(doc(db, "financialTransactions", oldTxId), { receiptUrl: "", receiptName: "", receipt: "" });
+          await updateFinancialTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
         }
       }
       setIsEditReceiptModalOpen(false);
@@ -360,13 +342,13 @@ export default function Financial() {
     if (!deleteReceiptData) return;
     try {
       if (deleteReceiptData.isStandalone) {
-        await deleteDoc(doc(db, "financialTransactions", deleteReceiptData.id));
+        await deleteFinancialTransaction(deleteReceiptData.id);
       } else if (deleteReceiptData.isAttachment) {
         const tx = transactions.find((t) => t.id === deleteReceiptData.id);
         const updatedAttachments = tx.attachments.filter((a) => a.id !== deleteReceiptData.attachmentId);
-        await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { attachments: updatedAttachments });
+        await updateFinancialTransaction(deleteReceiptData.id, { attachments: updatedAttachments });
       } else {
-        await updateDoc(doc(db, "financialTransactions", deleteReceiptData.id), { receiptUrl: "", receiptName: "" });
+        await updateFinancialTransaction(deleteReceiptData.id, { receiptUrl: "", receiptName: "" });
       }
       setDeleteReceiptData(null);
       showToast("הקבלה הוסרה בהצלחה!");
