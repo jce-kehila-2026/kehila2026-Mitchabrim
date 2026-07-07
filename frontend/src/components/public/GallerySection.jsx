@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
 import { Link } from "react-router-dom";
-import { db, auth } from "../../firebase";
-import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { auth } from "../../firebase";
+import { getPublicImages } from "../../services/imagesService";
+
 
 export default function GallerySection() {
   const { content } = useSiteContent();
@@ -17,26 +18,10 @@ export default function GallerySection() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const q = query(
-          collection(db, "images"),
-          where("isPublic", "==", true),
-          limit(500)
-        );
-        const querySnapshot = await getDocs(q);
-        const fetched = [];
-        querySnapshot.forEach((doc) => {
-          fetched.push({ id: doc.id, ...doc.data() });
-        });
-
-        // Sort by uploadedAt descending if available, else displayDate or id
-        fetched.sort((a, b) => {
-          const timeA = a.uploadedAt?.seconds || a.uploadedAt?.toMillis?.() || 0;
-          const timeB = b.uploadedAt?.seconds || b.uploadedAt?.toMillis?.() || 0;
-          return timeB - timeA;
-        });
-
+        const fetched = await getPublicImages({ max: 500 });
         setImages(fetched);
       } catch (error) {
+
         const authState = auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous";
         console.error(
           `[GallerySection] Failed to fetch Firestore collection 'images' with where("isPublic","==",true). Auth: ${authState}. Code: ${error?.code}`,
