@@ -1,18 +1,14 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import AdminLayout from "@/components/admin/AdminLayout.jsx";
-import { db, auth } from "@/firebase";
+import LoadingLine from "@/components/common/LoadingLine.jsx";
+import EmptyState from "@/components/common/EmptyState.jsx";
 import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  doc,
-  updateDoc,
-  addDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { sanitizeText } from "@/utils/sanitize";
+  subscribeAllProfileUpdateRequests,
+  decideProfileUpdateRequest,
+} from "@/services/profileUpdateRequestsService";
+
+
 
 export default function ProfileUpdateRequests() {
   const [requests, setRequests] = useState([]);
@@ -22,11 +18,8 @@ export default function ProfileUpdateRequests() {
   const [params] = useSearchParams();
 
   useEffect(() => {
-    const q = query(collection(db, "profileUpdateRequests"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const unsub = subscribeAllProfileUpdateRequests(
+      (list) => {
         setRequests(list);
         setLoading(false);
       },
@@ -37,6 +30,7 @@ export default function ProfileUpdateRequests() {
     );
     return () => unsub();
   }, []);
+
 
   // Open specific request via ?id=
   useEffect(() => {
@@ -70,9 +64,9 @@ export default function ProfileUpdateRequests() {
         </div>
 
         {loading ? (
-          <p>טוען...</p>
+          <LoadingLine />
         ) : filtered.length === 0 ? (
-          <p style={{ color: "#6c757d" }}>אין בקשות להצגה</p>
+          <EmptyState text="אין בקשות להצגה" style={{ color: "#6c757d" }} />
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {filtered.map((r) => (
@@ -149,24 +143,11 @@ function RequestDetailModal({ request, onClose }) {
     try {
       setSaving(true);
       setErr("");
-      const safeResponse = sanitizeText(response, 2000);
-      await updateDoc(doc(db, "profileUpdateRequests", request.id), {
-        status: decision,
-        adminResponse: safeResponse,
-        reviewedAt: serverTimestamp(),
-        reviewedBy: auth.currentUser?.uid || null,
-      });
-      // Notify volunteer
-      await addDoc(collection(db, "volunteerNotifications"), {
-        volunteerAuthUid: request.volunteerAuthUid,
-        type: "profile_update_response",
-        title: decision === "approved" ? "הבקשה שלך אושרה" : "הבקשה שלך נדחתה",
-        message: safeResponse || (decision === "approved"
-          ? "בקשתך לעדכון פרטים אושרה על ידי המנהל."
-          : "בקשתך לעדכון פרטים נדחתה על ידי המנהל."),
+      await decideProfileUpdateRequest({
         requestId: request.id,
-        read: false,
-        createdAt: serverTimestamp(),
+        volunteerAuthUid: request.volunteerAuthUid,
+        decision,
+        response,
       });
       onClose();
     } catch (e) {
@@ -176,6 +157,7 @@ function RequestDetailModal({ request, onClose }) {
       setSaving(false);
     }
   };
+
 
   return (
     <div

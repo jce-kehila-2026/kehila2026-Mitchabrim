@@ -3,8 +3,7 @@ import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
 // Firebase imports
-import { db, auth } from "../firebase"; 
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth } from "../firebase";
 
 // Services
 import {
@@ -14,7 +13,11 @@ import {
   deleteAllowedUser,
   sendPasswordSetupEmail,
 } from "@/services/allowedUsersService";
-import { getVolunteers } from "@/services/volunteersService";
+import { getVolunteers, unlinkVolunteerAuthUid } from "@/services/volunteersService";
+import {
+  getSettingsGeneral,
+  saveSettingsGeneral,
+} from "@/services/settingsService";
 
 const ROLE_LABEL = { admin: "מנהל", volunteer: "מתנדב" };
 
@@ -88,11 +91,8 @@ export default function Settings() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const docRef = doc(db, "settings", "general");
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          
+        const data = await getSettingsGeneral();
+        if (data) {
           setOrgName(data?.orgName || "");
           setAddress(data?.address || "");
           
@@ -178,11 +178,10 @@ export default function Settings() {
   // ==========================================
   const saveGlobalConfig = async (updatedAreas, updatedCategories) => {
     try {
-      const docRef = doc(db, "settings", "general");
-      await setDoc(docRef, {
+      await saveSettingsGeneral({
         areas: updatedAreas || areas,
         categories: updatedCategories || categories
-      }, { merge: true });
+      });
       showToast("השינויים נשמרו בהצלחה!");
     } catch (error) {
       showToast("שגיאה בשמירת הנתונים.");
@@ -344,12 +343,12 @@ export default function Settings() {
     try {
       const cleanEmails = emails.filter(e => e?.trim() !== "");
       const cleanPhones = phones.filter(p => p?.trim() !== "");
-      await setDoc(doc(db, "settings", "general"), {
+      await saveSettingsGeneral({
         orgName: orgName?.trim() || "", 
         address: address?.trim() || "", 
         emails: cleanEmails, 
         phones: cleanPhones
-      }, { merge: true });
+      });
       if (cleanEmails.length > 0) setEmails(cleanEmails);
       if (cleanPhones.length > 0) setPhones(cleanPhones);
       showToast("פרטי הארגון נשמרו בהצלחה!");
@@ -492,6 +491,16 @@ export default function Settings() {
     try {
       const { user } = deleteConfirm;
       if (!user?.id) throw new Error("Missing user ID");
+      // If the user was linked to a volunteer profile, clear the back-link on
+      // the volunteer so it can be safely re-linked to another auth account
+      // later (prevents stale volunteers/{V}.authUid).
+      if (user.linkedVolunteerId) {
+        try {
+          await unlinkVolunteerAuthUid(user.linkedVolunteerId);
+        } catch (e) {
+          console.warn("clear volunteer authUid failed:", e.message);
+        }
+      }
       await deleteAllowedUser(user.id);
       showToast("המשתמש נמחק בהצלחה");
       await refreshUsers();

@@ -1,6 +1,7 @@
 import {
   collection,
   addDoc,
+  getDoc,
   getDocs,
   updateDoc,
   deleteDoc,
@@ -13,7 +14,7 @@ import {
 
 
 import { db } from "../firebase";
-import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
+import { sanitizeFormData } from "../utils/sanitize";
 
 
 const elderlyCollection = collection(db, "elderly");
@@ -30,6 +31,17 @@ export async function getElderly() {
     id: docItem.id,
     ...docItem.data(),
   }));
+}
+
+/**
+ * Fetch a single elderly document by id.
+ * Returns { id, ...data } or null when not found.
+ */
+export async function getElderlyById(elderlyId) {
+  if (!elderlyId) return null;
+  const snap = await getDoc(doc(db, "elderly", elderlyId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() };
 }
 
 /**
@@ -79,18 +91,4 @@ export async function editElderly(elderlyId, elderlyData) {
 export async function deleteElderly(elderlyId) {
   const elderlyRef = doc(db, "elderly", elderlyId);
   await deleteDoc(elderlyRef);
-}
-
-/* =========================
-   Volunteer Assignment (שיוך מתנדב)
-========================= */
-
-export async function assignVolunteerToElderly(elderlyId, volunteerName, status) {
-  const elderlyRef = doc(db, "elderly", elderlyId);
-
-  await updateDoc(elderlyRef, {
-    volunteerName: sanitizeText(volunteerName, 200),
-    volunteerStatus: sanitizeText(status, 100),
-    updatedAt: serverTimestamp(),
-  });
 }

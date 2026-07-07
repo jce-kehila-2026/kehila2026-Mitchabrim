@@ -1,8 +1,10 @@
 // src/pages/PublicGallery.jsx
 import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { db, auth } from "../firebase";
-import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { auth } from "../firebase";
+import { getPublicImages } from "../services/imagesService";
+
+
 import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
 import "../styles/public.css";
@@ -24,20 +26,12 @@ export default function PublicGallery() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const q = query(
-          collection(db, "images"),
-          where("isPublic", "==", true),
-          limit(500)
-        );
-        const querySnapshot = await getDocs(q);
-        const fetchedImages = [];
-        querySnapshot.forEach((doc) => {
-          fetchedImages.push({ id: doc.id, ...doc.data() });
-        });
+        const fetchedImages = await getPublicImages({ max: 500 });
         setImages(fetchedImages);
 
         const uniqueCategories = [...new Set(fetchedImages.map(img => img.category).filter(Boolean))];
         setCategories(["הכל", ...uniqueCategories]);
+
       } catch (error) {
         const authState = auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous";
         console.error(

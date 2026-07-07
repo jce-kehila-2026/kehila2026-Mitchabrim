@@ -21,6 +21,8 @@ import {
 import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
+import { sanitizeFormData } from "@/utils/sanitize";
+import { validateDate } from "@/utils/validation";
 
 /* ============================================================
    Static reference data — only enums/options. All groups,
@@ -166,7 +168,8 @@ export default function Projects() {
    * No new neighborhoods / elderly / volunteers / groups are created here.
    */
   const handleCreateProject = async (data) => {
-    const created = await createProject(data);
+    const clean = sanitizeFormData(data);
+    const created = await createProject(clean);
     setProjects((prev) => [created, ...prev]);
 
     const targetNeighborhoods = Array.isArray(data.neighborhoods) ? data.neighborhoods : [];
@@ -1743,6 +1746,11 @@ function AddProjectModal({ onClose, onSave, allGroups = [], volunteersByGroupId 
             disabled={saving || !name.trim()}
             onClick={async () => {
               setSaveError("");
+              if (!name.trim()) { setSaveError("שם הפרויקט הוא שדה חובה"); return; }
+              const sErr = validateDate(startDate, { required: false });
+              if (sErr) { setSaveError(`תאריך התחלה: ${sErr}`); return; }
+              const dErr = validateDate(date, { required: false });
+              if (dErr) { setSaveError(`תאריך חלוקה: ${dErr}`); return; }
               setSaving(true);
               try {
                 await onSave({

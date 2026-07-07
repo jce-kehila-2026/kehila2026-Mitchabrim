@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { getElderlyById } from "../services/elderlyService";
 import { getElderlyContactById } from "../services/elderlyContactsService";
 
 const Detail = ({ label, value }) => (
@@ -22,8 +21,7 @@ export default function ElderlyProfile() {
     try {
       setLoadingContact(true);
       // Read the elderly document to get its linked contactPersonId
-      const eSnap = await getDoc(doc(db, "elderly", id));
-      const elderly = eSnap.exists() ? eSnap.data() : null;
+      const elderly = await getElderlyById(id);
       const cpId = elderly?.contactPersonId || null;
       if (!cpId) {
         setContact(null);

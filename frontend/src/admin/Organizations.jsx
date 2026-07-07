@@ -33,6 +33,7 @@ const CATEGORY_OPTIONS = [
 const STATUS_OPTIONS = ["פעיל", "לא פעיל"];
 
 import { validatePhone, validateEmail, validateName, filterDigits, filterName } from "@/utils/validation";
+import { sanitizeFormData } from "@/utils/sanitize";
 const Req = () => <span style={{ color: "#dc2626", marginInlineStart: 4 }}>*</span>;
 const FieldError = ({ msg }) =>
   msg ? <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{msg}</div> : null;
@@ -146,7 +147,10 @@ export default function Organizations() {
 
   const handleCreate = async (orgForm, primaryForm) => {
     try {
-      const saved = await createOrganizationWithPrimaryContact(orgForm, primaryForm);
+      const saved = await createOrganizationWithPrimaryContact(
+        sanitizeFormData(orgForm),
+        sanitizeFormData(primaryForm),
+      );
       await reload();
       setShowAdd(false);
       showToast("הארגון נוסף בהצלחה");
@@ -159,8 +163,9 @@ export default function Organizations() {
 
   const handleUpdate = async (id, orgForm) => {
     try {
-      await updateOrganization(id, orgForm);
-      setOrgs((prev) => prev.map((o) => (o.id === id ? { ...o, ...orgForm } : o)));
+      const clean = sanitizeFormData(orgForm);
+      await updateOrganization(id, clean);
+      setOrgs((prev) => prev.map((o) => (o.id === id ? { ...o, ...clean } : o)));
       setEditOrg(null);
       showToast("הארגון עודכן בהצלחה");
     } catch (err) {
@@ -541,12 +546,13 @@ function OrganizationDetailsModal({ organization, onClose, onChanged, showToast 
 
   const handleSaveContact = async (form, editingId) => {
     try {
+      const clean = sanitizeFormData(form);
       if (editingId) {
-        await updateOrganizationContact(editingId, form);
+        await updateOrganizationContact(editingId, clean);
         showToast?.("איש הקשר עודכן בהצלחה");
       } else {
         await createOrganizationContact({
-          ...form,
+          ...clean,
           organizationId: organization.id,
           organizationName: organization.organizationName,
           isPrimary: false,

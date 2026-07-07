@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { db } from "../../firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { sanitizeText } from "../../utils/sanitize";
+import { createJoinRequest } from "../../services/joinRequestsService";
 import { validatePhone, validateName, filterDigits, filterName } from "../../utils/validation";
 import useSiteContent from "@/hooks/useSiteContent";
+
 
 export default function JoinRequestSection() {
   const { content } = useSiteContent();
@@ -38,32 +37,15 @@ export default function JoinRequestSection() {
     setIsSubmitting(true);
 
     try {
-      const safeName = sanitizeText(form.fullName, 200);
-      const safePhone = sanitizeText(form.phone, 40);
-      const safeType = sanitizeText(form.type, 100);
-      const safeMessage = sanitizeText(form.message, 2000);
-
-      const reqRef = await addDoc(collection(db, "joinRequests"), {
-        fullName: safeName,
-        phone: safePhone,
-        note: `${safeType} - ${safeMessage}`.trim(),
-        type: safeType,
-        status: "new",
-        createdAt: serverTimestamp(),
+      const { notificationError } = await createJoinRequest({
+        fullName: form.fullName,
+        phone: form.phone,
+        type: form.type,
+        message: form.message,
       });
 
-      try {
-        await addDoc(collection(db, "notifications"), {
-          audience: "admin",
-          type: "join_request",
-          title: "בקשת הצטרפות חדשה התקבלה",
-          message: `${safeName} שלח/ה בקשת הצטרפות (${safeType})`,
-          requestId: reqRef.id,
-          read: false,
-          createdAt: serverTimestamp(),
-        });
-      } catch (notifErr) {
-        console.warn("create admin notification failed:", notifErr?.message);
+      if (notificationError) {
+        console.warn("create admin notification failed:", notificationError?.message);
       }
 
       // إذا نجحت العملية، نغير حالة sent إلى true لتظهر الكبسولة الخضراء للمستخدم
@@ -79,6 +61,7 @@ export default function JoinRequestSection() {
     } finally {
       setIsSubmitting(false); // إلغاء وضع التحميل وإعادة تفعيل زر الإرسال
     }
+
   };
 
   return (

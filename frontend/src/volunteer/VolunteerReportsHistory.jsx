@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
+import LoadingLine from "@/components/common/LoadingLine.jsx";
+import EmptyState from "@/components/common/EmptyState.jsx";
+import StatusBadge from "@/components/common/StatusBadge.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer.js";
 import { useAuth } from "@/context/AuthContext.jsx";
 import { getReportsForAuthUid } from "@/services/reportsService.js";
@@ -84,7 +87,7 @@ export default function VolunteerReportsHistory() {
   if (volLoading) {
     return (
       <VolunteerLayout title="הדוחות שלי" subtitle="טוען...">
-        <div className="vol-card vol-card-pad"><p>טוען...</p></div>
+        <div className="vol-card vol-card-pad"><LoadingLine /></div>
       </VolunteerLayout>
     );
   }
@@ -134,7 +137,7 @@ export default function VolunteerReportsHistory() {
       </div>
 
       {loading ? (
-        <div className="vol-card vol-card-pad"><p>טוען דוחות...</p></div>
+        <div className="vol-card vol-card-pad"><LoadingLine text="טוען דוחות..." /></div>
       ) : filtered.length === 0 ? (
         <div className="vol-card vol-card-pad" style={{ textAlign: "center", color: "var(--color-text-muted)" }}>
           לא נמצאו דוחות.
@@ -158,7 +161,7 @@ export default function VolunteerReportsHistory() {
             </div>
             <div className="cell">
               <label>סטטוס</label>
-              <span className={`badge ${statusBadgeClass(r.status)}`}>{statusLabel(r.status)}</span>
+              <StatusBadge label={statusLabel(r.status)} variant={statusBadgeClass(r.status)} />
             </div>
             <div className="cell" style={{ color: "var(--color-text-muted)" }}>
               <label>סיכום</label>

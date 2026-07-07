@@ -1,21 +1,17 @@
 import { useEffect, useState } from "react";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
+import LoadingLine from "@/components/common/LoadingLine.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer";
 import { useAuth } from "@/context/AuthContext";
 import {
-  addDoc,
-  collection,
-  serverTimestamp,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-} from "firebase/firestore";
-import { db } from "@/firebase";
+  subscribeProfileUpdateRequestsForVolunteer,
+  createProfileUpdateRequest,
+} from "@/services/profileUpdateRequestsService";
 import { sanitizeText } from "@/utils/sanitize";
 import {
   User, Phone, Mail, MapPin, IdCard, Home, Users, Activity, Pencil, X, Send,
 } from "lucide-react";
+
 
 export default function VolunteerProfile() {
   const { volunteer, loading, error } = useCurrentVolunteer();
@@ -25,18 +21,14 @@ export default function VolunteerProfile() {
 
   useEffect(() => {
     if (!user?.uid) return;
-    const q = query(
-      collection(db, "profileUpdateRequests"),
-      where("volunteerAuthUid", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => setRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    const unsub = subscribeProfileUpdateRequestsForVolunteer(
+      user.uid,
+      (list) => setRequests(list),
       (err) => console.warn("requests listen:", err.message)
     );
     return () => unsub();
   }, [user?.uid]);
+
 
   const fullName =
     volunteer?.name ||
@@ -61,7 +53,7 @@ export default function VolunteerProfile() {
   return (
     <VolunteerLayout title="הפרטים שלי" subtitle="צפייה בלבד — לעדכון פרטים יש לשלוח בקשה למנהל">
       <div className="vol-profile-readonly">
-        {loading && <p>טוען פרטים...</p>}
+        {loading && <LoadingLine text="טוען פרטים..." />}
         {!loading && error && <div className="vol-alert-error">{error}</div>}
         {!loading && !error && volunteer && (
           <>
@@ -155,29 +147,14 @@ function RequestModal({ volunteer, user, onClose }) {
     if (!trimmed) { setErr("יש לכתוב הודעה"); return; }
     if (trimmed.length > 1000) { setErr("ההודעה ארוכה מדי (מקסימום 1000 תווים)"); return; }
     if (!user?.uid) { setErr("יש להתחבר מחדש"); return; }
-    const safeVolName = sanitizeText(volunteerName, 200);
     try {
       setSending(true);
       setErr("");
-      const reqRef = await addDoc(collection(db, "profileUpdateRequests"), {
+      await createProfileUpdateRequest({
         volunteerId: volunteer.id,
         volunteerAuthUid: user.uid,
-        volunteerName: safeVolName,
-        message: trimmed,
-        status: "pending",
-        createdAt: serverTimestamp(),
-        reviewedAt: null,
-        reviewedBy: null,
-        adminResponse: "",
-      });
-      await addDoc(collection(db, "notifications"), {
-        audience: "admin",
-        type: "profile_update_request",
-        title: "בקשה חדשה לעדכון פרטי מתנדב",
-        message: `${safeVolName} שלח/ה בקשה לעדכון פרטים`,
-        requestId: reqRef.id,
-        read: false,
-        createdAt: serverTimestamp(),
+        volunteerName,
+        message,
       });
       setSent(true);
       setTimeout(onClose, 1400);
@@ -188,6 +165,7 @@ function RequestModal({ volunteer, user, onClose }) {
       setSending(false);
     }
   };
+
 
   return (
     <div className="vol-modal-overlay" onClick={onClose}>

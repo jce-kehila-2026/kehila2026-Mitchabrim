@@ -1,18 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { logout } from "../../services/authService";
-import { db, auth } from "../../firebase";
+import { auth } from "../../firebase";
+import { getUserByEmail } from "../../services/usersService";
 import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  updateDoc,
-  orderBy,
-  limit,
-  onSnapshot,
-} from "firebase/firestore";
+  subscribeAdminNotifications,
+  markAdminNotificationRead,
+} from "../../services/notificationsService";
 
 export default function HeroTopbar() {
   const navigate = useNavigate();
@@ -34,14 +28,8 @@ export default function HeroTopbar() {
       if (!user) return;
       let finalName = user.displayName;
       try {
-        const q = query(
-          collection(db, "users"),
-          where("email", "==", (user.email || "").toLowerCase())
-        );
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const d = snap.docs[0];
-          const data = d.data();
+        const data = await getUserByEmail(user.email);
+        if (data) {
           finalName = finalName || data.displayName || data.fullName || "";
         }
       } catch (e) {
@@ -58,26 +46,13 @@ export default function HeroTopbar() {
   }, []);
 
   useEffect(() => {
-    let unsub = () => {};
-    try {
-      const q = query(
-        collection(db, "notifications"),
-        orderBy("createdAt", "desc"),
-        limit(20)
-      );
-      unsub = onSnapshot(
-        q,
-        (snap) => {
-          setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        },
-        (err) => {
-          console.warn("hero notifications listen error:", err.message);
-          setNotifications([]);
-        }
-      );
-    } catch (e) {
-      /* noop */
-    }
+    const unsub = subscribeAdminNotifications(
+      (items) => setNotifications(items),
+      (err) => {
+        console.warn("hero notifications listen error:", err.message);
+        setNotifications([]);
+      }
+    );
     return () => unsub();
   }, []);
 
@@ -106,7 +81,7 @@ export default function HeroTopbar() {
   const markAsRead = async (n) => {
     try {
       if (!n.read) {
-        await updateDoc(doc(db, "notifications", n.id), { read: true });
+        await markAdminNotificationRead(n.id);
       }
     } catch (e) {
       console.warn("mark read failed:", e.message);

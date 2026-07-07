@@ -4,6 +4,8 @@ import useCurrentVolunteer from "@/hooks/useCurrentVolunteer.js";
 import { getElderlyForVolunteer } from "@/services/elderlyService.js";
 import { createVolunteerReport } from "@/services/reportsService.js";
 import { useAuth } from "@/context/AuthContext.jsx";
+import { validateDate } from "@/utils/validation";
+import { sanitizeFormData, sanitizeText } from "@/utils/sanitize";
 import {
   Calendar, Tag, User, CheckCircle2, Clock, Activity,
   AlertTriangle, HelpCircle, MessageSquare, Send, Info, Save,
@@ -61,13 +63,18 @@ export default function VolunteerReportForm() {
     if (!linked || !volunteer) return;
     setSubmitError("");
 
+    const dateErr = validateDate(form.date);
+    if (dateErr) { setSubmitError(`תאריך המפגש: ${dateErr}`); return; }
+    if (!form.type) { setSubmitError("יש לבחור סוג מפגש"); return; }
+    if (!form.held) { setSubmitError("יש לציין האם המפגש התקיים"); return; }
+
     const selectedElderly = myElderly.find((el) => el.id === form.elderlyId);
     if (!selectedElderly) {
       setSubmitError("יש לבחור אזרח ותיק מהרשימה");
       return;
     }
 
-    const reportPayload = {
+    const reportPayload = sanitizeFormData({
       volunteerId: volunteer.id,
       volunteerAuthUid: user?.uid || null,
       volunteerName: volunteerFullName(volunteer),
@@ -81,8 +88,8 @@ export default function VolunteerReportForm() {
       generalStatusAfterMeeting: form.condition,
       needsFollowUp: form.needs,
       problemType: form.problem,
-      notes: form.notes,
-    };
+      notes: sanitizeText(form.notes, 2000),
+    });
 
     try {
       setSubmitting(true);

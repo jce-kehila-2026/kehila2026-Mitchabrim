@@ -51,6 +51,67 @@ export async function unlinkVolunteerAuthUid(volunteerId) {
   const ref = doc(db, "volunteers", volunteerId);
   await updateDoc(ref, { authUid: null, updatedAt: serverTimestamp() });
 }
+
+/**
+ * Resolve the volunteer profile linked to a logged-in user.
+ *
+ * Primary path: users/{uid}.linkedVolunteerId -> volunteers/{linkedVolunteerId}
+ * Fallback: volunteers where authUid == uid (guarded — the `list` rule
+ * requires admin, so a permission-denied here is treated as "not linked"
+ * rather than surfaced as a raw Firebase error).
+ *
+ * Preserves the exact identity-resolution logic used by useCurrentVolunteer,
+ * including the relink flow (admin ↔ volunteer email re-use).
+ *
+ * @param {{ uid: string, email?: string }} params
+ * @returns {Promise<{ volunteer: object|null, error: string }>}
+ */
+export async function getVolunteerForUser({ uid /*, email */ } = {}) {
+  if (!uid) return { volunteer: null, error: "" };
+
+  // 1. Read users/{uid}
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const userData = userSnap.exists() ? userSnap.data() : null;
+  const linkedVolunteerId = userData?.linkedVolunteerId;
+
+  // 2. Primary: use linkedVolunteerId
+  if (linkedVolunteerId) {
+    const volRef = doc(db, "volunteers", linkedVolunteerId);
+    const volSnap = await getDoc(volRef);
+    if (!volSnap.exists()) {
+      return {
+        volunteer: null,
+        error: "פרופיל המתנדב המקושר לא נמצא במערכת.",
+      };
+    }
+    return { volunteer: { id: volSnap.id, ...volSnap.data() }, error: "" };
+  }
+
+  // 3. Fallback: search volunteers by authUid.
+  // The volunteers `list` rule requires admin, so this may throw
+  // "Missing or insufficient permissions" for a signed-in volunteer whose
+  // users/{uid} doc is missing linkedVolunteerId. Treat that as "not linked"
+  // instead of surfacing a raw Firebase error.
+  try {
+    const q = query(volunteersCollection, where("authUid", "==", uid));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const d = snap.docs[0];
+      return { volunteer: { id: d.id, ...d.data() }, error: "" };
+    }
+  } catch (fallbackErr) {
+    console.warn(
+      "getVolunteerForUser fallback query failed:",
+      fallbackErr?.code || fallbackErr?.message
+    );
+  }
+
+  return {
+    volunteer: null,
+    error: "לא נמצא קישור לפרופיל מתנדב. יש לפנות למנהל.",
+  };
+}
 const groupsCollection = collection(db, "volunteerGroups");
 
 /* =========================

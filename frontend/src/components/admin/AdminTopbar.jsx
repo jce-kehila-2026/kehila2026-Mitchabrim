@@ -1,19 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { logout } from "../../services/authService";
-import { db, auth } from "../../firebase";
+import { auth } from "../../firebase";
 import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  updateDoc,
-  orderBy,
-  limit,
-  onSnapshot,
-  Timestamp,
-} from "firebase/firestore";
+  getUserByEmail,
+  updateUserProfileFields,
+} from "../../services/usersService";
+import {
+  subscribeAdminNotifications,
+  markAdminNotificationRead,
+} from "../../services/notificationsService";
 
 export default function AdminTopbar() {
   const navigate = useNavigate();
@@ -54,12 +50,9 @@ export default function AdminTopbar() {
       let updatedAt = null;
 
       try {
-        const q = query(collection(db, "users"), where("email", "==", (user.email || "").toLowerCase()));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const d = snap.docs[0];
-          docId = d.id;
-          const data = d.data();
+        const data = await getUserByEmail(user.email);
+        if (data) {
+          docId = data.id;
           fullName = data.fullName || data.displayName || "";
           finalName = finalName || data.displayName || data.fullName;
           phoneNumber = data.phoneNumber || "";
@@ -92,24 +85,17 @@ export default function AdminTopbar() {
 
   // Notifications subscription
   useEffect(() => {
-    let unsub = () => {};
-    try {
-      const q = query(collection(db, "notifications"), orderBy("createdAt", "desc"), limit(20));
-      unsub = onSnapshot(
-        q,
-        (snap) => {
-          setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-          setNotifLoading(false);
-        },
-        (err) => {
-          console.warn("notifications listen error:", err.message);
-          setNotifications([]);
-          setNotifLoading(false);
-        }
-      );
-    } catch (e) {
-      setNotifLoading(false);
-    }
+    const unsub = subscribeAdminNotifications(
+      (items) => {
+        setNotifications(items);
+        setNotifLoading(false);
+      },
+      (err) => {
+        console.warn("notifications listen error:", err.message);
+        setNotifications([]);
+        setNotifLoading(false);
+      }
+    );
     return () => unsub();
   }, []);
 
@@ -137,7 +123,7 @@ export default function AdminTopbar() {
   const markAsRead = async (n) => {
     try {
       if (!n.read) {
-        await updateDoc(doc(db, "notifications", n.id), { read: true });
+        await markAdminNotificationRead(n.id);
       }
     } catch (e) {
       console.warn("mark read failed:", e.message);
@@ -476,12 +462,9 @@ function ProfileModal({ userData, onClose, onSaved }) {
     setSaving(true);
     setAlert(null);
     try {
-      const now = Timestamp.now();
-      await updateDoc(doc(db, "users", userData.docId), {
+      const now = await updateUserProfileFields(userData.docId, {
         fullName,
-        displayName: fullName,
         phoneNumber,
-        updatedAt: now,
       });
       onSaved({ fullName, phoneNumber, updatedAt: now });
       setAlert({ type: "success", text: "הפרופיל נשמר בהצלחה" });

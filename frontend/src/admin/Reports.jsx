@@ -2,11 +2,12 @@
 import { useState, useEffect, useMemo } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
-import { db } from "../firebase";
-import { collection, getDocs } from "firebase/firestore";
 import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers } from "@/services/volunteersService.js";
 import { getParliaments } from "@/services/parliamentsService.js";
+import { getProjects } from "@/services/projectsService.js";
+import { getJoinRequests } from "@/services/joinRequestsService.js";
+import { getFinancialRecords } from "@/services/financialService.js";
 
 // ============================================================
 // IMPORT REcharts FOR CHARTS
@@ -224,8 +225,7 @@ const REPORT_TYPES = {
     collection: "projects",
     loadData: async () => {
       try {
-        const snap = await getDocs(collection(db, "projects"));
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = await getProjects();
         return data || [];
       } catch (error) {
         console.error("Failed to load projects from Firestore:", error);
@@ -347,8 +347,7 @@ const REPORT_TYPES = {
     collection: "joinRequests",
     loadData: async () => {
       try {
-        const snap = await getDocs(collection(db, "joinRequests"));
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = await getJoinRequests();
         return data || [];
       } catch (error) {
         console.error("Failed to load join requests from Firestore:", error);
@@ -397,8 +396,7 @@ const REPORT_TYPES = {
     collection: "financial",
     loadData: async () => {
       try {
-        const snap = await getDocs(collection(db, "financial"));
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = await getFinancialRecords();
         return data || [];
       } catch (error) {
         console.error("Failed to load financial data from Firestore:", error);
@@ -1378,8 +1376,7 @@ const HolidaySummary = ({ onBack }) => {
     let alive = true;
     (async () => {
       try {
-        const snap = await getDocs(collection(db, "financial"));
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = await getFinancialRecords();
         if (alive && data.length > 0) {
           setAllData(data);
           const yearSet = new Set();
@@ -1711,8 +1708,7 @@ const DonationsSummary = ({ onBack }) => {
     let alive = true;
     (async () => {
       try {
-        const snap = await getDocs(collection(db, "financial"));
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = await getFinancialRecords();
         if (alive) {
           setRows(data.filter((r) => r.type === "תרומה"));
         }

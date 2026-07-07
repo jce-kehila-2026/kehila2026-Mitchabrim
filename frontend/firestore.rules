@@ -75,17 +75,76 @@ service cloud.firestore {
           && resource.data.email == request.auth.token.email
         );
 
-      allow create, update, delete: if isAdmin();
+      allow delete: if isAdmin();
+
+      // Admin can freely create/update. A signed-in user may also bootstrap
+      // (create) or refresh (update) their OWN users/{uid} document on first
+      // login, so long as the doc is safely scoped to them:
+      //   * doc id == their auth uid
+      //   * email matches their auth token (case-insensitive)
+      //   * role is "volunteer" (never self-promote to admin)
+      //   * a matching volunteers/{linkedVolunteerId} exists whose email
+      //     equals their auth email (proves an admin has actually linked
+      //     them to that volunteer profile)
+      // This makes the admin invite flow work even when the Firebase Auth
+      // account already exists (the admin can't know the uid in that case),
+      // without letting an arbitrary signed-in user self-grant volunteer
+      // access to an unrelated volunteer profile.
+      allow create: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          && request.resource.data.role == 'volunteer'
+          && request.resource.data.email is string
+          && request.resource.data.email.lower() == request.auth.token.email.lower()
+          && request.resource.data.linkedVolunteerId is string
+          && exists(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId))
+          && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email is string
+          && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email.lower() == request.auth.token.email.lower()
+        )
+        // Admin self-bootstrap on first login when the admin invite could not
+        // know the auth uid (auth/email-already-in-use). The invite writes an
+        // email-keyed users/{emailToId(email)} doc with role='admin'; on
+        // first login the client mirrors it into users/{auth.uid}. This is
+        // ONLY allowed when such an admin-created email-keyed doc already
+        // exists with role='admin' for the same email — a regular signed-in
+        // user cannot self-promote because they cannot create the email-keyed
+        // source doc (users create requires isAdmin above).
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          && request.resource.data.role == 'admin'
+          && request.resource.data.email is string
+          && request.resource.data.email.lower() == request.auth.token.email.lower()
+          && exists(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_')))
+          && get(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_'))).data.role == 'admin'
+          && get(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_'))).data.email.lower() == request.auth.token.email.lower()
+        );
+
+      allow update: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          // Self-updates cannot escalate role or activation.
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.email.lower() == request.auth.token.email.lower()
+          && (
+            !('active' in request.resource.data)
+            || request.resource.data.active == resource.data.active
+          )
+          && (
+            !('status' in request.resource.data)
+            || request.resource.data.status == resource.data.status
+          )
+          && (
+            !('linkedVolunteerId' in request.resource.data)
+            || request.resource.data.linkedVolunteerId == resource.data.linkedVolunteerId
+          )
+        );
     }
 
 
-    // =========================
-    // Legacy allowedUsers
-    // =========================
 
-    match /allowedUsers/{docId} {
-      allow read, write: if isAdmin();
-    }
 
     // =========================
     // Projects
@@ -391,6 +450,30 @@ service cloud.firestore {
     match /organizationContacts/{docId} {
       allow read, write: if isAdmin();
     }
+
+    // =========================
+    // Images (Gallery)
+    // =========================
+    // Admin: full access to all image documents.
+    // Anyone (including anonymous visitors): may read image documents only
+    // when isPublic == true. Firestore enforces that list/query filters
+    // match the rule, so the public site query
+    //   where("isPublic", "==", true)
+    // is required for anonymous reads to succeed. Private images
+    // (isPublic == false or missing) remain admin-only.
+    // Writes (create/update/delete) are admin-only.
+
+    match /images/{imageId} {
+      allow get: if isAdmin()
+        || (resource.data.isPublic == true);
+
+      allow list: if isAdmin()
+        || (resource.data.isPublic == true);
+
+      allow create, update, delete: if isAdmin();
+    }
+
+
 
     // =========================
     // Admin fallback for all remaining CRM collections

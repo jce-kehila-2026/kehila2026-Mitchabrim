@@ -2,7 +2,7 @@ import {
   collection,
   addDoc,
   getDocs,
-  getDoc,
+  
   updateDoc,
   deleteDoc,
   doc,
@@ -31,12 +31,6 @@ export async function getOrganizations() {
   }
 }
 
-export async function getOrganizationById(id) {
-  if (!id) return null;
-  const snap = await getDoc(doc(db, "organizations", id));
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() };
-}
 
 export async function createOrganization(data) {
   const payload = {

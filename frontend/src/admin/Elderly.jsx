@@ -15,6 +15,7 @@ import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
 import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
+import { sanitizeFormData } from "@/utils/sanitize";
 
 /* ===== Options (shared with volunteers page) =====
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
@@ -160,7 +161,7 @@ export default function Elderly() {
     const prevVolId = data.find((e) => e.id === id)?.volId || null;
     try {
       // eslint-disable-next-line no-unused-vars
-      const { id: _omit, ...payload } = updated;
+      const { id: _omit, ...payload } = sanitizeFormData(updated);
       await editElderly(id, payload);
     } catch (err) {
       console.error("editElderly failed:", err);
@@ -176,16 +177,17 @@ export default function Elderly() {
 
   // Create a new elderly citizen in Firestore + local state
   const handleCreateElderly = async (entry) => {
+    const clean = sanitizeFormData(entry);
     let saved = null;
     try {
-      saved = await createElderly(entry);
+      saved = await createElderly(clean);
     } catch (err) {
       console.error("createElderly failed:", err);
       alert("הוספה ל-Firebase נכשלה. הנתון נוסף מקומית בלבד.");
     }
     const newRecord = saved || {
       id: Math.max(0, ...data.map((d) => (typeof d.id === "number" ? d.id : 0))) + 1,
-      ...entry,
+      ...clean,
     };
     const nextData = [newRecord, ...data];
     setData(nextData);

@@ -169,9 +169,3 @@ export async function deleteMeetingExpense(parliamentId, meetingId, expenseId) {
   const ref = doc(db, "parliaments", parliamentId, "meetings", meetingId, "expenses", expenseId);
   await deleteDoc(ref);
 }
-
-/* Sum expenses for a meeting — used by the meetings table column. */
-export async function getMeetingExpenseTotal(parliamentId, meetingId) {
-  const list = await getMeetingExpenses(parliamentId, meetingId);
-  return list.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-}

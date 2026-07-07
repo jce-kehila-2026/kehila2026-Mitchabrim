@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login, getCurrentUser } from "../services/authService";
-import { getUserRole } from "../services/userService";
+import { resolveUserAccess } from "../services/allowedUsersService";
 import openEye from "../assets/openEyes.png";
 import closeEye from "../assets/closeEyes.png";
 import "../styles/Login.css";
@@ -19,7 +19,7 @@ export default function Login() {
   useEffect(() => {
     const user = getCurrentUser();
     if (user) {
-      checkUserRoleAndRedirect(user.uid);
+      checkUserRoleAndRedirect(user);
     }
     
     const savedEmail = localStorage.getItem("rememberedEmail");
@@ -29,9 +29,9 @@ export default function Login() {
     }
   }, []);
 
-  const checkUserRoleAndRedirect = async (userId) => {
-    const role = await getUserRole(userId);
-    if (role === "admin") {
+  const checkUserRoleAndRedirect = async (user) => {
+    const result = await resolveUserAccess({ uid: user.uid, email: user.email });
+    if (result.success && result.user?.role === "admin") {
       navigate("/admin");
     } else {
       navigate("/volunteer");

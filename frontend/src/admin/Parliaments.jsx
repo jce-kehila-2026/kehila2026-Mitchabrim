@@ -27,6 +27,8 @@ import {
 import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers } from "@/services/volunteersService.js";
 import { getAreaNames } from "@/services/settingsService.js";
+import { sanitizeFormData } from "@/utils/sanitize";
+
 
 /* ===== Static options ===== */
 const STATUS_OPTIONS = ["פעיל", "בהכנה", "הסתיים"];
@@ -147,7 +149,7 @@ export default function Parliaments() {
 
   /* ===== Handlers ===== */
   const handleCreateParliament = async (data) => {
-    const payload = { ...data };
+    const payload = sanitizeFormData(data);
     try {
       const saved = await createParliament(payload);
       setParliaments((prev) => [...prev, saved]);
