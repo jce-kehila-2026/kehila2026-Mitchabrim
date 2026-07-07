@@ -166,7 +166,11 @@ export const listAllowedUsers = async () => {
  */
 export const inviteUser = async ({ email, displayName, role, active = true, linkedVolunteerId = null }) => {
   const normalized = normalizeEmail(email);
-  if (!normalized) return { success: false, error: "Email required" };
+  if (!normalized) return { success: false, error: "יש להזין כתובת אימייל" };
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRe.test(normalized)) {
+    return { success: false, error: "כתובת אימייל אינה תקינה" };
+  }
   if (!["admin", "volunteer"].includes(role)) {
     return { success: false, error: "Invalid role" };
   }
@@ -220,7 +224,10 @@ export const inviteUser = async ({ email, displayName, role, active = true, link
       console.warn("sendPasswordResetEmail failed:", e.message);
     }
 
-    // Upsert Firestore document
+    // Upsert Firestore document. When the Auth account already existed we
+    // don't know the uid — fall back to a deterministic emailToId doc, which
+    // the user will mirror into users/{uid} on their first login (allowed by
+    // the self-bootstrap rule).
     const docId = uid || emailToId(normalized);
     const data = {
       email: normalized,
@@ -231,17 +238,30 @@ export const inviteUser = async ({ email, displayName, role, active = true, link
       active,
       updatedAt: serverTimestamp(),
     };
-    if (linkedVolunteerId) data.linkedVolunteerId = linkedVolunteerId;
+    if (role === "volunteer" && linkedVolunteerId) {
+      data.linkedVolunteerId = linkedVolunteerId;
+    } else if (role === "admin") {
+      // Never leave a stale volunteer link on an admin account.
+      data.linkedVolunteerId = null;
+    }
     const existing = await getDoc(doc(db, COLLECTION, docId));
     if (!existing.exists()) data.createdAt = serverTimestamp();
     await setDoc(doc(db, COLLECTION, docId), data, { merge: true });
 
     // Link the Firebase Auth uid back onto the volunteer profile so that
-    // volunteers/{volunteerDocId}.authUid == auth.uid (used by the volunteer site).
-    if (role === "volunteer" && linkedVolunteerId && uid) {
+    // volunteers/{volunteerDocId}.authUid == auth.uid (used by the volunteer
+    // site's rules fallback). When the Auth account pre-existed we don't
+    // know the uid here — the rules also accept the linkedVolunteerId path
+    // via users/{uid}.linkedVolunteerId, so login still works.
+    if (role === "volunteer" && linkedVolunteerId) {
       try {
         await updateDoc(doc(db, "volunteers", linkedVolunteerId), {
-          authUid: uid,
+          authUid: uid || null,
+          // Sync the volunteer's email to the login email so that the
+          // users/{uid} self-bootstrap rule (which requires
+          // volunteers.email == auth.token.email) succeeds on first login
+          // when the Firebase Auth account already existed.
+          email: normalized,
           updatedAt: serverTimestamp(),
         });
       } catch (e) {

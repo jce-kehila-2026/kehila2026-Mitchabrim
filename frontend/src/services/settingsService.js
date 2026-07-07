@@ -1,65 +1,52 @@
-// Lightweight settings reader.
-// Reads areas and neighborhoods from Firestore document: settings/general
+// src/services/settingsService.js
+// Reads/writes for the singleton "settings/general" document.
+//
+// The document holds site-wide configuration (orgName, address, emails,
+// phones, areas, categories) and is edited only from /admin/settings.
+// Firestore rules gate writes to isAdmin() via the admin fallback.
+//
+// Auth / invite / relink logic lives elsewhere (allowedUsersService) and
+// is intentionally NOT touched from this service.
 
-import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
-export async function getSettings() {
-  const ref = doc(db, "settings", "general");
-  const snap = await getDoc(ref);
+const COLLECTION = "settings";
+const DOC_ID = "general";
 
-  return snap.exists() ? snap.data() : {};
+/**
+ * Fetch the settings/general document.
+ * Returns the raw data object or null when the document does not exist.
+ */
+export async function getSettingsGeneral() {
+  const snap = await getDoc(doc(db, COLLECTION, DOC_ID));
+  if (!snap.exists()) return null;
+  return snap.data();
 }
 
 /**
- * Read areas + neighborhoods from the shared `settings/general` document.
- * Returns an array like:
- * [
- *   { area: "דרום העיר", neighborhoods: ["גילה", "קטמון"] }
- * ]
+ * Merge-write the settings/general document. Preserves the previous
+ * inline behavior: setDoc(..., { merge: true }). Caller supplies the
+ * exact field set to write (no field renames, no schema changes).
+ */
+export async function saveSettingsGeneral(patch) {
+  await setDoc(doc(db, COLLECTION, DOC_ID), patch || {}, { merge: true });
+}
+
+/**
+ * Return the areas array (with nested neighborhoods) from settings/general.
+ * Shape: [{ area: string, neighborhoods: string[] }, ...]
  */
 export async function getAreasAndNeighborhoods() {
-  const data = await getSettings();
-
-  const areas = Array.isArray(data?.areas) ? data.areas : [];
-
-  return areas
-    .filter((item) => item && item.area)
-    .map((item) => ({
-      area: item.area,
-      neighborhoods: Array.isArray(item.neighborhoods)
-        ? item.neighborhoods.filter(Boolean)
-        : [],
-    }));
+  const data = await getSettingsGeneral();
+  if (!data) return [];
+  return Array.isArray(data.areas) ? data.areas : [];
 }
 
 /**
- * Returns full areas objects:
- * [
- *   { area: "...", neighborhoods: [...] }
- * ]
- */
-export async function getAreas() {
-  return await getAreasAndNeighborhoods();
-}
-
-/**
- * Returns only area names:
- * ["דרום העיר", "צפון העיר"]
+ * Return just the list of area names from settings/general.
  */
 export async function getAreaNames() {
   const areas = await getAreasAndNeighborhoods();
-  return areas.map((item) => item.area).filter(Boolean);
-}
-
-/**
- * Returns neighborhoods for a specific area.
- */
-export async function getNeighborhoodsByArea(areaName) {
-  if (!areaName) return [];
-
-  const areas = await getAreasAndNeighborhoods();
-  const found = areas.find((item) => item.area === areaName);
-
-  return found ? found.neighborhoods : [];
+  return areas.map((a) => a.area).filter(Boolean);
 }
