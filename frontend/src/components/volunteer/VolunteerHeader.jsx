@@ -2,16 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
 import logo from "@/assets/logo.png";
 import { useAuth } from "@/context/AuthContext";
-import { db } from "@/firebase";
 import {
-  collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  doc,
-  updateDoc,
-} from "firebase/firestore";
+  subscribeVolunteerNotifications,
+  markVolunteerNotificationRead,
+} from "@/services/volunteerNotificationsService";
 
 const LINKS = [
   { to: "/volunteer", label: "אזור אישי", end: true },
@@ -33,14 +27,9 @@ export default function VolunteerHeader() {
 
   useEffect(() => {
     if (!user?.uid) return;
-    const q = query(
-      collection(db, "volunteerNotifications"),
-      where("volunteerAuthUid", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    const unsub = subscribeVolunteerNotifications(
+      user.uid,
+      (items) => setNotifications(items),
       (err) => console.warn("vol notif:", err.message)
     );
     return () => unsub();
@@ -59,7 +48,7 @@ export default function VolunteerHeader() {
   const markRead = async (n) => {
     if (n.read) return;
     try {
-      await updateDoc(doc(db, "volunteerNotifications", n.id), { read: true });
+      await markVolunteerNotificationRead(n.id);
     } catch (e) {
       console.warn("mark read:", e.message);
     }

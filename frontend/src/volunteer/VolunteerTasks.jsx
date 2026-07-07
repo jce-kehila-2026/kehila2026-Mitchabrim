@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
+import LoadingLine from "@/components/common/LoadingLine.jsx";
+import StatusBadge from "@/components/common/StatusBadge.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer";
 import {
   getTasksForVolunteer,
@@ -91,7 +93,7 @@ export default function VolunteerTasks() {
         </div>
 
         {vError && <div className="vol-alert-error">{vError}</div>}
-        {(loading || vLoading) && <p>טוען משימות...</p>}
+        {(loading || vLoading) && <LoadingLine text="טוען משימות..." />}
         {!loading && !vLoading && error && <div className="vol-alert-error">{error}</div>}
 
         {!loading && !vLoading && !error && filtered.length === 0 && (
@@ -111,7 +113,7 @@ export default function VolunteerTasks() {
                   </div>
                 )}
               </div>
-              <span className={`badge ${taskStatusBadge(t.status)}`}>{taskStatusLabel(t.status)}</span>
+              <StatusBadge label={taskStatusLabel(t.status)} variant={taskStatusBadge(t.status)} />
             </div>
             {t.description && <p className="desc">{t.description}</p>}
             <div className="foot">
