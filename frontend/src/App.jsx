@@ -34,6 +34,7 @@ import VolunteerReportForm from "./volunteer/VolunteerReportForm.jsx";
 import VolunteerReportsHistory from "./volunteer/VolunteerReportsHistory.jsx";
 import VolunteerTasks from "./volunteer/VolunteerTasks.jsx";
 import VolunteerProfile from "./volunteer/VolunteerProfile.jsx";
+import PublicAutoLogout from "./components/PublicAutoLogout.jsx";
 
 const Admin = ({ children }) => (
   <ProtectedRoute allow={["admin"]}>{children}</ProtectedRoute>
@@ -44,6 +45,8 @@ const Vol = ({ children }) => (
 
 export default function App() {
   return (
+    <>
+    <PublicAutoLogout />
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/our-work/:slug" element={<ActivityDetail />} />
@@ -78,5 +81,6 @@ export default function App() {
       <Route path="/volunteer/tasks" element={<Vol><VolunteerTasks /></Vol>} />
       <Route path="/volunteer/profile" element={<Vol><VolunteerProfile /></Vol>} />
     </Routes>
+    </>
   );
 }
