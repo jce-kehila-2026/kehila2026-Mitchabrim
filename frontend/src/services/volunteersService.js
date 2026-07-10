@@ -11,6 +11,9 @@ import {
   orderBy,
   increment,
   writeBatch,
+  limit,
+  startAfter,
+  getCountFromServer,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
@@ -286,4 +289,51 @@ export async function clearGroupFromVolunteers(groupId) {
   });
 
   await batch.commit();
+}
+/* =========================
+   Server-side pagination (Firestore cursor)
+
+   Real Firestore cursor pagination — intended for future adoption when the
+   volunteers admin page moves away from client-side filtering/search across
+   assigned-elderly names. See PHASE_8_10 in CURRENT_PROJECT_STATUS_AUDIT.md.
+========================= */
+
+export async function getVolunteersPage({ pageSize = 20, cursor = null } = {}) {
+  const q = cursor
+    ? query(volunteersCollection, orderBy("createdAt", "desc"), startAfter(cursor), limit(pageSize + 1))
+    : query(volunteersCollection, orderBy("createdAt", "desc"), limit(pageSize + 1));
+
+  const snap = await getDocs(q);
+  const docs = snap.docs;
+  const hasNextPage = docs.length > pageSize;
+  const pageDocs = hasNextPage ? docs.slice(0, pageSize) : docs;
+
+  return {
+    items: pageDocs.map((d) => ({ id: d.id, ...d.data() })),
+    firstVisible: pageDocs[0] || null,
+    lastVisible: pageDocs[pageDocs.length - 1] || null,
+    hasNextPage,
+  };
+}
+
+export async function getVolunteersCount() {
+  const snap = await getCountFromServer(volunteersCollection);
+  return snap.data().count;
+}
+
+/**
+ * Stats via count aggregations — one aggregation read per query.
+ * Matches labels used in the volunteers admin stats cards.
+ */
+export async function getVolunteersStatusCounts() {
+  const [totalSnap, assignedSnap, pendingSnap] = await Promise.all([
+    getCountFromServer(volunteersCollection),
+    getCountFromServer(query(volunteersCollection, where("status", "==", "משויך לאזרח ותיק"))),
+    getCountFromServer(query(volunteersCollection, where("status", "==", "ממתין לשיבוץ"))),
+  ]);
+  return {
+    total: totalSnap.data().count,
+    assigned: assignedSnap.data().count,
+    pending: pendingSnap.data().count,
+  };
 }
