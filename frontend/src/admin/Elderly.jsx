@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
+import TablePagination from "@/components/admin/TablePagination.jsx";
 import {
   getElderly,
+  getElderlyPage,
+  getElderlyCount,
+  getElderlyStatusCounts,
   createElderly,
   editElderly,
   deleteElderly,
 } from "@/services/elderlyService.js";
 import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
+import useFirestorePagination from "@/hooks/useFirestorePagination.js";
 import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
@@ -58,8 +63,6 @@ const statusBadge = (s) => (s === "פעיל" ? "badge-green" : "badge-gray");
 const fullName = (e) => `${e.firstName || ""} ${e.lastName || ""}`.trim();
 
 export default function Elderly() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -92,36 +95,94 @@ export default function Elderly() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterArea]);
 
-  // Load elderly from Firestore on mount. Fallback to SEED so the page still works
-  // in environments where Firebase isn't configured.
+  // "Search / filter mode" — any filter or free-text search is active. In this
+  // mode Firestore cursor pagination cannot serve the multi-field client-side
+  // search (no external text-search index in the project), so the full
+  // collection is fetched once and filtered/sliced client-side. Users see a
+  // visible notice when this happens (see notice below the filters).
+  const hasFiltersOrSearch = !!(
+    filterArea || filterNeighborhood || filterMarital ||
+    filterVolStatus || filterStatus || search.trim()
+  );
+
+  const PAGE_SIZE = 20;
+
+  // ---- Stats via count aggregations (no full collection read) ----
+  const [stats, setStats] = useState({ total: 0, connected: 0, without: 0 });
+  const [statsVersion, setStatsVersion] = useState(0);
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const items = await getElderly();
-        if (!mounted) return;
-        setData(items.length ? items : SEED);
+        const s = await getElderlyStatusCounts();
+        if (mounted) setStats(s);
       } catch (err) {
-        console.error("Failed to load elderly from Firestore:", err);
-        if (!mounted) return;
-        setLoadError("טעינה מ-Firebase נכשלה — מוצגים נתוני דוגמה.");
-        setData(SEED);
-      } finally {
-        if (mounted) setLoading(false);
+        console.error("getElderlyStatusCounts failed:", err);
       }
     })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    return () => { mounted = false; };
+  }, [statsVersion]);
 
-  const sorted = useMemo(
-    () => [...data].sort((a, b) => fullName(a).localeCompare(fullName(b), "he")),
-    [data],
+  // ---- Total count (drives totalPages in cursor mode) ----
+  const [totalCount, setTotalCount] = useState(null);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const c = await getElderlyCount();
+        if (mounted) setTotalCount(c);
+      } catch (err) {
+        console.error("getElderlyCount failed:", err);
+      }
+    })();
+  }, [statsVersion]);
+
+  // ---- Cursor pagination (real Firestore, 20 docs/page) ----
+  const fetchPage = useCallback(
+    ({ cursor }) => getElderlyPage({ pageSize: PAGE_SIZE, cursor }),
+    [],
   );
+  const paged = useFirestorePagination({
+    fetchPage,
+    totalCount,
+    pageSize: PAGE_SIZE,
+    deps: [statsVersion, totalCount],
+  });
 
-  const visible = useMemo(() => {
+  // ---- Full-collection cache (used ONLY in search/filter mode and for
+  // add/edit duplicate-id validation + print). Loaded lazily. ----
+  const [fullData, setFullData] = useState(null);
+  const [fullLoading, setFullLoading] = useState(false);
+  const ensureFullData = useCallback(async () => {
+    if (fullData) return fullData;
+    setFullLoading(true);
+    try {
+      const items = await getElderly();
+      const data = items.length ? items : SEED;
+      setFullData(data);
+      return data;
+    } catch (err) {
+      console.error("Failed to load full elderly collection:", err);
+      setLoadError("טעינה מ-Firebase נכשלה — מוצגים נתוני דוגמה.");
+      setFullData(SEED);
+      return SEED;
+    } finally {
+      setFullLoading(false);
+    }
+  }, [fullData]);
+
+  // When entering search/filter mode, ensure full collection is loaded.
+  useEffect(() => {
+    if (hasFiltersOrSearch && !fullData) ensureFullData();
+  }, [hasFiltersOrSearch, fullData, ensureFullData]);
+
+  // Filtered + sorted view (only meaningful in filter/search mode).
+  const filteredFull = useMemo(() => {
+    if (!hasFiltersOrSearch || !fullData) return [];
     const q = search.trim().toLowerCase();
+    const sorted = [...fullData].sort((a, b) =>
+      fullName(a).localeCompare(fullName(b), "he"),
+    );
     return sorted.filter((e) => {
       if (filterArea && e.area !== filterArea) return false;
       if (filterNeighborhood && e.neighborhood !== filterNeighborhood) return false;
@@ -137,14 +198,30 @@ export default function Elderly() {
       }
       return true;
     });
-  }, [sorted, filterArea, filterNeighborhood, filterMarital, filterVolStatus, filterStatus, search]);
+  }, [hasFiltersOrSearch, fullData, filterArea, filterNeighborhood, filterMarital, filterVolStatus, filterStatus, search]);
 
-  const openElderly = sorted.find((e) => e.id === openId) || null;
+  // Client-side pagination for filter/search mode.
+  const [filterPage, setFilterPage] = useState(1);
+  const filterTotalPages = Math.max(1, Math.ceil(filteredFull.length / PAGE_SIZE));
+  useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterMarital, filterVolStatus, filterStatus, search]);
+  useEffect(() => { if (filterPage > filterTotalPages) setFilterPage(filterTotalPages); }, [filterPage, filterTotalPages]);
+  const filterPageStart = (filterPage - 1) * PAGE_SIZE;
+  const filterPageItems = filteredFull.slice(filterPageStart, filterPageStart + PAGE_SIZE);
 
+  // Unified view used by the table + pagination bar.
+  const pageItems = hasFiltersOrSearch ? filterPageItems : paged.items;
+  const currentPage = hasFiltersOrSearch ? filterPage : paged.page;
+  const totalPages = hasFiltersOrSearch ? filterTotalPages : paged.totalPages;
+  const paginationTotal = hasFiltersOrSearch ? filteredFull.length : (totalCount ?? 0);
+  const loading = hasFiltersOrSearch ? fullLoading : paged.loading;
 
-  // Recompute a volunteer's status based on current elderly assignments.
-  // If still assigned to at least one elderly → "משויך לאזרח ותיק".
-  // Otherwise → "ממתין לשיבוץ". Only persists string volunteer ids (Firestore docs).
+  // Resolve the open elderly record from whichever list is currently visible.
+  const openElderly =
+    (fullData && fullData.find((e) => e.id === openId)) ||
+    pageItems.find((e) => e.id === openId) ||
+    null;
+
+  // Recompute a volunteer's status based on assignments. Uses a passed-in list.
   const syncVolunteerStatus = async (volunteerId, elderlyList) => {
     if (!volunteerId || typeof volunteerId !== "string") return;
     const stillAssigned = elderlyList.some((e) => e.volId === volunteerId);
@@ -156,9 +233,11 @@ export default function Elderly() {
     }
   };
 
-  // Update an elderly citizen in Firestore + local state
+  // Invalidate paginated + count caches after any mutation.
+  const invalidate = () => setStatsVersion((v) => v + 1);
+
   const handleEditElderly = async (id, updated) => {
-    const prevVolId = data.find((e) => e.id === id)?.volId || null;
+    const prevVolId = openElderly?.volId || null;
     try {
       // eslint-disable-next-line no-unused-vars
       const { id: _omit, ...payload } = sanitizeFormData(updated);
@@ -167,58 +246,74 @@ export default function Elderly() {
       console.error("editElderly failed:", err);
       alert("שמירה ל-Firebase נכשלה. השינוי נשמר מקומית בלבד.");
     }
-    const nextData = data.map((e) => (e.id === id ? { ...e, ...updated, id } : e));
-    setData(nextData);
+    // Patch caches locally so the UI reflects the edit without a full reload.
+    paged.patchItem(id, updated);
+    if (fullData) {
+      const next = fullData.map((e) => (e.id === id ? { ...e, ...updated, id } : e));
+      setFullData(next);
+      const affected = new Set([prevVolId, updated.volId].filter(Boolean));
+      for (const vid of affected) await syncVolunteerStatus(vid, next);
+    } else if (prevVolId || updated.volId) {
+      // Best-effort: load full to keep volunteer statuses correct.
+      const next = await ensureFullData();
+      const affected = new Set([prevVolId, updated.volId].filter(Boolean));
+      for (const vid of affected) await syncVolunteerStatus(vid, next);
+    }
     setOpenId(null);
-
-    const affected = new Set([prevVolId, updated.volId].filter(Boolean));
-    for (const vid of affected) await syncVolunteerStatus(vid, nextData);
+    invalidate();
   };
 
-  // Create a new elderly citizen in Firestore + local state
   const handleCreateElderly = async (entry) => {
     const clean = sanitizeFormData(entry);
-    let saved = null;
     try {
-      saved = await createElderly(clean);
+      await createElderly(clean);
     } catch (err) {
       console.error("createElderly failed:", err);
-      alert("הוספה ל-Firebase נכשלה. הנתון נוסף מקומית בלבד.");
+      alert("הוספה ל-Firebase נכשלה.");
     }
-    const newRecord = saved || {
-      id: Math.max(0, ...data.map((d) => (typeof d.id === "number" ? d.id : 0))) + 1,
-      ...clean,
-    };
-    const nextData = [newRecord, ...data];
-    setData(nextData);
     setShowAdd(false);
-
-    if (entry.volId) await syncVolunteerStatus(entry.volId, nextData);
+    setFullData(null); // invalidate cache
+    invalidate();
+    if (entry.volId) {
+      const next = await ensureFullData();
+      await syncVolunteerStatus(entry.volId, next);
+    }
   };
 
-  // Delete an elderly citizen from Firestore + local state
   const handleDeleteElderly = async (elderly) => {
     if (!elderly) return;
     if (!window.confirm(`האם למחוק את ${fullName(elderly)}? פעולה זו אינה הפיכה.`)) return;
     try {
-      // Only call Firestore if it looks like a real document id (string)
-      if (typeof elderly.id === "string") {
-        await deleteElderly(elderly.id);
-      }
+      if (typeof elderly.id === "string") await deleteElderly(elderly.id);
     } catch (err) {
       console.error("deleteElderly failed:", err);
-      alert("מחיקה מ-Firebase נכשלה. הרשומה הוסרה מקומית בלבד.");
+      alert("מחיקה מ-Firebase נכשלה.");
     }
-    const nextData = data.filter((e) => e.id !== elderly.id);
-    setData(nextData);
+    paged.removeItem(elderly.id);
+    if (fullData) setFullData(fullData.filter((e) => e.id !== elderly.id));
     setOpenId(null);
-
-    if (elderly.volId) await syncVolunteerStatus(elderly.volId, nextData);
+    invalidate();
+    if (elderly.volId) {
+      const next = await ensureFullData();
+      await syncVolunteerStatus(elderly.volId, next);
+    }
   };
 
+  const handleOpenPrint = async () => {
+    await ensureFullData();
+    setShowPrint(true);
+  };
+  const handleOpenAdd = async () => {
+    // Load full for duplicate-idNum validation inside the form.
+    ensureFullData();
+    setShowAdd(true);
+  };
 
-  const connectedCount = data.filter((d) => d.volStatus === "כן" || d.volStatus === "לא מתאים").length;
-  const withoutCount = data.length - connectedCount;
+  const connectedCount = stats.connected;
+  const withoutCount = stats.without;
+  const totalStat = stats.total;
+
+
 
   return (
     <AdminPageLayout
@@ -227,8 +322,8 @@ export default function Elderly() {
       heroImage="/admin-heroes/elderly-hero-bg.png"
       actions={
         <>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ הוספת אזרח ותיק</button>
-          <button className="btn" onClick={() => setShowPrint(true)}>הדפסת רשימה</button>
+          <button className="btn btn-primary" onClick={handleOpenAdd}>+ הוספת אזרח ותיק</button>
+          <button className="btn" onClick={handleOpenPrint}>הדפסת רשימה</button>
         </>
       }
     >
@@ -243,10 +338,11 @@ export default function Elderly() {
         <div style={{ padding: "10px 0", color: "#6b7280", fontSize: 14 }}>טוען נתונים…</div>
       )}
       <div className="stats-grid">
-        <StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value={String(data.length)} />
+        <StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value={String(totalStat)} />
         <StatsCard icon="🤝" title="מחוברים למתנדב" value={String(connectedCount)} />
         <StatsCard icon="🚫" title="ללא מתנדב" value={String(withoutCount)} />
       </div>
+
 
       <SectionCard>
         {areasError && (
@@ -295,6 +391,15 @@ export default function Elderly() {
             },
           ]}
         />
+        {hasFiltersOrSearch && (
+          <div style={{
+            background: "#eef4ff", border: "1px solid #c7d7ff", color: "#1e3a8a",
+            borderRadius: 10, padding: "8px 12px", margin: "10px 0", fontSize: 13,
+          }}>
+            מצב חיפוש/סינון פעיל — כדי לתמוך בחיפוש חופשי רב-שדות, האוסף המלא נטען פעם אחת ומסונן בצד הלקוח.
+            נקו את החיפוש והמסננים כדי לחזור לטעינה מדפדפת (20 רשומות בכל פעם) מ-Firebase.
+          </div>
+        )}
         <DataTable
           columns={[
             {
@@ -322,7 +427,7 @@ export default function Elderly() {
                   "—"
                 ),
             },
-            
+
             {
               key: "status",
               label: "מצב",
@@ -330,8 +435,19 @@ export default function Elderly() {
             },
             { key: "notes", label: "הערות" },
           ]}
-          data={visible}
+          data={pageItems}
         />
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={paginationTotal}
+          pageSize={PAGE_SIZE}
+          loading={loading}
+          onNext={() => hasFiltersOrSearch ? setFilterPage((p) => Math.min(filterTotalPages, p + 1)) : paged.next()}
+          onPrevious={() => hasFiltersOrSearch ? setFilterPage((p) => Math.max(1, p - 1)) : paged.prev()}
+          onPageChange={(p) => hasFiltersOrSearch ? setFilterPage(p) : paged.goToPage(p)}
+        />
+
 
       </SectionCard>
 
@@ -339,7 +455,7 @@ export default function Elderly() {
         <ElderlyFormModal
           title="הוספת אזרח ותיק"
           initial={null}
-          existingIds={data.map((d) => ({ id: d.id, idNum: d.idNum }))}
+          existingIds={(fullData || pageItems).map((d) => ({ id: d.id, idNum: d.idNum }))}
           onClose={() => setShowAdd(false)}
           onSave={handleCreateElderly}
         />
@@ -347,7 +463,7 @@ export default function Elderly() {
       {openElderly && (
         <ElderlyProfileModal
           entry={openElderly}
-          existingIds={data.map((d) => ({ id: d.id, idNum: d.idNum }))}
+          existingIds={(fullData || pageItems).map((d) => ({ id: d.id, idNum: d.idNum }))}
           onClose={() => setOpenId(null)}
           onSave={(updated) => handleEditElderly(openElderly.id, updated)}
           onDelete={() => handleDeleteElderly(openElderly)}
@@ -356,7 +472,12 @@ export default function Elderly() {
       {openVolunteer && (
         <VolunteerQuickModal entry={openVolunteer} onClose={() => setOpenVolunteer(null)} />
       )}
-      {showPrint && <PrintReportModal items={sorted} onClose={() => setShowPrint(false)} />}
+      {showPrint && fullData && (
+        <PrintReportModal
+          items={[...fullData].sort((a, b) => fullName(a).localeCompare(fullName(b), "he"))}
+          onClose={() => setShowPrint(false)}
+        />
+      )}
     </AdminPageLayout>
   );
 }

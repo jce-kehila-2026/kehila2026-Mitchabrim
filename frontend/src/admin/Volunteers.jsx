@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
@@ -6,9 +6,13 @@ import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
+import TablePagination from "@/components/admin/TablePagination.jsx";
 
 import {
   getVolunteers,
+  getVolunteersPage,
+  getVolunteersCount,
+  getVolunteersStatusCounts,
   createVolunteer,
   editVolunteer,
   deleteVolunteer,
@@ -23,7 +27,8 @@ import {
 } from "../services/volunteersService";
 import { getReportsForVolunteer } from "../services/reportsService";
 import { getTasksForVolunteer, taskStatusLabel, taskTypeLabel, taskStatusBadge } from "../services/tasksService";
-import { getElderly } from "../services/elderlyService";
+import { getElderly, getElderlyForVolunteerIds } from "../services/elderlyService";
+import useFirestorePagination from "../hooks/useFirestorePagination";
 
 import useAreasAndNeighborhoods from "../hooks/useAreasAndNeighborhoods";
 
@@ -101,10 +106,9 @@ export default function Volunteers() {
   const [openVolunteerId, setOpenVolunteerId] = useState(null);
   const [openGroupId, setOpenGroupId] = useState(null);
 
-  const [volunteers, setVolunteers] = useState([]);
   const [groups, setGroups] = useState([]);
 
-  const [loading, setLoading] = useState(true);
+  const [groupsLoading, setGroupsLoading] = useState(true);
   const [error, setError] = useState("");
 
   // Shared area/neighborhood data — drives both filters and form dropdowns.
@@ -116,14 +120,13 @@ export default function Volunteers() {
     isEmpty: areasEmpty,
   } = useAreasAndNeighborhoods();
 
-  // Filter state (area + neighborhood are wired to actual filtering).
+  // Filter state.
   const [filterArea, setFilterArea] = useState("");
   const [filterNeighborhood, setFilterNeighborhood] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterInsurance, setFilterInsurance] = useState("");
   const [search, setSearch] = useState("");
 
-  // Reset neighborhood when area changes if it's no longer valid for that area.
   useEffect(() => {
     if (!filterNeighborhood) return;
     if (!getNeighborhoods(filterArea).includes(filterNeighborhood)) {
@@ -132,42 +135,142 @@ export default function Volunteers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterArea]);
 
-  /* =========================
-     Load Firebase data
-  ========================= */
+  // Any filter/search active → fall back to full-collection mode so that
+  // multi-field client-side search (including assigned-elderly names) still
+  // works. Documented in the notice below the filter bar and in the audit.
+  const hasFiltersOrSearch = !!(
+    filterArea || filterNeighborhood || filterStatus || filterInsurance || search.trim()
+  );
 
-  const [elderlyList, setElderlyList] = useState([]);
+  const PAGE_SIZE = 20;
+
+  /* =========================
+     Stats via count aggregations
+  ========================= */
+  const [stats, setStats] = useState({ total: 0, assigned: 0, pending: 0 });
+  const [statsVersion, setStatsVersion] = useState(0);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const s = await getVolunteersStatusCounts();
+        if (mounted) setStats(s);
+      } catch (err) {
+        console.error("getVolunteersStatusCounts failed:", err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [statsVersion]);
+
+  /* =========================
+     Volunteers cursor pagination
+  ========================= */
+  const [totalCount, setTotalCount] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const c = await getVolunteersCount();
+        setTotalCount(c);
+      } catch (err) {
+        console.error("getVolunteersCount failed:", err);
+      }
+    })();
+  }, [statsVersion]);
+
+  const fetchVolunteersPage = useCallback(
+    ({ cursor }) => getVolunteersPage({ pageSize: PAGE_SIZE, cursor }),
+    [],
+  );
+  const paged = useFirestorePagination({
+    fetchPage: fetchVolunteersPage,
+    totalCount,
+    pageSize: PAGE_SIZE,
+    deps: [statsVersion, totalCount],
+  });
+
+  /* =========================
+     Assigned-elderly for the CURRENT PAGE only (no full-collection read)
+     Uses a single Firestore `in` query on elderly.volId (chunked at 30).
+  ========================= */
+  const [elderlyByVolunteer, setElderlyByVolunteer] = useState(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ids = paged.items.map((v) => v.id);
+      if (ids.length === 0) {
+        setElderlyByVolunteer(new Map());
+        return;
+      }
+      try {
+        const rows = await getElderlyForVolunteerIds(ids);
+        if (cancelled) return;
+        const map = new Map();
+        for (const e of rows) {
+          if (!e.volId) continue;
+          const name = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "אזרח ותיק";
+          const arr = map.get(e.volId) || [];
+          arr.push({ id: e.id, name });
+          map.set(e.volId, arr);
+        }
+        setElderlyByVolunteer(map);
+      } catch (err) {
+        console.error("getElderlyForVolunteerIds failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [paged.items]);
+
+  /* =========================
+     Full-collection cache — filter/search mode + print + duplicate checks
+  ========================= */
+  const [fullVolunteers, setFullVolunteers] = useState(null);
+  const [fullElderly, setFullElderly] = useState(null);
+  const [fullLoading, setFullLoading] = useState(false);
+  const ensureFull = useCallback(async () => {
+    if (fullVolunteers && fullElderly) return { vols: fullVolunteers, elderly: fullElderly };
+    setFullLoading(true);
+    try {
+      const [vols, elderly] = await Promise.all([
+        getVolunteers(),
+        getElderly().catch(() => []),
+      ]);
+      setFullVolunteers(vols);
+      setFullElderly(elderly);
+      return { vols, elderly };
+    } catch (err) {
+      console.error("ensureFull failed:", err);
+      setError("שגיאה בטעינת הנתונים מ-Firebase");
+      return { vols: [], elderly: [] };
+    } finally {
+      setFullLoading(false);
+    }
+  }, [fullVolunteers, fullElderly]);
 
   useEffect(() => {
-    async function loadData() {
+    if (hasFiltersOrSearch && (!fullVolunteers || !fullElderly)) ensureFull();
+  }, [hasFiltersOrSearch, fullVolunteers, fullElderly, ensureFull]);
+
+  // Groups always load in full (small dataset, no cursor pagination needed).
+  useEffect(() => {
+    (async () => {
       try {
-        setLoading(true);
-        setError("");
-
-        const [volunteersData, groupsData, elderlyData] = await Promise.all([
-          getVolunteers(),
-          getVolunteerGroups(),
-          getElderly().catch(() => []),
-        ]);
-
-        setVolunteers(volunteersData);
+        setGroupsLoading(true);
+        const groupsData = await getVolunteerGroups();
         setGroups(groupsData);
-        setElderlyList(elderlyData);
       } catch (err) {
         console.error(err);
-        setError("שגיאה בטעינת הנתונים מ-Firebase");
+        setError("שגיאה בטעינת הקבוצות");
       } finally {
-        setLoading(false);
+        setGroupsLoading(false);
       }
-    }
-
-    loadData();
+    })();
   }, []);
 
-  // Build a map: volunteerId -> [elderly names] using real DB relationships.
-  const elderlyByVolunteer = useMemo(() => {
+  // Full-mode elderlyByVolunteer (for filter/search + name-based search).
+  const fullElderlyByVolunteer = useMemo(() => {
     const map = new Map();
-    for (const e of elderlyList) {
+    if (!fullElderly) return map;
+    for (const e of fullElderly) {
       if (!e.volId) continue;
       const name = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "אזרח ותיק";
       const arr = map.get(e.volId) || [];
@@ -175,64 +278,102 @@ export default function Volunteers() {
       map.set(e.volId, arr);
     }
     return map;
-  }, [elderlyList]);
+  }, [fullElderly]);
 
-  /* =========================
-     Derived data
-  ========================= */
-
-  const sorted = useMemo(() => {
-    return [...volunteers].sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
-  }, [volunteers]);
+  const fullSorted = useMemo(() => {
+    if (!fullVolunteers) return [];
+    return [...fullVolunteers].sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
+  }, [fullVolunteers]);
 
   const visibleVolunteers = useMemo(() => {
+    if (!hasFiltersOrSearch) return [];
     const q = search.trim().toLowerCase();
-    return sorted.filter((v) => {
+    return fullSorted.filter((v) => {
       if (filterArea && v.area !== filterArea) return false;
       if (filterNeighborhood && v.neighborhood !== filterNeighborhood) return false;
       if (filterStatus && v.status !== filterStatus) return false;
       if (filterInsurance && (v.insurance || "לא") !== filterInsurance) return false;
       if (q) {
-        const assigned = (elderlyByVolunteer.get(v.id) || []).map((e) => e.name).join(" ");
+        const assigned = (fullElderlyByVolunteer.get(v.id) || []).map((e) => e.name).join(" ");
         const hay = [v.name, v.phone, v.group, v.neighborhood, v.area, assigned]
           .filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [sorted, filterArea, filterNeighborhood, filterStatus, filterInsurance, search, elderlyByVolunteer]);
+  }, [hasFiltersOrSearch, fullSorted, filterArea, filterNeighborhood, filterStatus, filterInsurance, search, fullElderlyByVolunteer]);
 
-  const openVolunteer = sorted.find((v) => v.id === openVolunteerId) || null;
+  // Filter-mode client-side pagination.
+  const [filterPage, setFilterPage] = useState(1);
+  const filterTotalPages = Math.max(1, Math.ceil(visibleVolunteers.length / PAGE_SIZE));
+  useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterStatus, filterInsurance, search]);
+  useEffect(() => { if (filterPage > filterTotalPages) setFilterPage(filterTotalPages); }, [filterPage, filterTotalPages]);
+  const filterPageStart = (filterPage - 1) * PAGE_SIZE;
+  const filterPageItems = visibleVolunteers.slice(filterPageStart, filterPageStart + PAGE_SIZE);
 
+  // Unified view.
+  const volPageItems = hasFiltersOrSearch ? filterPageItems : paged.items;
+  const volCurrentPage = hasFiltersOrSearch ? filterPage : paged.page;
+  const volTotalPages = hasFiltersOrSearch ? filterTotalPages : paged.totalPages;
+  const volPaginationTotal = hasFiltersOrSearch ? visibleVolunteers.length : (totalCount ?? 0);
+  const activeElderlyByVolunteer = hasFiltersOrSearch ? fullElderlyByVolunteer : elderlyByVolunteer;
+  const loading = hasFiltersOrSearch ? fullLoading : paged.loading;
+
+  // Groups pagination — unchanged (client-side slice).
+  const [groupPage, setGroupPage] = useState(1);
+  const groupTotalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  useEffect(() => { if (groupPage > groupTotalPages) setGroupPage(groupTotalPages); }, [groupPage, groupTotalPages]);
+  const groupPageStart = (groupPage - 1) * PAGE_SIZE;
+  const groupPageItems = groups.slice(groupPageStart, groupPageStart + PAGE_SIZE);
+
+  // Resolve open records from whichever list is visible.
+  const openVolunteer =
+    (fullSorted.find((v) => v.id === openVolunteerId)) ||
+    paged.items.find((v) => v.id === openVolunteerId) ||
+    null;
   const openGroup = groups.find((g) => g.id === openGroupId) || null;
 
   const activeGroupsCount = groups.filter((g) => g.status === "פעילה").length;
-
-  const volunteersInGroups = volunteers.filter((v) => v.groupId && v.group && v.group !== "ללא קבוצה").length;
+  const volunteersInGroups = (fullVolunteers || paged.items).filter(
+    (v) => v.groupId && v.group && v.group !== "ללא קבוצה",
+  ).length;
 
   const groupVolunteersFor = (group) => {
     if (!group) return [];
-
-    return sorted.filter((v) => v.groupId === group.id || v.group === group.name);
+    // Group management needs the full member list; ensure full data is loaded.
+    const src = fullSorted.length ? fullSorted : paged.items;
+    return src.filter((v) => v.groupId === group.id || v.group === group.name);
   };
+
+  const invalidate = () => setStatsVersion((v) => v + 1);
 
   /* =========================
      Firebase Actions
   ========================= */
 
+  // Local helper: patch a volunteer everywhere it might be cached (paginated
+  // current page + full-collection cache if loaded).
+  const patchVolunteerEverywhere = (id, patch) => {
+    paged.patchItem(id, patch);
+    if (fullVolunteers) {
+      setFullVolunteers(fullVolunteers.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+    }
+  };
+  const removeVolunteerEverywhere = (id) => {
+    paged.removeItem(id);
+    if (fullVolunteers) setFullVolunteers(fullVolunteers.filter((v) => v.id !== id));
+  };
+
   const handleAddVolunteer = async (newVolunteer) => {
     try {
-      const savedVolunteer = await createVolunteer(sanitizeFormData(newVolunteer));
-
-      setVolunteers((prev) => [savedVolunteer, ...prev]);
-
+      await createVolunteer(sanitizeFormData(newVolunteer));
       if (newVolunteer.groupId) {
         await increaseGroupCount(newVolunteer.groupId);
-
         setGroups((prev) => prev.map((g) => (g.id === newVolunteer.groupId ? { ...g, count: (g.count || 0) + 1 } : g)));
       }
-
       setShowAdd(false);
+      setFullVolunteers(null);
+      invalidate();
     } catch (err) {
       console.error(err);
       alert("שגיאה בהוספת מתנדב");
@@ -243,10 +384,9 @@ export default function Volunteers() {
     try {
       const clean = sanitizeFormData(updatedVolunteer);
       await editVolunteer(clean.id, clean);
-
-      setVolunteers((prev) => prev.map((v) => (v.id === clean.id ? { ...v, ...clean } : v)));
-
+      patchVolunteerEverywhere(clean.id, clean);
       setOpenVolunteerId(null);
+      invalidate();
     } catch (err) {
       console.error(err);
       alert("שגיאה בעדכון פרטי המתנדב");
@@ -256,7 +396,6 @@ export default function Volunteers() {
   const handleCreateGroup = async (newGroup) => {
     try {
       const savedGroup = await createVolunteerGroup(sanitizeFormData(newGroup));
-
       setGroups((prev) => [savedGroup, ...prev]);
       setShowCreateGroup(false);
     } catch (err) {
@@ -269,7 +408,6 @@ export default function Volunteers() {
     try {
       const clean = sanitizeFormData(updatedGroup);
       await editVolunteerGroup(clean.id, clean);
-
       setGroups((prev) => prev.map((g) => (g.id === clean.id ? { ...g, ...clean } : g)));
     } catch (err) {
       console.error(err);
@@ -281,31 +419,20 @@ export default function Volunteers() {
     try {
       const group = groups.find((g) => g.id === groupId);
       if (!group) return;
-
-      const volunteer = volunteers.find((v) => v.id === entry.volunteerId);
+      const { vols } = await ensureFull();
+      const volunteer = vols.find((v) => v.id === entry.volunteerId);
       if (!volunteer) return;
-
       if (volunteer.groupId === group.id || volunteer.group === group.name) {
         alert("המתנדב כבר קיים בקבוצה זו");
         return;
       }
-
       await addVolunteerToGroup(entry.volunteerId, group, entry.role, entry.notes);
-
-      setVolunteers((prev) =>
-        prev.map((v) =>
-          v.id === entry.volunteerId
-            ? {
-                ...v,
-                groupId: group.id,
-                group: group.name,
-                groupRole: entry.role || "חבר קבוצה",
-                groupNotes: entry.notes || "",
-              }
-            : v,
-        ),
-      );
-
+      patchVolunteerEverywhere(entry.volunteerId, {
+        groupId: group.id,
+        group: group.name,
+        groupRole: entry.role || "חבר קבוצה",
+        groupNotes: entry.notes || "",
+      });
       setGroups((prev) => prev.map((g) => (g.id === group.id ? { ...g, count: (g.count || 0) + 1 } : g)));
     } catch (err) {
       console.error(err);
@@ -317,26 +444,16 @@ export default function Volunteers() {
     if (!volunteer) return;
     const ok = window.confirm(`האם אתה בטוח שברצונך למחוק את המתנדב "${volunteer.name}"?`);
     if (!ok) return;
-
     try {
       await deleteVolunteer(volunteer.id);
-
-      setVolunteers((prev) => prev.filter((v) => v.id !== volunteer.id));
-
+      removeVolunteerEverywhere(volunteer.id);
       if (volunteer.groupId) {
         setGroups((prev) =>
           prev.map((g) => (g.id === volunteer.groupId ? { ...g, count: Math.max(0, (g.count || 0) - 1) } : g)),
         );
-        try {
-          await editVolunteerGroup(volunteer.groupId, {
-            count: Math.max(0, (groups.find((g) => g.id === volunteer.groupId)?.count || 1) - 1),
-          });
-        } catch (e) {
-          console.warn("group count update failed", e);
-        }
       }
-
       setOpenVolunteerId(null);
+      invalidate();
     } catch (err) {
       console.error(err);
       alert("שגיאה במחיקת המתנדב");
@@ -346,16 +463,11 @@ export default function Volunteers() {
   const handleRemoveVolunteerFromGroup = async (volunteerId, groupId) => {
     const ok = window.confirm("האם להסיר את המתנדב מהקבוצה?");
     if (!ok) return;
-
     try {
       await removeVolunteerFromGroup(volunteerId, groupId);
-
-      setVolunteers((prev) =>
-        prev.map((v) =>
-          v.id === volunteerId ? { ...v, groupId: null, group: "ללא קבוצה", groupRole: "", groupNotes: "" } : v,
-        ),
-      );
-
+      patchVolunteerEverywhere(volunteerId, {
+        groupId: null, group: "ללא קבוצה", groupRole: "", groupNotes: "",
+      });
       if (groupId) {
         setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, count: Math.max(0, (g.count || 0) - 1) } : g)));
       }
@@ -369,22 +481,34 @@ export default function Volunteers() {
     if (!group) return;
     const ok = window.confirm(`האם למחוק את הקבוצה "${group.name}"? המתנדבים עצמם לא יימחקו.`);
     if (!ok) return;
-
     try {
       await clearGroupFromVolunteers(group.id);
       await deleteVolunteerGroup(group.id);
-
-      setVolunteers((prev) =>
-        prev.map((v) =>
+      if (fullVolunteers) {
+        setFullVolunteers(fullVolunteers.map((v) =>
           v.groupId === group.id ? { ...v, groupId: null, group: "ללא קבוצה", groupRole: "", groupNotes: "" } : v,
-        ),
-      );
+        ));
+      }
       setGroups((prev) => prev.filter((g) => g.id !== group.id));
       setOpenGroupId(null);
+      invalidate();
     } catch (err) {
       console.error(err);
       alert("שגיאה במחיקת הקבוצה");
     }
+  };
+
+  const handleOpenPrint = async () => {
+    await ensureFull();
+    setShowPrint(true);
+  };
+  const handleOpenAdd = () => {
+    ensureFull(); // load full for group member lookups inside the form
+    setShowAdd(true);
+  };
+  const handleOpenManageGroup = async (groupId) => {
+    await ensureFull();
+    setOpenGroupId(groupId);
   };
 
   /* =========================
@@ -398,10 +522,10 @@ export default function Volunteers() {
       actions={
         tab === "volunteers" ? (
           <>
-            <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+            <button className="btn btn-primary" onClick={handleOpenAdd}>
               + הוספת מתנדב
             </button>
-            <button className="btn" onClick={() => setShowPrint(true)}>
+            <button className="btn" onClick={handleOpenPrint}>
               הדפסת רשימה
             </button>
           </>
@@ -416,17 +540,9 @@ export default function Volunteers() {
 
       {tab === "volunteers" ? (
         <div className="stats-grid">
-          <StatsCard icon="👥" title="סה״כ מתנדבים" value={String(volunteers.length)} />
-          <StatsCard
-            icon="🤝"
-            title="משויכים לאזרח ותיק"
-            value={String(volunteers.filter((v) => v.status === "משויך לאזרח ותיק").length)}
-          />
-          <StatsCard
-            icon="⏳"
-            title="ממתינים לשיבוץ"
-            value={String(volunteers.filter((v) => v.status === "ממתין לשיבוץ").length)}
-          />
+          <StatsCard icon="👥" title="סה״כ מתנדבים" value={String(stats.total)} />
+          <StatsCard icon="🤝" title="משויכים לאזרח ותיק" value={String(stats.assigned)} />
+          <StatsCard icon="⏳" title="ממתינים לשיבוץ" value={String(stats.pending)} />
           <StatsCard icon="🟢" title="קבוצות פעילות" value={String(activeGroupsCount)} />
         </div>
       ) : (
@@ -486,6 +602,15 @@ export default function Volunteers() {
             ]}
           />
 
+          {hasFiltersOrSearch && (
+            <div style={{
+              background: "#eef4ff", border: "1px solid #c7d7ff", color: "#1e3a8a",
+              borderRadius: 10, padding: "8px 12px", margin: "10px 0", fontSize: 13,
+            }}>
+              מצב חיפוש/סינון פעיל — נטענים כל המתנדבים והאזרחים כדי לתמוך בחיפוש חופשי לפי שם מתנדב, טלפון,
+              קבוצה, שכונה ואזרח משויך. נקו את החיפוש והמסננים כדי לחזור לטעינה מדפדפת (20 מתנדבים בכל פעם) מ-Firebase.
+            </div>
+          )}
 
           {loading ? (
             <p style={{ padding: 20 }}>טוען מתנדבים...</p>
@@ -516,7 +641,7 @@ export default function Volunteers() {
                   key: "assigned",
                   label: "משויך ל",
                   render: (r) => {
-                    const list = elderlyByVolunteer.get(r.id) || [];
+                    const list = activeElderlyByVolunteer.get(r.id) || [];
                     if (list.length === 0) {
                       return <span style={{ color: "#6b7280" }}>לא משויך</span>;
                     }
@@ -543,9 +668,19 @@ export default function Volunteers() {
                 },
                 { key: "rating", label: "דירוג" },
               ]}
-              data={visibleVolunteers}
+              data={volPageItems}
             />
           )}
+          <TablePagination
+            currentPage={volCurrentPage}
+            totalPages={volTotalPages}
+            totalCount={volPaginationTotal}
+            pageSize={PAGE_SIZE}
+            loading={loading}
+            onNext={() => hasFiltersOrSearch ? setFilterPage((p) => Math.min(filterTotalPages, p + 1)) : paged.next()}
+            onPrevious={() => hasFiltersOrSearch ? setFilterPage((p) => Math.max(1, p - 1)) : paged.prev()}
+            onPageChange={(p) => hasFiltersOrSearch ? setFilterPage(p) : paged.goToPage(p)}
+          />
         </SectionCard>
       )}
 
@@ -558,7 +693,7 @@ export default function Volunteers() {
             </button>
           }
         >
-          {loading ? (
+          {groupsLoading ? (
             <p style={{ padding: 20 }}>טוען קבוצות...</p>
           ) : (
             <DataTable
@@ -567,7 +702,7 @@ export default function Volunteers() {
                   key: "name",
                   label: "שם קבוצה",
                   render: (r) => (
-                    <button className="link-btn" onClick={() => setOpenGroupId(r.id)}>
+                    <button className="link-btn" onClick={() => handleOpenManageGroup(r.id)}>
                       {r.name}
                     </button>
                   ),
@@ -583,15 +718,24 @@ export default function Volunteers() {
                 },
                 { key: "notes", label: "הערות" },
               ]}
-              data={groups}
+              data={groupPageItems}
             />
           )}
+          <TablePagination
+            currentPage={groupPage}
+            totalPages={groupTotalPages}
+            totalCount={groups.length}
+            pageSize={PAGE_SIZE}
+            onNext={() => setGroupPage((p) => Math.min(groupTotalPages, p + 1))}
+            onPrevious={() => setGroupPage((p) => Math.max(1, p - 1))}
+            onPageChange={(p) => setGroupPage(p)}
+          />
         </SectionCard>
       )}
 
       {showAdd && <AddVolunteerModal groups={groups} onClose={() => setShowAdd(false)} onSave={handleAddVolunteer} />}
 
-      {showPrint && <PrintReportModal volunteers={sorted} onClose={() => setShowPrint(false)} />}
+      {showPrint && fullVolunteers && <PrintReportModal volunteers={fullSorted} onClose={() => setShowPrint(false)} />}
 
       {showCreateGroup && <CreateGroupModal onClose={() => setShowCreateGroup(false)} onSave={handleCreateGroup} />}
 
@@ -609,7 +753,7 @@ export default function Volunteers() {
         <GroupManageModal
           group={openGroup}
           volunteers={groupVolunteersFor(openGroup)}
-          allVolunteers={sorted}
+          allVolunteers={fullSorted}
           onClose={() => setOpenGroupId(null)}
           onSave={handleUpdateGroup}
           onAddVolunteer={(entry) => handleAddVolunteerToGroup(openGroup.id, entry)}

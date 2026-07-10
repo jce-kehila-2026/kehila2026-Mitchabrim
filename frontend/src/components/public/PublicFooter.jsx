@@ -48,12 +48,18 @@ export default function PublicFooter() {
           <div className="footer-col">
             <h4>עקבו אחרינו</h4>
             <div className="footer-socials">
-              <a href="#" aria-label="Instagram" className="f-soc">IG</a>
-              <a href="#" aria-label="Facebook" className="f-soc">FB</a>
-              <a href="#" aria-label="LinkedIn" className="f-soc">in</a>
-              <a href="#" aria-label="YouTube" className="f-soc">YT</a>
+              <a
+                href="https://www.facebook.com/profile.php?id=61588335013024"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook"
+                className="f-soc"
+              >
+                FB
+              </a>
             </div>
           </div>
+
         </div>
 
         <div className="footer-bottom">© 2026 {f.orgName} | כל הזכויות שמורות</div>

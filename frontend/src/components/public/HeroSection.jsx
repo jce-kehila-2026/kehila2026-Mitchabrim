@@ -1,5 +1,7 @@
 import React from "react";
 import useSiteContent from "@/hooks/useSiteContent";
+import logo from "@/assets/logo.png";
+
 
 export default function HeroSection() {
   const { content } = useSiteContent();
@@ -19,17 +21,10 @@ export default function HeroSection() {
               </svg>
             </div>
 
-            <h1>
-              {h.titleLine1}
-              <br />
-              {h.titleLine2}
-              <span className="hero-accent">
-                {h.titleAccent}
-                <svg className="hero-accent-underline" viewBox="0 0 160 14" preserveAspectRatio="none" aria-hidden>
-                  <path d="M2 8 Q 40 2, 80 8 T 158 6" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-                </svg>
-              </span>
-            </h1>
+            <div className="hero-logo-wrap">
+              <img src={logo} alt="מתחברים" className="hero-logo" />
+            </div>
+
 
             <p className="hero-lead">{h.lead}</p>
 

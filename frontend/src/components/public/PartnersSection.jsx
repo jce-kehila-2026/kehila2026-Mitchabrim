@@ -1,27 +1,22 @@
 import { useEffect, useRef } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
-import jerusalemMunicipality from "@/assets/partners/jerusalem-municipality.svg";
-import welfareElderly from "@/assets/partners/welfare-elderly.svg";
-import thirdAgeDepartment from "@/assets/partners/third-age-department.svg";
-import shefer from "@/assets/partners/shefer.svg";
-import giloCommunityCenter from "@/assets/partners/gilo-community-center.svg";
-import communityAdministrations from "@/assets/partners/community-administrations.svg";
-import beitIsraelMechina from "@/assets/partners/beit-israel-mechina.svg";
-import beitIsraelStudents from "@/assets/partners/beit-israel-students.svg";
-import schools from "@/assets/partners/schools.svg";
-import electricCompany from "@/assets/partners/electric-company.svg";
+import jerusalemMunicipality from "@/assets/partners-new/jerusalem-municipality.jpg.asset.json";
+import beitIsrael from "@/assets/partners-new/beit-israel-mechina.jpg.asset.json";
+import shefer from "@/assets/partners-new/shefer.jpg.asset.json";
+import gila from "@/assets/partners-new/gila.jpg.asset.json";
+import electricCompany from "@/assets/partners-new/electric-company.png.asset.json";
 
 const PARTNERS = [
-  { name: "עיריית ירושלים", logo: jerusalemMunicipality },
-  { name: "אגף רווחה - המחלקה לתושבים ותיקים", logo: welfareElderly },
-  { name: "אגף חברה - המחלקה לגיל השלישי", logo: thirdAgeDepartment },
-  { name: "עמותת שפר", logo: shefer },
-  { name: "מינהל קהילתי גילה", logo: giloCommunityCenter },
-  { name: "מינהלים קהילתיים", logo: communityAdministrations },
-  { name: "קהילת בית ישראל - מכינות קדם צבאיות", logo: beitIsraelMechina },
-  { name: "קהילת בית ישראל - כפרי הסטודנטים", logo: beitIsraelStudents },
-  { name: "בתי ספר בשכונות", logo: schools },
-  { name: "חברת חשמל", logo: electricCompany },
+  { name: "עיריית ירושלים", logo: jerusalemMunicipality.url },
+  { name: "אגף רווחה - המחלקה לתושבים ותיקים", logo: jerusalemMunicipality.url },
+  { name: "אגף חברה - המחלקה לגיל השלישי", logo: jerusalemMunicipality.url },
+  { name: "עמותת שפר", logo: shefer.url },
+  { name: "מינהל קהילתי גילה", logo: gila.url },
+  { name: "מינהלים קהילתיים", logo: null },
+  { name: "קהילת בית ישראל - מכינות קדם צבאיות", logo: beitIsrael.url },
+  { name: "קהילת בית ישראל - כפרי הסטודנטים", logo: beitIsrael.url },
+  { name: "בתי ספר בשכונות", logo: null },
+  { name: "חברת חשמל", logo: electricCompany.url },
 ];
 
 const TONES = ["peach", "sage", "gold"];
@@ -189,7 +184,11 @@ export default function PartnersSection() {
               >
                 <article className="wave-partner" title={partner.name}>
                   <div className="wave-partner-circle">
-                    <img src={partner.logo} alt={partner.name} loading="lazy" />
+                    {partner.logo ? (
+                      <img src={partner.logo} alt={partner.name} loading="lazy" />
+                    ) : (
+                      <span className="wave-partner-placeholder">{partner.name}</span>
+                    )}
                   </div>
                   <h4 className="wave-partner-name">{partner.name}</h4>
                 </article>
