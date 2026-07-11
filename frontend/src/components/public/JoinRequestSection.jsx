@@ -8,7 +8,7 @@ export default function JoinRequestSection() {
   const { content } = useSiteContent();
   const j = content.join;
   // إنشاء ذاكرة حية (State) لحفظ القيم التي يكتبها المستخدم في الفورم
-  const [form, setForm] = useState({ fullName: "", phone: "", type: "", message: "" });
+  const [form, setForm] = useState({ fullName: "", phone: "", type: "", message: "", email: "" });
   const [errors, setErrors] = useState({});
   // حالة لمعرفة هل تم إرסال הטופס בהצלחה
   const [sent, setSent] = useState(false);
@@ -42,6 +42,7 @@ export default function JoinRequestSection() {
         phone: form.phone,
         type: form.type,
         message: form.message,
+        email: form.email,
       });
 
       if (notificationError) {
@@ -51,7 +52,7 @@ export default function JoinRequestSection() {
       // إذا نجحت العملية، نغير حالة sent إلى true لتظهر الكبسولة الخضراء للمستخدم
       setSent(true);
       // تفريغ الحقول بالكامل وإعادتها لنصوص فارغة لتهيئتها لطلب جديد
-      setForm({ fullName: "", phone: "", type: "", message: "" });
+      setForm({ fullName: "", phone: "", type: "", message: "", email: "" });
 
       // مؤقت زمني (Timer) يقوم بإخفاء الرسالة الخضراء تلقائياً بعد 5 ثوانٍ
       setTimeout(() => setSent(false), 5000);
@@ -160,6 +161,16 @@ export default function JoinRequestSection() {
               disabled={isSubmitting}
             />
             {errors.phone && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{errors.phone}</div>}
+          </div>
+          <div className="field">
+            <label>אימייל (אופציונלי)</label>
+            <input
+              className="input"
+              type="email"
+              value={form.email || ""}
+              onChange={update("email")}
+              disabled={isSubmitting}
+            />
           </div>
           <div className="field">
             <label>סוג פנייה</label>

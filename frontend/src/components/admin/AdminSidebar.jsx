@@ -1,21 +1,37 @@
 import { NavLink } from "react-router-dom";
 import logo from "@/assets/logo.png";
+import { 
+  LayoutDashboard, 
+  HeartHandshake, 
+  Handshake, 
+  Gift, 
+  Landmark, 
+  Coins, 
+  TrendingUp, 
+  Link2, 
+  Image, 
+  Building2, 
+  Contact, 
+  ClipboardCheck, 
+  Globe, 
+  Settings 
+} from "lucide-react";
 
 const LINKS = [
-  { to: "/admin", label: "לוח בקרה", icon: "📊", end: true },
-  { to: "/admin/elderly", label: "אזרחים ותיקים", icon: "👵" },
-  { to: "/admin/volunteers", label: "מתנדבים", icon: "🤝" },
-  { to: "/admin/projects", label: "פרויקטים", icon: "🎁" },
-  { to: "/admin/parliaments", label: "פרלמינטים", icon: "🏛️" },
-  { to: "/admin/financial", label: "ניהול כספים", icon: "💰" },
-  { to: "/admin/reports", label: "דוחות", icon: "📈" },
-  { to: "/admin/links", label: "מאגר קישורים", icon: "🔗" },
-  { to: "/admin/media", label: "מאגר תמונות", icon: "🖼️" },
-  { to: "/admin/organizations-contacts", label: "ארגונים ואנשי קשר", icon: "🏢" },
-  { to: "/admin/elderly-contacts", label: "אנשי קשר לאזרחים ותיקים", icon: "📇" },
-  { to: "/admin/volunteer-reports", label: "דוחות ומשימות המתנדבים", icon: "📨" },
-  { to: "/admin/site-content", label: "ניהול אתר ראשי", icon: "🌐" },
-  { to: "/admin/settings", label: "הגדרות", icon: "⚙️" },
+  { to: "/admin", label: "לוח בקרה", icon: <LayoutDashboard size={18} />, end: true },
+  { to: "/admin/elderly", label: "אזרחים ותיקים", icon: <HeartHandshake size={18} /> },
+  { to: "/admin/volunteers", label: "מתנדבים", icon: <Handshake size={18} /> },
+  { to: "/admin/projects", label: "פרויקטים", icon: <Gift size={18} /> },
+  { to: "/admin/parliaments", label: "פרלמינטים", icon: <Landmark size={18} /> },
+  { to: "/admin/financial", label: "ניהול כספים", icon: <Coins size={18} /> },
+  { to: "/admin/reports", label: "דוחות", icon: <TrendingUp size={18} /> },
+  { to: "/admin/links", label: "מאגר קישורים", icon: <Link2 size={18} /> },
+  { to: "/admin/media", label: "מאגר תמונות", icon: <Image size={18} /> },
+  { to: "/admin/organizations-contacts", label: "ארגונים ואנשי קשר", icon: <Building2 size={18} /> },
+  { to: "/admin/elderly-contacts", label: "אנשי קשר לאזרחים ותיקים", icon: <Contact size={18} /> },
+  { to: "/admin/volunteer-reports", label: "דוחות ומשימות המתנדבים", icon: <ClipboardCheck size={18} /> },
+  { to: "/admin/site-content", label: "ניהול אתר ראשי", icon: <Globe size={18} /> },
+  { to: "/admin/settings", label: "הגדרות", icon: <Settings size={18} /> },
 ];
 
 export default function AdminSidebar({ collapsed = false, onToggle }) {
@@ -24,12 +40,6 @@ export default function AdminSidebar({ collapsed = false, onToggle }) {
       <div className="admin-sidebar-head">
         <div className="admin-sidebar-brand">
           <img src={logo} alt="מתחברים" />
-          {!collapsed && (
-            <div>
-              <h3>מתחברים</h3>
-              <span>מערכת ניהול</span>
-            </div>
-          )}
         </div>
         <button
           type="button"

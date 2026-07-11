@@ -26,7 +26,7 @@ export default function ForgotPassword() {
     const result = await forgotPassword(email);
     
     if (result.success) {
-      setSuccess("📧 " + result.message);
+      setSuccess(result.message);
       setTimeout(() => {
         navigate("/login");
       }, 4000);

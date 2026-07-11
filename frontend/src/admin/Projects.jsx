@@ -386,10 +386,20 @@ export default function Projects() {
         <PrintModal
           title="הדפסת רשימת פרויקטים"
           filters={[
-            { label: "שנה", options: ["הכול", "2025", "2026"] },
-            { label: "סוג פרויקט", options: ["הכול", ...PROJECT_TYPES] },
-            { label: "סטטוס", options: ["הכול", ...PROJECT_STATUSES] },
-            { label: "טווח תאריכים", options: ["הכול", "השנה", "החודש", "השבוע"] },
+            { key: "year", label: "שנה", options: ["הכול", "2025", "2026"] },
+            { key: "type", label: "סוג פרויקט", options: ["הכול", ...PROJECT_TYPES] },
+            { key: "status", label: "סטטוס", options: ["הכול", ...PROJECT_STATUSES] },
+          ]}
+          data={projects}
+          columns={[
+            { key: "name", label: "שם פרויקט" },
+            { key: "type", label: "סוג פרויקט" },
+            { key: "year", label: "שנה" },
+            { key: "date", label: "תאריך חלוקה" },
+            { key: "elderly", label: "אזרחים ותיקים" },
+            { key: "assigned", label: "שובצו" },
+            { key: "delivered", label: "נמסרו" },
+            { key: "status", label: "סטטוס" }
           ]}
           onClose={() => setShowPrint(false)}
         />
@@ -1354,8 +1364,19 @@ function ProjectDetail({
               <PrintModal
                 title={`הדפסת רשימה — ${group.name}`}
                 filters={[
-                  { label: "מקבל חבילה",  options: ["הכול", "כן", "לא"] },
-                  { label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
+                  { key: "receives", label: "מקבל חבילה",  options: ["הכול", "כן", "לא"] },
+                  { key: "delivery", label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
+                ]}
+                data={rows}
+                columns={[
+                  { key: "n", label: "מס׳" },
+                  { key: "fullName", label: "שם מלא", render: (r) => `${r.first || ''} ${r.last || ''}`.trim() },
+                  { key: "phone", label: "טלפון" },
+                  { key: "address", label: "כתובת" },
+                  { key: "neighborhood", label: "שכונה" },
+                  { key: "receives", label: "מקבל חבילה" },
+                  { key: "delivery", label: "סטטוס מסירה" },
+                  { key: "notes", label: "הערות" }
                 ]}
                 onClose={() => setShowPrintGroup(false)}
               />
@@ -1501,7 +1522,73 @@ function EditProjectModal({ project, onClose, onSave }) {
   );
 }
 
-function PrintModal({ title, filters = [], onClose }) {
+function PrintModal({ title, filters = [], onClose, data = [], columns = [] }) {
+  const [selectedFilters, setSelectedFilters] = useState(() => {
+    const initial = {};
+    filters.forEach((f) => {
+      initial[f.key] = f.options[0];
+    });
+    return initial;
+  });
+
+  const handlePrint = () => {
+    const filtered = data.filter((row) => {
+      return Object.entries(selectedFilters).every(([k, v]) => {
+        if (!v || v === "הכול" || v === "הכל") return true;
+        return String(row[k]) === String(v);
+      });
+    });
+
+    const html = `<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm 12mm; }
+    body { font-family: "Arial", sans-serif; color: #333; margin: 0; padding: 20px; }
+    h2 { text-align: center; color: #8B0000; margin-bottom: 20px; border-bottom: 2px solid #8B0000; padding-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: #8B0000; color: #fff; padding: 10px; text-align: right; border: 1px solid #6b0000; }
+    td { padding: 8px; border: 1px solid #ddd; text-align: right; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+    .summary { margin-top: 20px; font-weight: bold; font-size: 14px; text-align: right; }
+  </style>
+</head>
+<body>
+  <h2>${title}</h2>
+  <table>
+    <thead>
+      <tr>
+        ${columns.map(c => `<th>${c.label}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>
+      ${filtered.map(row => `
+        <tr>
+          ${columns.map(c => `<td>${c.render ? c.render(row) : (row[c.key] == null ? '—' : String(row[c.key]))}</td>`).join('')}
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <div class="summary">סה"כ רשומות: ${filtered.length}</div>
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 500);
+    }
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    } else {
+      alert("נא לאפשר חלונות קופצים בדפדפן");
+    }
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -1516,8 +1603,12 @@ function PrintModal({ title, filters = [], onClose }) {
             {filters.map((f, i) => (
               <div className="field" key={i}>
                 <label>{f.label}</label>
-                <select className="select" defaultValue={f.options[0]}>
-                  {f.options.map((o) => <option key={o}>{o}</option>)}
+                <select
+                  className="select"
+                  value={selectedFilters[f.key] || ""}
+                  onChange={(e) => setSelectedFilters({ ...selectedFilters, [f.key]: e.target.value })}
+                >
+                  {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
             ))}
@@ -1525,8 +1616,7 @@ function PrintModal({ title, filters = [], onClose }) {
         </div>
 
         <div className="modal-actions">
-          <button className="btn" onClick={() => window.print()}>תצוגה מקדימה</button>
-          <button className="btn btn-primary" onClick={() => { window.print(); onClose(); }}>הדפסה</button>
+          <button className="btn btn-primary" onClick={handlePrint}>הדפסה</button>
           <button className="btn" onClick={onClose}>ביטול</button>
         </div>
       </div>

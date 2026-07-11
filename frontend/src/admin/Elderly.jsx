@@ -1,5 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
+import {
+  ResponsiveContainer,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+const CHART_COLORS = [
+  "#8B0000",
+  "#D4A574",
+  "#2e7d32",
+  "#ed6c02",
+  "#0288d1",
+  "#7b1fa2",
+  "#00695c",
+  "#e65100",
+  "#4a148c",
+  "#bf360c",
+];
 
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SearchFilters from "@/components/admin/SearchFilters.jsx";
@@ -66,6 +92,7 @@ export default function Elderly() {
   const [loadError, setLoadError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
+  const [showCharts, setShowCharts] = useState(true);
   const [openId, setOpenId] = useState(null);
   const [openVolunteer, setOpenVolunteer] = useState(null);
 
@@ -171,10 +198,34 @@ export default function Elderly() {
     }
   }, [fullData]);
 
-  // When entering search/filter mode, ensure full collection is loaded.
+  // Load full collection on mount to feed the charts and allow client-side operations.
   useEffect(() => {
-    if (hasFiltersOrSearch && !fullData) ensureFullData();
-  }, [hasFiltersOrSearch, fullData, ensureFullData]);
+    ensureFullData();
+  }, [ensureFullData]);
+
+  const chartData = useMemo(() => {
+    if (!fullData) return { barData: [], pieData: [] };
+    
+    // Bar: Elderly by Neighborhood
+    const neighborhoodCount = {};
+    fullData.forEach((item) => {
+      const key = item.neighborhood || "ללא שכונה";
+      neighborhoodCount[key] = (neighborhoodCount[key] || 0) + 1;
+    });
+    const barData = Object.entries(neighborhoodCount)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    // Pie: Elderly by Status
+    const statusCount = {};
+    fullData.forEach((item) => {
+      const key = item.status || "ללא סטטוס";
+      statusCount[key] = (statusCount[key] || 0) + 1;
+    });
+    const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
+
+    return { barData, pieData };
+  }, [fullData]);
 
   // Filtered + sorted view (only meaningful in filter/search mode).
   const filteredFull = useMemo(() => {
@@ -324,6 +375,9 @@ export default function Elderly() {
         <>
           <button className="btn btn-primary" onClick={handleOpenAdd}>+ הוספת אזרח ותיק</button>
           <button className="btn" onClick={handleOpenPrint}>הדפסת רשימה</button>
+          <button className="btn btn-outline" onClick={() => setShowCharts(!showCharts)}>
+            {showCharts ? "📊 הסתר גרפים" : "📊 הצג גרפים"}
+          </button>
         </>
       }
     >
@@ -343,6 +397,45 @@ export default function Elderly() {
         <StatsCard icon="🚫" title="ללא מתנדב" value={String(withoutCount)} />
       </div>
 
+      {showCharts && fullData && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 20, marginBottom: 20 }}>
+          <SectionCard title="📊 אזרחים ותיקים לפי שכונה">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData.barData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#8B0000" name="מספר אזרחים" />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionCard>
+
+          <SectionCard title="🧩 התפלגות לפי סטטוס">
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={chartData.pieData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {chartData.pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </SectionCard>
+        </div>
+      )}
 
       <SectionCard>
         {areasError && (

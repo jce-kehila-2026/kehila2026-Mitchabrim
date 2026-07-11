@@ -3,8 +3,7 @@ import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { auth } from "../firebase";
 import { getPublicImages } from "../services/imagesService";
-
-
+import { Camera, Image } from "lucide-react";
 import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
 import "../styles/public.css";
@@ -35,7 +34,7 @@ export default function PublicGallery() {
       } catch (error) {
         const authState = auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous";
         console.error(
-          `[PublicGallery] Failed to fetch Firestore collection 'images' with where("isPublic","==",true). Auth: ${authState}. Code: ${error?.code}`,
+          `[PublicGallery] Failed to fetch Firestore collection 'images' with where("isPublic","==",true). Auth: ${auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous"}. Code: ${error?.code}`,
           error
         );
       } finally {
@@ -68,8 +67,8 @@ export default function PublicGallery() {
       <PublicNavbar />
       <div className="container" style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px 20px" }}>
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
-          <h1 style={{ color: "#8B0000", fontSize: "2.5rem", marginBottom: "10px" }}>
-            📸 גלריית תמונות
+          <h1 style={{ color: "#8B0000", fontSize: "2.5rem", marginBottom: "10px", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+            <Camera size={38} strokeWidth={1.8} /> גلריית תמונות
           </h1>
           <p style={{ color: "#666", fontSize: "1.1rem" }}>
             כל התמונות שהועלו לאתר על ידי הקהילה
@@ -111,8 +110,8 @@ export default function PublicGallery() {
         {loading ? (
           <div style={{ textAlign: "center", padding: "60px" }}>טוען תמונות...</div>
         ) : filteredImages.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "60px", color: "#888" }}>
-            <span style={{ fontSize: "48px", display: "block" }}>🖼️</span>
+          <div style={{ textAlign: "center", padding: "60px", color: "#888", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+            <Image size={48} strokeWidth={1.5} style={{ color: "#bbb" }} />
             <p>אין תמונות להצגה</p>
           </div>
         ) : (

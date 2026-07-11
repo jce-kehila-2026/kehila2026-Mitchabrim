@@ -3,7 +3,7 @@ import useSiteContent from "@/hooks/useSiteContent";
 import { Link } from "react-router-dom";
 import { auth } from "../../firebase";
 import { getPublicImages } from "../../services/imagesService";
-
+import { Camera, Image } from "lucide-react";
 
 export default function GallerySection() {
   const { content } = useSiteContent();
@@ -120,8 +120,8 @@ export default function GallerySection() {
 
           {/* زر عرض جميع الصور في صفحة منفصلة */}
           <div style={{ display: "flex", justifyContent: "center", marginBottom: "30px" }}>
-            <Link to={galleryLink} className="btn btn-outline" style={{ fontWeight: "bold", padding: "10px 24px" }}>
-              📸 לצפייה בכל התמונות בקטגוריית {selectedCategory === "הכל" ? "הגלריה" : selectedCategory} ←
+            <Link to={galleryLink} className="btn btn-outline" style={{ fontWeight: "bold", padding: "10px 24px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+              <Camera size={18} strokeWidth={2} /> לצפייה בכל התמונות בקטגוריית {selectedCategory === "הכל" ? "הגלריה" : selectedCategory} ←
             </Link>
           </div>
         </div>
@@ -138,10 +138,14 @@ export default function GallerySection() {
             borderRadius: "20px", 
             border: "1px dashed #e2d8c9",
             maxWidth: "600px",
-            margin: "0 auto"
+            margin: "0 auto",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "10px"
           }}>
-            <span style={{ fontSize: "48px" }}>🖼️</span>
-            <h3 style={{ color: "#8b2c2c", marginTop: "15px", fontWeight: "bold" }}>אין תמונות להצגה</h3>
+            <Image size={48} strokeWidth={1.5} style={{ color: "#bbb" }} />
+            <h3 style={{ color: "#8b2c2c", marginTop: "5px", fontWeight: "bold" }}>אין תמונות להצגה</h3>
             <p style={{ color: "#666", fontSize: "14px" }}>
               עדיין לא הועלו תמונות ציבוריות בקטגוריית "{selectedCategory}".
             </p>

@@ -115,7 +115,7 @@ function Login() {
     return (
       <div className="login-container">
         <div className="login-card">
-          <h2>Welcome! 👋</h2>
+          <h2>Welcome!</h2>
           <p className="user-email">Logged in as: <strong>{user.email}</strong></p>
           <button onClick={handleLogOut} className="btn btn-logout">
             Logout

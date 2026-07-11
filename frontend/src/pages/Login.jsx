@@ -67,6 +67,9 @@ export default function Login() {
 
   return (
     <div className="login-page">
+      <Link to="/" className="back-to-public-btn">
+        <span>חזרה לאתר הפרסומי</span>
+      </Link>
       <div className="login-container">
         <div className="login-box">
           <img src="/logo.png" className="logo" alt="מתחברים" />

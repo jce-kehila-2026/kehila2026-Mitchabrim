@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
@@ -603,7 +604,7 @@ export default function Settings() {
             
             {/* The Golden Feature: Search Bar */}
             <div style={{ position: "relative", width: "250px" }}>
-               <span style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "#adb5bd" }}>🔍</span>
+               <span style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", color: "#adb5bd", display: "flex", alignItems: "center" }}><Search size={16} /></span>
                <input type="text" placeholder="חיפוש משתמש..." value={userSearchTerm} onChange={(e) => setUserSearchTerm(e.target.value)} style={{ ...inputStyle, padding: "8px 35px 8px 12px", borderRadius: "20px", border: "1px solid #ced4da" }} />
             </div>
           </div>
