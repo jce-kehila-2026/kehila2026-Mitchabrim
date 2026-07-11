@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
+import { Search, Globe } from "lucide-react";
 
 // Firestore + Storage access is encapsulated in the images service.
 import {
@@ -434,9 +435,11 @@ export default function Media() {
                 top: "50%",
                 transform: "translateY(-50%)",
                 color: "#adb5bd",
+                display: "flex",
+                alignItems: "center"
               }}
             >
-              🔍
+              <Search size={18} />
             </span>
             <input
               type="text"
@@ -973,8 +976,8 @@ export default function Media() {
                     }}
                   ></textarea>
                   <div className="field" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-  <label style={{ margin: 0, fontWeight: "600", fontSize: "13.5px", color: "#495057" }}>
-    🌐 הצג באתר הציבורי:
+  <label style={{ margin: 0, fontWeight: "600", fontSize: "13.5px", color: "#495057", display: "flex", alignItems: "center", gap: "6px" }}>
+    <Globe size={16} /> הצג באתר הציבורי:
   </label>
   <input
     type="checkbox"
@@ -1332,9 +1335,9 @@ export default function Media() {
                     />
                     <label
                       htmlFor="modal-is-public"
-                      style={{ fontWeight: "600", fontSize: "14px", color: "#495057", cursor: "pointer", margin: 0 }}
+                      style={{ fontWeight: "600", fontSize: "14px", color: "#495057", cursor: "pointer", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}
                     >
-                      🌐 הצג באתר הציבורי (בגלריה הציבורית)
+                      <Globe size={16} /> הצג באתר הציבורי (בגלריה הציבורית)
                     </label>
                   </div>
                 </div>

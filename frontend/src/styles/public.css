@@ -326,6 +326,29 @@ section.pub-section {
   white-space: nowrap;
 }
 
+.hero-logo-wrapper {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.hero-logo {
+  max-width: 420px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.05));
+}
+
+@media (max-width: 960px) {
+  .hero-logo-wrapper {
+    justify-content: center;
+  }
+  .hero-logo {
+    max-width: 320px;
+  }
+}
+
 .hero-cta {
   margin-top: 32px;
 }

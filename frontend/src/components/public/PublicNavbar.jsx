@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import logo from "@/assets/logo.png";
 import { ACTIVITIES } from "@/data/activities";
 
 const NAV_ITEMS = [
@@ -53,7 +52,7 @@ export default function PublicNavbar() {
     <header className="pub-navbar">
       <div className="container pub-nav-inner">
         <Link to="/" className="pub-brand" aria-label="מתחברים">
-          <img src={logo} alt="מתחברים" />
+          {/* Logo removed as requested */}
         </Link>
 
         <nav className="pub-nav-links">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Calendar, Clock, Sun, CloudSun, CloudFog, CloudRain, Snowflake, CloudLightning, Loader2, Gift } from "lucide-react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
@@ -46,7 +47,7 @@ export default function Dashboard() {
   const [editTaskTitle, setEditTaskTitle] = useState("");
 
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
-  const [weather, setWeather] = useState({ temp: "--", text: "טוען...", emoji: "⏳" });
+  const [weather, setWeather] = useState({ temp: "--", text: "טוען...", emoji: <Loader2 size={16} className="animate-spin" /> });
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -164,15 +165,15 @@ export default function Dashboard() {
           const temperature = Math.round(data.current_weather.temperature);
           const weatherCode = data.current_weather.weathercode;
           
-          let conditionEmoji = "☀️";
+          let conditionEmoji = <Sun size={16} style={{ color: "#f59e0b" }} />;
           let conditionText = "בהיר";
 
-          if (weatherCode >= 1 && weatherCode <= 3) { conditionEmoji = "🌤️"; conditionText = "מעונן חלקית"; }
-          else if (weatherCode >= 45 && weatherCode <= 48) { conditionEmoji = "🌫️"; conditionText = "ערפילי"; }
-          else if (weatherCode >= 51 && weatherCode <= 67) { conditionEmoji = "🌧️"; conditionText = "גשום"; }
-          else if (weatherCode >= 71 && weatherCode <= 77) { conditionEmoji = "❄️"; conditionText = "מושלג"; }
-          else if (weatherCode >= 80 && weatherCode <= 82) { conditionEmoji = "🌧️"; conditionText = "ממטרים"; }
-          else if (weatherCode >= 95 && weatherCode <= 99) { conditionEmoji = "⛈️"; conditionText = "סוער"; }
+          if (weatherCode >= 1 && weatherCode <= 3) { conditionEmoji = <CloudSun size={16} style={{ color: "#d9a86c" }} />; conditionText = "מעונן חלקית"; }
+          else if (weatherCode >= 45 && weatherCode <= 48) { conditionEmoji = <CloudFog size={16} style={{ color: "#94a3b8" }} />; conditionText = "ערפילי"; }
+          else if (weatherCode >= 51 && weatherCode <= 67) { conditionEmoji = <CloudRain size={16} style={{ color: "#3b82f6" }} />; conditionText = "גשום"; }
+          else if (weatherCode >= 71 && weatherCode <= 77) { conditionEmoji = <Snowflake size={16} style={{ color: "#38bdf8" }} />; conditionText = "מושלג"; }
+          else if (weatherCode >= 80 && weatherCode <= 82) { conditionEmoji = <CloudRain size={16} style={{ color: "#3b82f6" }} />; conditionText = "ממטרים"; }
+          else if (weatherCode >= 95 && weatherCode <= 99) { conditionEmoji = <CloudLightning size={16} style={{ color: "#64748b" }} />; conditionText = "סוער"; }
 
           setWeather({
             temp: `${temperature}°C`,
@@ -181,7 +182,7 @@ export default function Dashboard() {
           });
         }
       } catch (error) {
-        setWeather({ temp: "24°C", text: "ירושלים", emoji: "🌤️" });
+        setWeather({ temp: "24°C", text: "ירושלים", emoji: <CloudSun size={16} style={{ color: "#d9a86c" }} /> });
       }
     };
 
@@ -313,15 +314,15 @@ export default function Dashboard() {
       actions={
         <div style={{ display: "flex", alignItems: "center", gap: "16px", backgroundColor: "#fff", padding: "8px 18px", borderRadius: "30px", border: "1px solid #edf0f2", boxShadow: "0 2px 5px rgba(0,0,0,0.03)", direction: "rtl" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#495057", fontSize: "13.5px", fontWeight: "600" }}>
-            <span style={{ fontSize: "15px" }}>📅</span>
+            <Calendar size={15} style={{ color: "#8b2c2c" }} />
             <span style={{ color: "#343a40" }}>{formatDateHebrew(currentDateTime)}</span>
             <span style={{ color: "#e9ecef", margin: "0 2px" }}>|</span>
-            <span style={{ fontSize: "15px" }}>🕒</span>
+            <Clock size={15} style={{ color: "#8b2c2c" }} />
             <span style={{ fontFamily: "monospace", letterSpacing: "0.5px", color: "#495057" }}>{formatTimeLive(currentDateTime)}</span>
           </div>
           <div style={{ width: "1px", height: "16px", backgroundColor: "#e9ecef" }}></div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13.5px", fontWeight: "600", color: "#495057" }} title={`מצב השמיים הנוכחי: ${weather.text}`}>
-            <span style={{ fontSize: "18px", display: "inline-block", transform: "translateY(-1px)" }}>{weather.emoji}</span>
+            <span style={{ display: "inline-flex", alignItems: "center", transform: "translateY(-1px)" }}>{weather.emoji}</span>
             <span style={{ color: "#8b2c2c", fontSize: "14px", fontWeight: "bold" }}>{weather.temp}</span>
             <span style={{ color: "#adb5bd", fontSize: "11.5px", fontWeight: "normal" }}>({weather.text})</span>
           </div>
@@ -357,7 +358,7 @@ export default function Dashboard() {
           title={nearestProject ? `מעבר לפרויקט: ${nearestProject.name || ""}` : "מעבר לפרויקטים"}
         >
           <div className="stats-card">
-            <div className="stats-icon">🎁</div>
+            <div className="stats-icon"><Gift size={22} /></div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <h3>פרויקט קרוב</h3>
               {nearestProject ? (

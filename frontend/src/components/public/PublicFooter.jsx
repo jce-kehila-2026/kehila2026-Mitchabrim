@@ -1,5 +1,6 @@
 import logo from "@/assets/logo.png";
 import useSiteContent from "@/hooks/useSiteContent";
+import { Phone, Mail, MapPin } from "lucide-react";
 
 export default function PublicFooter() {
   const { content } = useSiteContent();
@@ -39,9 +40,9 @@ export default function PublicFooter() {
           <div className="footer-col">
             <h4>יצירת קשר</h4>
             <ul className="footer-contact">
-              <li><span className="f-ico">📞</span> {f.phone}</li>
-              <li><span className="f-ico">✉</span> {f.email}</li>
-              <li><span className="f-ico">📍</span> {f.address}</li>
+              <li><span className="f-ico"><Phone size={14} /></span> {f.phone}</li>
+              <li><span className="f-ico"><Mail size={14} /></span> {f.email}</li>
+              <li><span className="f-ico"><MapPin size={14} /></span> {f.address}</li>
             </ul>
           </div>
 

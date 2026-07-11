@@ -8,6 +8,41 @@ import { getParliaments } from "@/services/parliamentsService.js";
 import { getProjects } from "@/services/projectsService.js";
 import { getJoinRequests } from "@/services/joinRequestsService.js";
 import { getFinancialRecords } from "@/services/financialService.js";
+import { 
+  HeartHandshake, 
+  Handshake, 
+  Gift, 
+  Landmark, 
+  Coins, 
+  FileText, 
+  Printer, 
+  Search, 
+  BarChart3, 
+  Puzzle 
+} from "lucide-react";
+
+const ICON_MAP = {
+  "👵": HeartHandshake,
+  "🤝": Handshake,
+  "🎁": Gift,
+  "🏛️": Landmark,
+  "🏛": Landmark,
+  "💰": Coins,
+  "🎄": Gift,
+  "📄": FileText,
+  "🖨": Printer,
+  "🔍": Search,
+  "📊": BarChart3,
+  "🧩": Puzzle,
+};
+
+function getReportIcon(iconStr, size = 24) {
+  const IconComponent = ICON_MAP[iconStr];
+  if (IconComponent) {
+    return <IconComponent size={size} />;
+  }
+  return iconStr;
+}
 
 // ============================================================
 // IMPORT REcharts FOR CHARTS
@@ -702,7 +737,7 @@ const ReportsGrid = ({ onOpen }) => (
           e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
         }}
       >
-        <div style={{ fontSize: 36, marginBottom: 8 }}>{r.icon}</div>
+        <div style={{ color: "#8B0000", marginBottom: 8 }}>{getReportIcon(r.icon, 36)}</div>
         <h3
           style={{
             color: "#8B0000",
@@ -1109,8 +1144,8 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         >
           → חזרה לדוחות
         </button>
-        <h2 style={{ margin: 0, color: "#8B0000", fontSize: "22px" }}>
-          {report.icon} {report.label}
+        <h2 style={{ margin: 0, color: "#8B0000", fontSize: "22px", display: "flex", alignItems: "center", gap: "8px" }}>
+          {getReportIcon(report.icon, 24)} {report.label}
         </h2>
       </div>
 
@@ -1972,7 +2007,9 @@ const FinancialChooser = ({ onBack }) => {
         >
           → חזרה לדוחות
         </button>
-        <h2 style={{ margin: 0, color: "#8B0000" }}>💰 דוחות כספיים</h2>
+        <h2 style={{ margin: 0, color: "#8B0000", display: "flex", alignItems: "center", gap: "8px" }}>
+          <Coins size={24} /> דוחות כספיים
+        </h2>
       </div>
       <p style={{ color: "#666", margin: "0 0 20px" }}>בחר את סוג הדוח שברצונך להפיק ולייצא ל-PDF:</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20 }}>
@@ -2001,7 +2038,7 @@ const FinancialChooser = ({ onBack }) => {
               e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
             }}
           >
-            <div style={{ fontSize: 36, marginBottom: 8 }}>{r.icon}</div>
+            <div style={{ color: "#8B0000", marginBottom: 8 }}>{getReportIcon(r.icon, 36)}</div>
             <h3 style={{ color: "#8B0000", margin: "0 0 4px", fontSize: 18 }}>{r.label}</h3>
             <p style={{ color: "#666", fontSize: 14, margin: "0 0 18px", minHeight: 52, lineHeight: 1.4 }}>
               {r.description}

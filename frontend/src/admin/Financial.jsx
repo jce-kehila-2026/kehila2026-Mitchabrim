@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
+import { Coins, Heart } from "lucide-react";
 import {
   subscribeFinancialTransactions,
   createFinancialTransaction,
@@ -621,7 +622,7 @@ export default function Financial() {
             <span className="fin-label">סה״כ הכנסות</span>
             <span className="fin-value">{formatCurrency(globalTotals.income)}</span>
           </div>
-          <div className="fin-icon-box">💰</div>
+          <div className="fin-icon-box"><Coins size={22} style={{ color: "#2e7d32" }} /></div>
         </div>
         <div className="fin-stat-card">
           <div>
@@ -630,7 +631,7 @@ export default function Financial() {
               {formatCurrency(globalTotals.expenses)}
             </span>
           </div>
-          <div className="fin-icon-box">💸</div>
+          <div className="fin-icon-box"><Coins size={22} style={{ color: "#dc3545" }} /></div>
         </div>
         <div className="fin-stat-card">
           <div>
@@ -639,7 +640,7 @@ export default function Financial() {
               {formatCurrency(globalTotals.donations)}
             </span>
           </div>
-          <div className="fin-icon-box">❤️</div>
+          <div className="fin-icon-box"><Heart size={22} fill="#8b2c2c" color="#8b2c2c" /></div>
         </div>
         <div
           className="fin-stat-card"
