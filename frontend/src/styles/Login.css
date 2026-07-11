@@ -319,6 +319,11 @@ hr {
     justify-content: center;
 }
 
+.back-to-public-btn span {
+    position: relative;
+    z-index: 2;
+}
+
 .back-to-public-btn::before {
     content: '';
     position: absolute;
@@ -330,7 +335,7 @@ hr {
     transform: scaleX(0);
     transform-origin: right;
     transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: -1;
+    z-index: 1;
 }
 
 .back-to-public-btn:hover {
@@ -340,7 +345,7 @@ hr {
 
 .back-to-public-btn:hover::before {
     transform: scaleX(1);
-    transform-origin: left;
+    transform-origin: right;
 }
 
 @media (max-width: 560px) {

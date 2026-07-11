@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
+import SectionCard from "@/components/admin/SectionCard.jsx";
 import { Coins, Heart } from "lucide-react";
 import {
   subscribeFinancialTransactions,
@@ -8,6 +9,33 @@ import {
   deleteFinancialTransaction,
   uploadReceiptFile,
 } from "@/services/financialService";
+import {
+  ResponsiveContainer,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+const CHART_COLORS = [
+  "#2e7d32",
+  "#d32f2f",
+  "#8B0000",
+  "#D4A574",
+  "#ed6c02",
+  "#0288d1",
+  "#7b1fa2",
+  "#00695c",
+  "#e65100",
+  "#4a148c",
+  "#bf360c",
+];
 
 export default function Financial() {
   // ==========================================
@@ -20,6 +48,7 @@ export default function Financial() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterYear, setFilterYear] = useState("all"); // حالة جديدة لفلتر السنة
+  const [filterReceiptType, setFilterReceiptType] = useState("all");
 
   // Advanced Filters
   const [filterFundingSource, setFilterFundingSource] = useState("all");
@@ -50,6 +79,7 @@ export default function Financial() {
     project: "",
     date: new Date().toISOString().split("T")[0],
     receipt: "",
+    receiptType: "קבלה רגילה",
     notes: "",
     paymentMethod: "העברה בנקאית",
     otherPaymentMethod: "",
@@ -123,6 +153,11 @@ export default function Financial() {
       const matchesProject =
         !filterProject || (t.project && t.project.toLowerCase().includes(filterProject.toLowerCase()));
 
+      const matchesReceiptType =
+        filterReceiptType === "all" ||
+        (filterReceiptType === "קבלה 46" && t.receiptType === "קבלה 46") ||
+        (filterReceiptType === "קבלה רגילה" && (t.receiptType === "קבלה רגילה" || !t.receiptType));
+
       const amt = parseFloat(t.amount) || 0;
       const min = parseFloat(filterMinAmount);
       const max = parseFloat(filterMaxAmount);
@@ -137,9 +172,9 @@ export default function Financial() {
         (t.notes && t.notes.toLowerCase().includes(searchLower)) ||
         (t.receiptName && t.receiptName.toLowerCase().includes(searchLower));
 
-      return matchesYear && matchesType && matchesFundingSource && matchesProject && matchesMin && matchesMax && matchesSearch;
+      return matchesYear && matchesType && matchesFundingSource && matchesProject && matchesReceiptType && matchesMin && matchesMax && matchesSearch;
     });
-  }, [transactions, filterType, filterFundingSource, filterProject, filterMinAmount, filterMaxAmount, searchTerm, filterYear]);
+  }, [transactions, filterType, filterFundingSource, filterProject, filterMinAmount, filterMaxAmount, searchTerm, filterYear, filterReceiptType]);
 
   const uploadedReceipts = useMemo(() => {
     let allReceipts = [];
@@ -176,6 +211,94 @@ export default function Financial() {
     );
   }, [transactions, receiptSearchTerm]);
 
+  const projectFinancialStats = useMemo(() => {
+    const projData = {};
+    transactions.forEach((item) => {
+      if (item.type === "קבלה_בלבד") return;
+      const key = item.project || "כללי / ללא פרויקט";
+      if (!projData[key]) {
+        projData[key] = { name: key, income: 0, expense: 0, balance: 0 };
+      }
+      const amountVal = parseFloat(item.amount) || 0;
+      if (item.type === "תרומה" || item.type === "הכנסה") {
+        projData[key].income += amountVal;
+      } else if (item.type === "הוצאה") {
+        projData[key].expense += amountVal;
+      }
+      projData[key].balance = projData[key].income - projData[key].expense;
+    });
+    return Object.values(projData);
+  }, [transactions]);
+
+  const donationFundingStats = useMemo(() => {
+    const counts = {};
+    transactions.forEach((item) => {
+      if (item.type === "תרומה") {
+        const key = item.fundingSource || "כללי";
+        counts[key] = (counts[key] || 0) + (parseFloat(item.amount) || 0);
+      }
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [transactions]);
+
+  const handlePrintProjectFinancials = () => {
+    const html = `<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>דוח כספי כללי לפי פרויקטים</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm 12mm; }
+    body { font-family: "Arial", sans-serif; color: #333; margin: 0; padding: 20px; }
+    h2 { text-align: center; color: #8B0000; margin-bottom: 5px; }
+    h4 { text-align: center; color: #555; margin-top: 0; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: #8B0000; color: #fff; padding: 10px; text-align: right; border: 1px solid #6b0000; }
+    td { padding: 8px; border: 1px solid #ddd; text-align: right; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+    .summary { margin-top: 20px; font-weight: bold; font-size: 14px; text-align: right; }
+  </style>
+</head>
+<body>
+  <h2>דוח כספי כללי לפי פרויקטים</h2>
+  <h4>מיוצר ביום: ${new Date().toLocaleDateString("he-IL")}</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>שם פרויקט</th>
+        <th>סה"כ הכנסות</th>
+        <th>סה"כ הוצאות</th>
+        <th>מאזן / יתרה</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${projectFinancialStats.map(r => `
+        <tr>
+          <td style="font-weight: bold;">${r.name}</td>
+          <td style="color: green;">₪${r.income.toLocaleString()}</td>
+          <td style="color: red;">₪${r.expense.toLocaleString()}</td>
+          <td style="font-weight: bold; color: ${r.balance >= 0 ? 'green' : 'red'};">₪${r.balance.toLocaleString()}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 500);
+    }
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    } else {
+      alert("נא לאפשר חלונות קופצים בדפדפן");
+    }
+  };
+
   // ==========================================
   // CRUD & UPLOAD OPERATIONS
   // ==========================================
@@ -199,6 +322,7 @@ export default function Financial() {
         receipt: formData.receipt.trim(),
         receiptUrl: "",
         receiptName: "",
+        receiptType: formData.receiptType || "קבלה רגילה",
         notes: formData.notes.trim(),
       };
 
@@ -220,6 +344,7 @@ export default function Financial() {
         project: "",
         date: new Date().toISOString().split("T")[0],
         receipt: "",
+        receiptType: "קבלה רגילה",
         notes: "",
         paymentMethod: "העברה בנקאית",
         otherPaymentMethod: "",
@@ -229,6 +354,79 @@ export default function Financial() {
       alert("שגיאה בשמירת הנתונים.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handlePrintTransactions = () => {
+    const html = `<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>דוח תנועות כספיות</title>
+  <style>
+    @page { size: A4 landscape; margin: 15mm 12mm; }
+    body { font-family: "Arial", sans-serif; color: #333; margin: 0; padding: 20px; }
+    h2 { text-align: center; color: #8B0000; margin-bottom: 5px; }
+    h4 { text-align: center; color: #555; margin-top: 0; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: #8B0000; color: #fff; padding: 10px; text-align: right; border: 1px solid #6b0000; }
+    td { padding: 8px; border: 1px solid #ddd; text-align: right; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+    .summary { margin-top: 20px; font-weight: bold; font-size: 14px; text-align: right; }
+  </style>
+</head>
+<body>
+  <h2>דוח תנועות כספיות</h2>
+  <h4>מיוצר ביום: ${new Date().toLocaleDateString("he-IL")}</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>סוג</th>
+        <th>סכום</th>
+        <th>מקור מימון</th>
+        <th>שם / ספק</th>
+        <th>פרויקט משויך</th>
+        <th>תאריך</th>
+        <th>מספר קבלה</th>
+        <th>סוג קבלה</th>
+        <th>הערות</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${filteredTransactions.map(r => `
+        <tr>
+          <td>${r.type}</td>
+          <td>₪${(Number(r.amount) || 0).toLocaleString()}</td>
+          <td>${r.fundingSource || 'כללי'}</td>
+          <td>${r.source || '—'}</td>
+          <td>${r.project || '—'}</td>
+          <td>${r.date || '—'}</td>
+          <td>${r.receipt || '—'}</td>
+          <td>${r.receiptType || 'קבלה רגילה'}</td>
+          <td>${r.notes || '—'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <div class="summary">
+    סה"כ תרומות והכנסות: ₪${globalTotals.income.toLocaleString()} | 
+    סה"כ הוצאות: ₪${globalTotals.expenses.toLocaleString()} | 
+    יתרה: ₪${globalTotals.balance.toLocaleString()}
+  </div>
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 500);
+    }
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    } else {
+      alert("נא לאפשר חלונות קופצים בדפדפן");
     }
   };
 
@@ -681,6 +879,12 @@ export default function Financial() {
             >
               מאגר קבלות ({uploadedReceipts.length})
             </button>
+            <button
+              className={`segment-btn ${activeTab === "reports" ? "active" : ""}`}
+              onClick={() => setActiveTab("reports")}
+            >
+              📊 דוחות כספיים וגרפים
+            </button>
           </div>
         </div>
 
@@ -766,6 +970,19 @@ export default function Financial() {
                   />
                 </div>
                 <div className="adv-filter-group" style={{ borderRight: "1px solid #e2e8f0", paddingRight: "16px" }}>
+                  <span className="adv-filter-label">סוג קבלה:</span>
+                  <select
+                    className="adv-filter-input"
+                    style={{ appearance: "auto" }}
+                    value={filterReceiptType}
+                    onChange={(e) => setFilterReceiptType(e.target.value)}
+                  >
+                    <option value="all">הכל</option>
+                    <option value="קבלה רגילה">קבלה רגילה</option>
+                    <option value="קבלה 46">קבלה 46</option>
+                  </select>
+                </div>
+                <div className="adv-filter-group" style={{ borderRight: "1px solid #e2e8f0", paddingRight: "16px" }}>
                   <span className="adv-filter-label">סכום מ- (₪):</span>
                   <input
                     type="number"
@@ -788,6 +1005,17 @@ export default function Financial() {
                   />
                 </div>
               </div>
+             </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "15px" }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handlePrintTransactions}
+                style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", padding: "8px 16px" }}
+              >
+                🖨️ הדפסת רשימת תנועות
+              </button>
             </div>
 
             <div className="custom-scroll" style={{ overflowX: "auto", maxHeight: "450px" }}>
@@ -908,6 +1136,9 @@ export default function Financial() {
                               ) : (
                                 "—"
                               ))}
+                            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
+                              {item.receiptType || "קבלה רגילה"}
+                            </div>
                           </div>
                         </td>
                         <td style={{ textAlign: "center" }}>
@@ -1121,6 +1352,94 @@ export default function Financial() {
                 </div>
               )}
             </div>
+          </>
+        )}
+        {activeTab === "reports" && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 15 }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handlePrintProjectFinancials}
+                style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", padding: "8px 16px" }}
+              >
+                🖨️ הדפסת דוח כספי לפרויקטים
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 20, marginBottom: 20 }}>
+              <SectionCard title="📊 הכנסות מול הוצאות לפי פרויקט">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={projectFinancialStats}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip formatter={(value) => `₪${value.toLocaleString()}`} />
+                    <Legend />
+                    <Bar dataKey="income" fill="#2e7d32" name="הכנסות" />
+                    <Bar dataKey="expense" fill="#d32f2f" name="הוצאות" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </SectionCard>
+
+              <SectionCard title="🧩 התפלגות תרומות לפי מקור">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={donationFundingStats}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {donationFundingStats.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => `₪${value.toLocaleString()}`} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </SectionCard>
+            </div>
+
+            <SectionCard title="📋 סיכום כספי לפי פרויקט / חג">
+              <div className="custom-scroll" style={{ overflowX: "auto" }}>
+                <table className="fin-table">
+                  <thead>
+                    <tr>
+                      <th>שם פרויקט / חג</th>
+                      <th>סה"כ הכנסות (₪)</th>
+                      <th>סה"כ הוצאות (₪)</th>
+                      <th>מאזן / יתרה (₪)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectFinancialStats.length > 0 ? (
+                      projectFinancialStats.map((r, i) => (
+                        <tr key={i}>
+                          <td style={{ fontWeight: "bold", color: "#334155" }}>{r.name}</td>
+                          <td style={{ color: "green", fontWeight: "600" }}>{r.income.toLocaleString()} ₪</td>
+                          <td style={{ color: "red", fontWeight: "600" }}>{r.expense.toLocaleString()} ₪</td>
+                          <td style={{ fontWeight: "bold", color: r.balance >= 0 ? "green" : "red" }}>
+                            {r.balance.toLocaleString()} ₪
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: "center", padding: "40px", color: "#94a3b8" }}>
+                          אין נתונים כספיים להצגה.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
           </>
         )}
       </div>
@@ -1520,17 +1839,29 @@ export default function Financial() {
                     value={formData.receipt}
                     onChange={(e) => setFormData({ ...formData, receipt: e.target.value })}
                     placeholder="למשל: 1042"
-                    style={{
-                      width: "100%",
-                      padding: "12px",
-                      borderRadius: "10px",
-                      border: "1px solid #ced4da",
-                      outline: "none",
-                      boxSizing: "border-box",
-                      fontSize: "14px",
-                      marginBottom: "20px",
-                    }}
                   />
+                </div>
+
+                <div style={{ marginBottom: "20px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "8px",
+                      fontSize: "13.5px",
+                      fontWeight: "600",
+                      color: "#495057",
+                    }}
+                  >
+                    סוג קבלה
+                  </label>
+                  <select
+                    value={formData.receiptType || "קבלה רגילה"}
+                    onChange={(e) => setFormData({ ...formData, receiptType: e.target.value })}
+                    className="modal-form-select"
+                  >
+                    <option value="קבלה רגילה">קבלה רגילה</option>
+                    <option value="קבלה 46">קבלה 46</option>
+                  </select>
                 </div>
 
                 <div>

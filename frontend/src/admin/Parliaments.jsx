@@ -28,6 +28,17 @@ import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers } from "@/services/volunteersService.js";
 import { getAreaNames } from "@/services/settingsService.js";
 import { sanitizeFormData } from "@/utils/sanitize";
+import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
+import {
+  ResponsiveContainer,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  Bar,
+} from "recharts";
 
 
 /* ===== Static options ===== */
@@ -64,12 +75,15 @@ function isThisWeek(dateStr) {
 
 /* =================== Main page =================== */
 export default function Parliaments() {
+  const { areaNames, getNeighborhoods } = useAreasAndNeighborhoods();
   const [parliaments, setParliaments] = useState([]);
   const [participantsMap, setParticipantsMap] = useState({});
   const [nextMeetingMap, setNextMeetingMap] = useState({}); // pid -> "YYYY-MM-DD" of next upcoming meeting
+  const [meetingsCountMap, setMeetingsCountMap] = useState({}); // pid -> number of past meetings done
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
+  const [showCharts, setShowCharts] = useState(true);
   const [loadError, setLoadError] = useState("");
 
   // Dynamic options sourced from other pages
@@ -80,6 +94,7 @@ export default function Parliaments() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({
     area: "",
+    neighborhood: "",
     status: "",
     dateFrom: "",
     dateTo: "",
@@ -97,6 +112,7 @@ export default function Parliaments() {
         const today = new Date().toISOString().slice(0, 10);
         const pMap = {};
         const nMap = {};
+        const mCountMap = {};
         await Promise.all(
           (list || []).map(async (p) => {
             try {
@@ -110,11 +126,14 @@ export default function Parliaments() {
                 .sort((a, b) => String(a.date).localeCompare(String(b.date))
                   || String(a.startTime || "").localeCompare(String(b.startTime || "")));
               nMap[p.id] = upcoming.length ? upcoming[0].date : "";
+              const count = meets.filter(m => m.date && m.date <= today).length;
+              mCountMap[p.id] = count;
             } catch { /* ignore */ }
           }),
         );
         setParticipantsMap(pMap);
         setNextMeetingMap(nMap);
+        setMeetingsCountMap(mCountMap);
       } catch (err) {
         console.warn("Failed to load parliaments:", err);
         setLoadError("טעינת הנתונים מהשרת נכשלה.");
@@ -187,12 +206,13 @@ export default function Parliaments() {
     const q = search.trim().toLowerCase();
     return decorated.filter((p) => {
       if (filters.area && p.area !== filters.area) return false;
+      if (filters.neighborhood && p.neighborhood !== filters.neighborhood) return false;
       if (filters.status && p.status !== filters.status) return false;
       if (filters.dateFrom && p.nextDate && p.nextDate < filters.dateFrom) return false;
       if (filters.dateTo && p.nextDate && p.nextDate > filters.dateTo) return false;
       if (q) {
         const hay = [
-          p.name, p.location, p.area, p.status, p.nextDate, p.notes,
+          p.name, p.location, p.area, p.neighborhood, p.status, p.nextDate, p.notes,
           ...(p.coordinators || []),
         ].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -251,6 +271,13 @@ export default function Parliaments() {
     );
   }
 
+  const chartData = useMemo(() => {
+    return filtered.map((p) => ({
+      name: p.name,
+      meetings: meetingsCountMap[p.id] || 0,
+    }));
+  }, [filtered, meetingsCountMap]);
+
   const active = decorated.filter((p) => p.status === "פעיל").length;
   const thisWeek = decorated.filter((p) => isThisWeek(p.nextDate)).length;
   const totalParticipants = decorated.reduce((s, p) => s + (p.members || 0), 0);
@@ -266,6 +293,9 @@ export default function Parliaments() {
         <>
           <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ הוספת פרלמנט</button>
           <button className="btn" onClick={() => setShowPrint(true)}>הדפסת רשימה</button>
+          <button className="btn btn-outline" onClick={() => setShowCharts(!showCharts)}>
+            {showCharts ? "📊 הסתר גרפים" : "📊 הצג גרפים"}
+          </button>
         </>
       }
     >
@@ -277,6 +307,23 @@ export default function Parliaments() {
         <StatsCard icon="👥" title="משתתפים רשומים" value={String(totalParticipants)} />
         <StatsCard icon="📊" title='סה"כ פרלמנטים' value={String(decorated.length)} />
       </div>
+
+      {showCharts && chartData.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <SectionCard title="📊 מספר פגישות שבוצעו לכל פרלמנט">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="meetings" fill="#8B0000" name="מספר פגישות שבוצעו" />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionCard>
+        </div>
+      )}
 
       <SectionCard title="רשימת פרלמנטים">
         <div className="search-filter-panel">
@@ -291,11 +338,20 @@ export default function Parliaments() {
           <div className="filters-row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
             <label>
               <span style={filterLabelStyle}>אזור</span>
-              <select className="filter-pill" value={filters.area} onChange={(e) => setFilters({ ...filters, area: e.target.value })}>
+              <select className="filter-pill" value={filters.area} onChange={(e) => setFilters({ ...filters, area: e.target.value, neighborhood: "" })}>
                 <option value="">הכל</option>
                 {areaOptions.map((o) => <option key={o}>{o}</option>)}
               </select>
             </label>
+            {filters.area && (
+              <label>
+                <span style={filterLabelStyle}>שכונה</span>
+                <select className="filter-pill" value={filters.neighborhood} onChange={(e) => setFilters({ ...filters, neighborhood: e.target.value })}>
+                  <option value="">הכל</option>
+                  {(getNeighborhoods(filters.area) || []).map((o) => <option key={o}>{o}</option>)}
+                </select>
+              </label>
+            )}
             <label>
               <span style={filterLabelStyle}>סטטוס</span>
               <select className="filter-pill" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
@@ -313,8 +369,8 @@ export default function Parliaments() {
               <input type="date" className="filter-pill" value={filters.dateTo}
                 onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
             </label>
-            {(search || filters.area || filters.status || filters.dateFrom || filters.dateTo) && (
-              <button className="filter-pill" onClick={() => { setSearch(""); setFilters({ area: "", status: "", dateFrom: "", dateTo: "" }); }}>נקה</button>
+            {(search || filters.area || filters.neighborhood || filters.status || filters.dateFrom || filters.dateTo) && (
+              <button className="filter-pill" onClick={() => { setSearch(""); setFilters({ area: "", neighborhood: "", status: "", dateFrom: "", dateTo: "" }); }}>נקה</button>
             )}
           </div>
           {filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo && (
@@ -442,6 +498,130 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
     return (m && m.homePhone) || "—";
   };
 
+  const handlePrintParticipants = () => {
+    const html = `<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>רשימת משתתפים בפרלמנט: ${parl.name}</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm 12mm; }
+    body { font-family: "Arial", sans-serif; color: #333; margin: 0; padding: 20px; }
+    h2 { text-align: center; color: #8B0000; margin-bottom: 5px; }
+    h4 { text-align: center; color: #555; margin-top: 0; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: #8B0000; color: #fff; padding: 10px; text-align: right; border: 1px solid #6b0000; }
+    td { padding: 8px; border: 1px solid #ddd; text-align: right; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+  </style>
+</head>
+<body>
+  <h2>רשימת משתתפים בפרלמנט: ${parl.name}</h2>
+  <h4>מיוצר ביום: ${new Date().toLocaleDateString("he-IL")} | סה"כ משתתפים: ${sortedParticipants.length}</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>שם מלא</th>
+        <th>טלפון נייד</th>
+        <th>טלפון בית</th>
+        <th>כתובת</th>
+        <th>שכונה</th>
+        <th>סוג שיבוץ</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sortedParticipants.map(r => `
+        <tr>
+          <td style="font-weight: bold;">${r.firstName} ${r.lastName}</td>
+          <td>${phoneFor(r)}</td>
+          <td>${homePhoneFor(r)}</td>
+          <td>${r.address || '—'}</td>
+          <td>${r.neigh || '—'}</td>
+          <td>${r.type || 'קבוע'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 500);
+    }
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    } else {
+      alert("נא לאפשר חלונות קופצים בדפדפן");
+    }
+  };
+
+  const handlePrintMeetings = () => {
+    const html = `<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <title>דוח מפגשי פרלמנט: ${parl.name}</title>
+  <style>
+    @page { size: A4 landscape; margin: 15mm 12mm; }
+    body { font-family: "Arial", sans-serif; color: #333; margin: 0; padding: 20px; }
+    h2 { text-align: center; color: #8B0000; margin-bottom: 5px; }
+    h4 { text-align: center; color: #555; margin-top: 0; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: #8B0000; color: #fff; padding: 10px; text-align: right; border: 1px solid #6b0000; }
+    td { padding: 8px; border: 1px solid #ddd; text-align: right; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+  </style>
+</head>
+<body>
+  <h2>דוח מפגשי פרלמנט: ${parl.name}</h2>
+  <h4>מיוצר ביום: ${new Date().toLocaleDateString("he-IL")} | סה"כ מפגשים: ${sortedMeetings.length}</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>מספר מפגש</th>
+        <th>תאריך</th>
+        <th>שעה</th>
+        <th>מיקום</th>
+        <th>נוכחים</th>
+        <th>הוצאות (₪)</th>
+        <th>הערות</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sortedMeetings.map((r, idx) => `
+        <tr>
+          <td style="font-weight: bold;">פגישה ${idx + 1}</td>
+          <td>${r.date || '—'}</td>
+          <td>${r.startTime || '—'}</td>
+          <td>${r.location || '—'}</td>
+          <td>${meetingArrived[r.id] ?? 0}</td>
+          <td>${(meetingExpenseTotal[r.id] ?? 0).toLocaleString()} ₪</td>
+          <td>${r.notes || '—'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 500);
+    }
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    } else {
+      alert("נא לאפשר חלונות קופצים בדפדפן");
+    }
+  };
+
   const sortedParticipants = useMemo(
     () => [...participants].sort((a, b) =>
       `${a.firstName || ""} ${a.lastName || ""}`.localeCompare(`${b.firstName || ""} ${b.lastName || ""}`, "he"),
@@ -567,7 +747,12 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
       {tab === "participants" && (
         <SectionCard
           title="רשימת משתתפים"
-          actions={<button className="btn btn-primary" onClick={() => setShowAddParticipant(true)}>+ הוספת משתתפים</button>}
+          actions={
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" onClick={handlePrintParticipants}>🖨️ הדפסת רשימה</button>
+              <button className="btn btn-primary" onClick={() => setShowAddParticipant(true)}>+ הוספת משתתפים</button>
+            </div>
+          }
         >
           <DataTable
             columns={[
@@ -593,7 +778,12 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
       {tab === "meetings" && (
         <SectionCard
           title="רשימת הפגישות"
-          actions={<button className="btn btn-primary" onClick={() => setShowAddMeeting(true)}>+ הוספת פגישה</button>}
+          actions={
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" onClick={handlePrintMeetings}>🖨️ הדפסת רשימה</button>
+              <button className="btn btn-primary" onClick={() => setShowAddMeeting(true)}>+ הוספת פגישה</button>
+            </div>
+          }
         >
           <DataTable
             columns={[
@@ -700,16 +890,57 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
   const setAttField = (pid, field, value) => {
     const current = attFor(pid);
     const next = { ...current, [field]: value };
+    
+    const p = participants.find(x => x.id === pid) || attendance[pid];
+    if (p) {
+      next.firstName = p.firstName || "";
+      next.lastName = p.lastName || "";
+      next.elderlyId = p.elderlyId || "";
+      next.phone = p.phone || "";
+      next.homePhone = p.homePhone || "";
+      next.address = p.address || "";
+    }
+    
     setAttendance((prev) => ({ ...prev, [pid]: next }));
     upsertMeetingAttendance(parl.id, meeting.id, pid, next).catch((e) =>
       console.warn("attendance save failed", e),
     );
   };
 
-  const confirmed = participants.filter((p) => attFor(p.id).confirmed === "כן").length;
-  const notComing = participants.filter((p) => attFor(p.id).confirmed === "לא").length;
-  const waiting = participants.length - confirmed - notComing;
-  const arrivedCount = participants.filter((p) => attFor(p.id).arrived === "כן").length;
+  const displayParticipants = useMemo(() => {
+    const active = participants.map((p) => ({
+      ...p,
+      isActive: true,
+    }));
+    
+    const historical = [];
+    Object.keys(attendance).forEach((id) => {
+      if (!active.some((p) => p.id === id)) {
+        const a = attendance[id];
+        if (a.called === "כן" || a.confirmed === "כן" || a.confirmed === "לא" || a.arrived === "כן" || a.arrived === "לא" || (a.notes && a.notes.trim())) {
+          historical.push({
+            id,
+            firstName: a.firstName || "משתתף לשעבר",
+            lastName: a.lastName || "",
+            elderlyId: a.elderlyId || "",
+            phone: a.phone || "",
+            homePhone: a.homePhone || "",
+            address: a.address || "",
+            isActive: false,
+          });
+        }
+      }
+    });
+    
+    return [...active, ...historical];
+  }, [participants, attendance]);
+
+  const confirmed = displayParticipants.filter((p) => attFor(p.id).confirmed === "כן").length;
+  const notComing = displayParticipants.filter((p) => attFor(p.id).confirmed === "לא").length;
+  const activeConfirmed = displayParticipants.filter((p) => p.isActive && attFor(p.id).confirmed === "כן").length;
+  const activeNotComing = displayParticipants.filter((p) => p.isActive && attFor(p.id).confirmed === "לא").length;
+  const waiting = participants.length - activeConfirmed - activeNotComing;
+  const arrivedCount = displayParticipants.filter((p) => attFor(p.id).arrived === "כן").length;
   const expensesTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const sortedExpenses = useMemo(
@@ -806,7 +1037,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
                 );
               }},
             ]}
-            data={participants}
+            data={displayParticipants}
           />
         </SectionCard>
       )}
@@ -879,11 +1110,13 @@ const REQUIRED_LABELS = {
 };
 
 function ParliamentFormModal({ title, initial, existingNames = [], onClose, onSave, onDelete, areaOptions = [], volunteerOptions = [] }) {
+  const { getNeighborhoods } = useAreasAndNeighborhoods();
   const [f, setF] = useState(
     initial || {
       name: "",
       location: "",
       area: "",
+      neighborhood: "",
       coordinators: [""],
       status: "פעיל",
       notes: "",
@@ -957,11 +1190,20 @@ function ParliamentFormModal({ title, initial, existingNames = [], onClose, onSa
           </div>
           <div className="field">
             <label>אזור *</label>
-            <select className="select" value={f.area} onChange={(e) => setF({ ...f, area: e.target.value })}>
+            <select className="select" value={f.area} onChange={(e) => setF({ ...f, area: e.target.value, neighborhood: "" })}>
               <option value="">בחר אזור</option>
               {areaOptions.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
+          {f.area && (
+            <div className="field">
+              <label>שכונה</label>
+              <select className="select" value={f.neighborhood || ""} onChange={(e) => setF({ ...f, neighborhood: e.target.value })}>
+                <option value="">בחר שכונה</option>
+                {(getNeighborhoods(f.area) || []).map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+          )}
           <div className="field">
             <label>סטטוס *</label>
             <select className="select" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>

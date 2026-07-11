@@ -3,9 +3,9 @@ import { useState, useEffect, useMemo } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { getElderly } from "@/services/elderlyService.js";
-import { getVolunteers } from "@/services/volunteersService.js";
+import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
 import { getParliaments } from "@/services/parliamentsService.js";
-import { getProjects } from "@/services/projectsService.js";
+import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
 import { getJoinRequests } from "@/services/joinRequestsService.js";
 import { getFinancialRecords } from "@/services/financialService.js";
 import { 
@@ -86,14 +86,87 @@ const REPORT_TYPES = {
     id: "elderly",
     icon: "👵",
     label: "דוח אזרחים ותיקים",
-    description: "פילוח לפי שכונה, אזור וסטטוס - כולל ארכיב",
+    description: "פילוח לפי שכונה, אזור, סטטוס ופרויקטים",
     collection: "elderly",
     loadData: async () => {
       try {
-        const data = await getElderly();
-        return data || [];
+        const [elderly, projs, volGroups] = await Promise.all([
+          getElderly(),
+          getProjects(),
+          getVolunteerGroups(),
+        ]);
+
+        const groupMap = {
+          "עצמאי": "עצמאיים",
+          "עצמאיים": "עצמאיים",
+          "": "עצמאיים",
+          "undefined": "עצמאיים",
+          "null": "עצמאיים",
+        };
+        volGroups.forEach((g) => {
+          groupMap[g.id] = g.name;
+        });
+
+        // For each project, fetch its elderly participants
+        const elderlyProjMap = {}; // elderlyId -> Array of project participations
+        await Promise.all(
+          projs.map(async (p) => {
+            try {
+              const participants = await getElderlyParticipants(p.id);
+              participants.forEach((ep) => {
+                const elderlyId = ep.id;
+                if (!elderlyProjMap[elderlyId]) {
+                  elderlyProjMap[elderlyId] = [];
+                }
+                elderlyProjMap[elderlyId].push({
+                  projectName: p.name,
+                  projectYear: p.year,
+                  groupName: groupMap[ep.assignedGroupId] || "עצמאיים",
+                  receives: ep.receives || "כן",
+                  delivery: ep.delivery || "ממתין למסירה",
+                  notes: ep.notes || "",
+                });
+              });
+            } catch (err) {
+              console.warn("Failed to load participants for project", p.id, err);
+            }
+          })
+        );
+
+        const allRows = [];
+        elderly.forEach((e) => {
+          const participations = elderlyProjMap[e.id] || [];
+          const baseName = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "";
+          if (participations.length === 0) {
+            allRows.push({
+              ...e,
+              name: baseName,
+              projectName: "—",
+              projectYear: "—",
+              groupName: "—",
+              receives: "—",
+              delivery: "—",
+              projectNotes: "",
+            });
+          } else {
+            participations.forEach((part) => {
+              allRows.push({
+                ...e,
+                name: baseName,
+                projectName: part.projectName,
+                projectYear: part.projectYear,
+                groupName: part.groupName,
+                receives: part.receives,
+                delivery: part.delivery,
+                projectNotes: part.notes,
+              });
+            });
+          }
+        });
+
+        return allRows;
       } catch (error) {
-        console.error("Failed to load elderly from Firestore:", error);
+        console.error("Failed to load elderly report data:", error);
         return [];
       }
     },
@@ -119,8 +192,13 @@ const REPORT_TYPES = {
       { key: "marital", label: "מצב משפחתי" },
       { key: "country", label: "ארץ לידה" },
       { key: "language", label: "שפת דיבור" },
+      { key: "projectName", label: "שם הפרויקט" },
+      { key: "projectYear", label: "שנת פרויקט" },
+      { key: "groupName", label: "קבוצה מחלקת בפרויקט" },
+      { key: "receives", label: "מקבל חבילה בפרויקט" },
+      { key: "delivery", label: "סטטוס מסירה בפרויקט" },
     ],
-    defaults: ["name", "gender", "address", "mobile", "contactPhone", "lastContact", "notes", "birth"],
+    defaults: ["name", "gender", "address", "mobile", "projectName", "groupName", "delivery"],
     filters: [
       { key: "gender", label: "מגדר", type: "select", options: ["זכר", "נקבה"] },
       { key: "neighborhood", label: "שכונה", type: "select" },
@@ -128,44 +206,19 @@ const REPORT_TYPES = {
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "נפטר", "לא פעיל"] },
       { key: "volStatus", label: "סטטוס מתנדב", type: "select", options: ["כן", "לא מתאים", "לא רוצה"] },
       { key: "parliament", label: "פרלמנט", type: "select" },
-      { key: "lastContactFrom", label: "תאריך יצירת קשר אחרון - מ", type: "date" },
-      { key: "lastContactTo", label: "תאריך יצירת קשר אחרון - עד", type: "date" },
-      { key: "birthFrom", label: "תאריך לידה - מ", type: "date" },
-      { key: "birthTo", label: "תאריך לידה - עד", type: "date" },
+      { key: "projectName", label: "פרויקט", type: "select" },
+      { key: "groupName", label: "קבוצה מחלקת בפרויקט", type: "select" },
+      { key: "delivery", label: "סטטוס מסירה בפרויקט", type: "select", options: ["נמסר", "ממתין למסירה", "לא נמסר"] },
     ],
     sortOptions: [
       { value: "name", label: "שם (א-ב)" },
       { value: "-name", label: "שם (ב-א)" },
       { value: "neighborhood", label: "שכונה" },
       { value: "lastContact", label: "תאריך יצירת קשר אחרון" },
-      { value: "birth", label: "תאריך לידה" },
-      { value: "status", label: "סטטוס" },
+      { value: "projectName", label: "שם הפרויקט" },
     ],
-    // ===== CHART DATA =====
-    getChartData: (data) => {
-      // Bar: Elderly by Neighborhood
-      const neighborhoodCount = {};
-      data.forEach((item) => {
-        const key = item.neighborhood || "ללא שכונה";
-        neighborhoodCount[key] = (neighborhoodCount[key] || 0) + 1;
-      });
-      const barData = Object.entries(neighborhoodCount)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
-
-      // Pie: Elderly by Status
-      const statusCount = {};
-      data.forEach((item) => {
-        const key = item.status || "ללא סטטוס";
-        statusCount[key] = (statusCount[key] || 0) + 1;
-      });
-      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
-
-      return { barData, pieData };
-    },
     transform: (item) => ({
       ...item,
-      name: `${item.firstName || ""} ${item.lastName || ""}`.trim() || item.name || "",
       isArchived: item.isArchived ? "כן" : "לא",
       deletedAt: item.deletedAt || "",
     }),
@@ -398,20 +451,31 @@ const REPORT_TYPES = {
     loadData: async () => {
       try {
         const data = await getJoinRequests();
-        return data || [];
+        return (data || []).map((r) => ({
+          ...r,
+          name: r.fullName || r.name || "—",
+          email: r.email || "—",
+          phone: r.phone || "—",
+          type: r.type || "—",
+          note: r.note || "—",
+        }));
       } catch (error) {
         console.error("Failed to load join requests from Firestore:", error);
         return [];
       }
     },
     fields: [
-      { key: "name", label: "שם" },
-      { key: "note", label: "פירוט" },
+      { key: "name", label: "שם מלא" },
+      { key: "phone", label: "טלפון" },
+      { key: "email", label: "אימייל" },
+      { key: "type", label: "סוג פנייה" },
+      { key: "note", label: "הערות" },
       { key: "status", label: "סטטוס" },
     ],
-    defaults: ["name", "note", "status"],
+    defaults: ["name", "phone", "email", "type", "note", "status"],
     filters: [
       { key: "status", label: "סטטוס", type: "select", options: ["חדש", "בטיפול", "טופל"] },
+      { key: "type", label: "סוג פנייה", type: "select" },
     ],
     sortOptions: [
       { value: "name", label: "שם" },
@@ -498,6 +562,7 @@ const REPORT_TYPES = {
     },
     transform: (item) => item,
   },
+
 };
 
 /* ============================================================
@@ -885,15 +950,15 @@ const renderProjectCharts = (data) => {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
-      <SectionCard title="📊 התקדמות פרויקטים (אחוז מסירות)">
+      <SectionCard title="📊 כמות אזרחים ותיקים שקיבלו חבילה לפי פרויקטים">
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={barData} layout="vertical">
+          <BarChart data={barData}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" domain={[0, 100]} />
-            <YAxis type="category" dataKey="name" width={80} />
-            <Tooltip formatter={(value) => `${value}%`} />
+            <XAxis dataKey="name" />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
             <Legend />
-            <Bar dataKey="progress" fill="#2e7d32" name="התקדמות (%)" />
+            <Bar dataKey="delivered" fill="#8B0000" name="אזרחים ותיקים שקיבלו חבילה" />
           </BarChart>
         </ResponsiveContainer>
       </SectionCard>
@@ -997,6 +1062,8 @@ const renderFinancialCharts = (data) => {
     </div>
   );
 };
+
+
 
 /* ============================================================
    Report Builder Component with Enhanced Filters + CHARTS
@@ -1128,7 +1195,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
 
     switch (reportKey) {
       case "elderly":
-        return renderElderlyCharts(filteredData);
+        return null;
       case "volunteers":
         return renderVolunteerCharts(filteredData);
       case "projects":

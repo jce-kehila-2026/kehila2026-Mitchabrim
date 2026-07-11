@@ -27,11 +27,12 @@ import { sanitizeText } from "../utils/sanitize";
  * Collection: "joinRequests" (unchanged)
  * Notification collection: "notifications" (unchanged)
  */
-export async function createJoinRequest({ fullName, phone, type, message }) {
+export async function createJoinRequest({ fullName, phone, type, message, email }) {
   const safeName = sanitizeText(fullName, 200);
   const safePhone = sanitizeText(phone, 40);
   const safeType = sanitizeText(type, 100);
   const safeMessage = sanitizeText(message, 2000);
+  const safeEmail = email ? sanitizeText(email, 250) : "";
 
   const reqRef = await addDoc(collection(db, "joinRequests"), {
     fullName: safeName,
@@ -39,6 +40,7 @@ export async function createJoinRequest({ fullName, phone, type, message }) {
     note: `${safeType} - ${safeMessage}`.trim(),
     type: safeType,
     status: "new",
+    email: safeEmail,
     createdAt: serverTimestamp(),
   });
 
