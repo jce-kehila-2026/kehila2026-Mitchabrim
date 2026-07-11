@@ -119,8 +119,6 @@ const REPORT_TYPES = {
       { key: "marital", label: "מצב משפחתי" },
       { key: "country", label: "ארץ לידה" },
       { key: "language", label: "שפת דיבור" },
-      { key: "isArchived", label: "בארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "gender", "address", "mobile", "contactPhone", "lastContact", "notes", "birth"],
     filters: [
@@ -130,7 +128,6 @@ const REPORT_TYPES = {
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "נפטר", "לא פעיל"] },
       { key: "volStatus", label: "סטטוס מתנדב", type: "select", options: ["כן", "לא מתאים", "לא רוצה"] },
       { key: "parliament", label: "פרלמנט", type: "select" },
-      { key: "isArchived", label: "מצב ארכיב", type: "select", options: ["כן", "לא"] },
       { key: "lastContactFrom", label: "תאריך יצירת קשר אחרון - מ", type: "date" },
       { key: "lastContactTo", label: "תאריך יצירת קשר אחרון - עד", type: "date" },
       { key: "birthFrom", label: "תאריך לידה - מ", type: "date" },
@@ -177,12 +174,23 @@ const REPORT_TYPES = {
     id: "volunteers",
     icon: "🤝",
     label: "דוח מתנדבים",
-    description: "סטטוס, קבוצות, שיבוצים - כולל ארכיב",
+    description: "סטטוס, קבוצות, שיבוצים",
     collection: "volunteers",
     loadData: async () => {
       try {
-        const data = await getVolunteers();
-        return data || [];
+        const [vols, groups] = await Promise.all([getVolunteers(), getVolunteerGroups()]);
+        const groupTypeMap = {};
+        groups.forEach((g) => {
+          if (g.name) groupTypeMap[g.name] = g.type;
+        });
+        return (vols || []).map((v) => {
+          const isGroup = v.group && v.group !== "ללא קבוצה";
+          return {
+            ...v,
+            volunteerType: isGroup ? "קבוצה" : "עצמאי",
+            groupType: isGroup ? (groupTypeMap[v.group] || "אחר") : "עצמאי",
+          };
+        });
       } catch (error) {
         console.error("Failed to load volunteers from Firestore:", error);
         return [];
@@ -191,7 +199,9 @@ const REPORT_TYPES = {
     fields: [
       { key: "name", label: "שם מלא" },
       { key: "phone", label: "טלפון" },
+      { key: "volunteerType", label: "סוג מתנדב" },
       { key: "group", label: "קבוצה" },
+      { key: "groupType", label: "סוג קבוצה" },
       { key: "status", label: "סטטוס" },
       { key: "assigned", label: "משויך לאזרח" },
       { key: "start", label: "תאריך התחלה" },
@@ -199,28 +209,27 @@ const REPORT_TYPES = {
       { key: "area", label: "אזור" },
       { key: "neighborhood", label: "שכונה" },
       { key: "address", label: "כתובת" },
-      { key: "type", label: "סוג מתנדב" },
       { key: "insurance", label: "ביטוח" },
       { key: "notes", label: "הערות" },
-      { key: "isArchived", label: "בארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
-    defaults: ["name", "phone", "group", "status", "assigned", "start"],
+    defaults: ["name", "phone", "volunteerType", "group", "groupType", "status", "assigned", "start"],
     filters: [
+      { key: "volunteerType", label: "סוג מתנדב", type: "select", options: ["עצמאי", "קבוצה"] },
       { key: "group", label: "קבוצה", type: "select" },
+      { key: "groupType", label: "סוג קבוצה", type: "select", options: ["סטודנטים", "בית ספר", "חברה", "עמותה", "עצמאי", "אחר"] },
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "ממתין לשיבוץ", "לא פעיל"] },
       { key: "area", label: "אזור", type: "select" },
       { key: "neighborhood", label: "שכונה", type: "select" },
-      { key: "type", label: "סוג מתנדב", type: "select", options: ["סטודנט", "תלמיד", "עצמאי", "ארגון", "תרבות"] },
       { key: "insurance", label: "ביטוח", type: "select", options: ["כן", "לא"] },
-      { key: "isArchived", label: "מצב ארכיב", type: "select", options: ["כן", "לא"] },
       { key: "startFrom", label: "תאריך התחלה - מ", type: "date" },
       { key: "startTo", label: "תאריך התחלה - עד", type: "date" },
     ],
     sortOptions: [
       { value: "name", label: "שם (א-ב)" },
       { value: "-name", label: "שם (ב-א)" },
+      { value: "volunteerType", label: "סוג מתנדב" },
       { value: "group", label: "קבוצה" },
+      { value: "groupType", label: "סוג קבוצה" },
       { value: "status", label: "סטטוס" },
       { value: "start", label: "תאריך התחלה" },
     ],
@@ -246,22 +255,34 @@ const REPORT_TYPES = {
 
       return { barData, pieData };
     },
-    transform: (item) => ({
-      ...item,
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: item.deletedAt || "",
-    }),
+    transform: (item) => item,
   },
   projects: {
     id: "projects",
     icon: "🎁",
     label: "דוח פרויקטים",
-    description: "התקדמות, מסירות ובעיות - כולל ארכיב",
+    description: "התקדמות, מסירות ובעיות",
     collection: "projects",
     loadData: async () => {
       try {
-        const data = await getProjects();
-        return data || [];
+        const [projs, volGroups] = await Promise.all([getProjects(), getVolunteerGroups()]);
+        const groupMap = {};
+        volGroups.forEach((g) => {
+          groupMap[g.id] = g.name;
+        });
+
+        const resolved = await Promise.all(
+          projs.map(async (p) => {
+            const grps = await getProjectGroups(p.id);
+            const groupNames = grps.map((g) => groupMap[g.id]).filter(Boolean);
+            return {
+              ...p,
+              groupNames: groupNames.join(", "),
+              groupList: groupNames,
+            };
+          })
+        );
+        return resolved || [];
       } catch (error) {
         console.error("Failed to load projects from Firestore:", error);
         return [];
@@ -272,20 +293,19 @@ const REPORT_TYPES = {
       { key: "holiday", label: "חג" },
       { key: "year", label: "שנה" },
       { key: "date", label: "תאריך חלוקה" },
-      { key: "elderly", label: "מספר א.ו." },
+      { key: "elderly", label: "אזרחים ותיקים" },
       { key: "assigned", label: "שובצו" },
       { key: "delivered", label: "נמסרו" },
+      { key: "groupNames", label: "קבוצות שותפות" },
       { key: "issues", label: "בעיות" },
       { key: "status", label: "סטטוס" },
-      { key: "isArchived", label: "בארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
-    defaults: ["name", "holiday", "year", "status", "elderly", "delivered"],
+    defaults: ["name", "year", "status", "elderly", "delivered", "groupNames"],
     filters: [
-      { key: "holiday", label: "חג", type: "select" },
+      { key: "name", label: "פרויקט", type: "select" },
       { key: "status", label: "סטטוס", type: "select", options: ["מתוכנן", "בהכנה", "פעיל", "הסתיים"] },
       { key: "year", label: "שנה", type: "select" },
-      { key: "isArchived", label: "מצב ארכיב", type: "select", options: ["כן", "לא"] },
+      { key: "projectGroup", label: "קבוצה שותפה", type: "select" },
     ],
     sortOptions: [
       { value: "name", label: "שם" },
@@ -294,25 +314,25 @@ const REPORT_TYPES = {
     ],
     // ===== CHART DATA =====
     getChartData: (data) => {
-      // Bar: Project Progress
       const barData = data
-        .map((item) => {
-          const progress = item.elderly ? Math.round((item.delivered / item.elderly) * 100) : 0;
-          return {
-            name: item.name || "ללא שם",
-            progress: progress,
-            delivered: item.delivered || 0,
-            total: item.elderly || 0,
-          };
-        })
-        .sort((a, b) => b.progress - a.progress);
+        .map((item) => ({
+          name: item.name || "ללא שם",
+          delivered: Number(item.delivered) || 0,
+          total: Number(item.elderly) || 0,
+          year: item.year || "",
+          date: item.date || "",
+        }))
+        .sort((a, b) => {
+          if (a.year !== b.year) {
+            return String(a.year).localeCompare(String(b.year));
+          }
+          return String(a.date).localeCompare(String(b.date));
+        });
 
       return { barData };
     },
     transform: (item) => ({
       ...item,
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: item.deletedAt || "",
       progress: item.elderly ? Math.round((item.delivered / item.elderly) * 100) : 0,
     }),
   },
@@ -320,7 +340,7 @@ const REPORT_TYPES = {
     id: "parliaments",
     icon: "🏛️",
     label: "דוח פרלמנטים",
-    description: "השתתפות ונוכחות - כולל ארכיב",
+    description: "השתתפות ונוכחות",
     collection: "parliaments",
     loadData: async () => {
       try {
@@ -340,14 +360,11 @@ const REPORT_TYPES = {
       { key: "nextDate", label: "מפגש הבא" },
       { key: "status", label: "סטטוס" },
       { key: "notes", label: "הערות" },
-      { key: "isArchived", label: "בארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "location", "area", "members", "nextDate", "status"],
     filters: [
       { key: "area", label: "אזור", type: "select" },
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "בהכנה", "הסתיים"] },
-      { key: "isArchived", label: "מצב ארכיב", type: "select", options: ["כן", "לא"] },
     ],
     sortOptions: [
       { value: "name", label: "שם" },
@@ -370,15 +387,13 @@ const REPORT_TYPES = {
     transform: (item) => ({
       ...item,
       coordinators: (item.coordinators || []).join(", "),
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: item.deletedAt || "",
     }),
   },
   joinRequests: {
     id: "joinRequests",
     icon: "✉️",
     label: "דוח בקשות הצטרפות",
-    description: "בקשות וטיפול - כולל ארכיב",
+    description: "בקשות וטיפול",
     collection: "joinRequests",
     loadData: async () => {
       try {
@@ -393,13 +408,10 @@ const REPORT_TYPES = {
       { key: "name", label: "שם" },
       { key: "note", label: "פירוט" },
       { key: "status", label: "סטטוס" },
-      { key: "isArchived", label: "בארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "note", "status"],
     filters: [
       { key: "status", label: "סטטוס", type: "select", options: ["חדש", "בטיפול", "טופל"] },
-      { key: "isArchived", label: "מצב ארכיב", type: "select", options: ["כן", "לא"] },
     ],
     sortOptions: [
       { value: "name", label: "שם" },
@@ -417,17 +429,13 @@ const REPORT_TYPES = {
 
       return { pieData };
     },
-    transform: (item) => ({
-      ...item,
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: item.deletedAt || "",
-    }),
+    transform: (item) => item,
   },
   financial: {
     id: "financial",
     icon: "💰",
     label: "דוח כספי",
-    description: "הכנסות, הוצאות ותרומות - כולל ארכיב",
+    description: "הכנסות, הוצאות ותרומות",
     collection: "financial",
     loadData: async () => {
       try {
@@ -447,14 +455,11 @@ const REPORT_TYPES = {
       { key: "project", label: "פרויקט" },
       { key: "receiptType", label: "סוג קבלה" },
       { key: "receiptSent", label: "נשלחה קבלה" },
-      { key: "isArchived", label: "בארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["type", "name", "amount", "date", "project"],
     filters: [
       { key: "type", label: "סוג", type: "select", options: ["תרומה", "הוצאה"] },
       { key: "project", label: "פרויקט", type: "select" },
-      { key: "isArchived", label: "מצב ארכיב", type: "select", options: ["כן", "לא"] },
     ],
     sortOptions: [
       { value: "date", label: "תאריך" },
@@ -491,11 +496,7 @@ const REPORT_TYPES = {
 
       return { barData, pieData };
     },
-    transform: (item) => ({
-      ...item,
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: item.deletedAt || "",
-    }),
+    transform: (item) => item,
   },
 };
 
@@ -507,6 +508,12 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
     alert("אין נתונים לייצוא");
     return;
   }
+
+  const fsInput = prompt("נא להזין גודל גופן לטבלה ב-PDF (ברירת מחדל 14):", "14") || "14";
+  const fontSize = parseInt(fsInput) && !isNaN(fsInput) ? Number(fsInput) : 14;
+
+  const isLandscape = confirm("האם ברצונך להפיק את ה-PDF לרוחב (Landscape)?\nלחץ על 'אישור' עבור לרוחב, או 'ביטול' עבור לאורך (Portrait).");
+  const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
 
   const cols = fields.map((k) => report.fields.find((f) => f.key === k)).filter(Boolean);
   const today = new Date().toLocaleDateString("he-IL");
@@ -540,8 +547,8 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
     const females = rows.filter((d) => d.gender === "נקבה").length;
     summaryItems += `
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-      <div class="item">👴 זכרים: <strong>${males}</strong></div>
-      <div class="item">👵 נקבות: <strong>${females}</strong></div>
+      <div class="item">👴 גברים: <strong>${males}</strong></div>
+      <div class="item">👵 נשים: <strong>${females}</strong></div>
     `;
   } else if (report.id === "volunteers") {
     const active = rows.filter((d) => d.status === "פעיל").length;
@@ -580,7 +587,7 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
   <meta charset="utf-8">
   <title>${report.label}</title>
   <style>
-    @page { size: A4 portrait; margin: 15mm 12mm; }
+    @page { size: ${pageSize}; margin: 15mm 12mm; }
     * { box-sizing: border-box; }
     body {
       font-family: "Arial", "David", "Segoe UI", sans-serif;
@@ -616,7 +623,7 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 12px;
+      font-size: ${fontSize}px;
     }
     th {
       background: #8B0000;
@@ -1031,7 +1038,15 @@ const ReportBuilder = ({ reportKey, onBack }) => {
     const opts = {};
     report.filters.forEach((f) => {
       if (f.type === "select" && !f.options) {
-        opts[f.key] = [...new Set(allData.map((r) => r[f.key]).filter(Boolean))];
+        if (f.key === "projectGroup") {
+          const allGroups = [];
+          allData.forEach((r) => {
+            if (r.groupList) allGroups.push(...r.groupList);
+          });
+          opts[f.key] = [...new Set(allGroups)].filter(Boolean);
+        } else {
+          opts[f.key] = [...new Set(allData.map((r) => r[f.key]).filter(Boolean))];
+        }
       }
     });
     return opts;
@@ -1048,6 +1063,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           const filterDate = new Date(v);
           if (k.endsWith("From")) return rowDate >= filterDate;
           if (k.endsWith("To")) return rowDate <= filterDate;
+        }
+        if (k === "projectGroup") {
+          return row.groupList && row.groupList.includes(v);
         }
         return row[k] === v;
       });
