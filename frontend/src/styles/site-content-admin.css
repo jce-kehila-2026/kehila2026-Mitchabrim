@@ -355,3 +355,96 @@
   height: 10px;
   border-radius: 4px;
 }
+
+/* Overview dashboard */
+.sc-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+  margin-top: 8px;
+}
+.sc-overview-card {
+  background: #fff;
+  border: 1px solid #f0dcc4;
+  border-radius: 18px;
+  padding: 26px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  box-shadow: 0 4px 14px rgba(120, 60, 30, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-family: inherit;
+}
+.sc-overview-card:hover {
+  transform: translateY(-3px);
+  border-color: #e2b487;
+  box-shadow: 0 10px 24px rgba(120, 60, 30, 0.12);
+}
+.sc-overview-card.is-primary {
+  background: linear-gradient(135deg, #fffaf3 0%, #fdecd9 100%);
+  border-color: #e2b487;
+}
+.sc-overview-card-icon {
+  font-size: 34px;
+  line-height: 1;
+}
+.sc-overview-card-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #5a1a1f;
+}
+.sc-overview-card-desc {
+  font-size: 13px;
+  color: #7a5547;
+  line-height: 1.55;
+}
+
+/* Legacy / hardcoded notes */
+.sc-legacy-note {
+  background: #fff8e6;
+  border: 1px solid #f2d68a;
+  color: #6b4a10;
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.sc-legacy-note code {
+  background: #fdecd9;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+
+/* List controls (partners, socials, points, team) */
+.sc-slide-num-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.sc-list-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+.sc-btn-danger {
+  background: #fff;
+  border: 1px solid #f2b7b0;
+  color: #b23a2b;
+}
+.sc-btn-danger:hover { background: #fdecea; }
+.sc-hint {
+  background: #f7f3ee;
+  border: 1px dashed #d9c6b3;
+  color: #6b4a10;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}

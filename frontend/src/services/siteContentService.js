@@ -42,6 +42,14 @@ export const DEFAULT_SITE_CONTENT = {
       { title: "קשר רציף", desc: "ליווי מתמשך לאורך זמן\nומענה לצרכים משתנים." },
       { title: "פרויקטי חגים", desc: "יוצרים שמחה, חוויה\nוקירוב לבבות." },
     ],
+    // Detail pages content (/our-work/:slug). Keys map to activity slugs.
+    // Empty strings fall back to the built-in copy in src/data/activities.js.
+    details: {
+      "personal-volunteering": { title: "", longDescription: "", image: "" },
+      "parliaments":           { title: "", longDescription: "", image: "" },
+      "continuous-connection": { title: "", longDescription: "", image: "" },
+      "holiday-projects":      { title: "", longDescription: "", image: "" },
+    },
   },
   quote: {
     eyebrow: "דבר המייסדת",
@@ -59,6 +67,8 @@ export const DEFAULT_SITE_CONTENT = {
     eyebrow: "שותפים",
     title: "השותפים שלנו",
     subtitle: "ארגונים, מוסדות וקהילות שמלווים אותנו בדרך.",
+    // When items is empty, the public site falls back to its built-in list.
+    items: [],
   },
   team: {
     eyebrow: "הצוות",
@@ -91,6 +101,8 @@ export const DEFAULT_SITE_CONTENT = {
     buttonText: "שליחת פנייה",
     successText: "הבקשה נשלחה בהצלחה. ניצור איתך קשר בהקדם.",
     note: "נחזור אליך בהקדם ונשמח לעזור.",
+    // Bullet points shown next to the form. Empty falls back to hardcoded copy.
+    points: [],
   },
   footer: {
     orgName: "מתחברים",
@@ -99,6 +111,9 @@ export const DEFAULT_SITE_CONTENT = {
     phone: "02 - 000 - 0000",
     email: "info@mitchabrim.org",
     address: "ירושלים",
+    // Social links shown under "עקבו אחרינו" in the footer.
+    // Empty falls back to the built-in Facebook link.
+    socials: [],
   },
 };
 
