@@ -6,7 +6,7 @@ import shefer from "@/assets/partners-new/shefer.jpg.asset.json";
 import gila from "@/assets/partners-new/gila.jpg.asset.json";
 import electricCompany from "@/assets/partners-new/electric-company.png.asset.json";
 
-const PARTNERS = [
+const DEFAULT_PARTNERS = [
   { name: "עיריית ירושלים", logo: jerusalemMunicipality.url },
   { name: "אגף רווחה - המחלקה לתושבים ותיקים", logo: jerusalemMunicipality.url },
   { name: "אגף חברה - המחלקה לגיל השלישי", logo: jerusalemMunicipality.url },
@@ -68,6 +68,9 @@ function buildWavePath() {
 export default function PartnersSection() {
   const { content } = useSiteContent();
   const p = content.partners;
+  const PARTNERS = (p.items && p.items.length > 0) ? p.items : DEFAULT_PARTNERS;
+
+
 
   const wrapRef = useRef(null);
   const cardRefs = useRef([]);
@@ -140,7 +143,7 @@ export default function PartnersSection() {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
     };
-  }, []);
+  }, [PARTNERS.length]);
 
   const wavePath = buildWavePath();
 

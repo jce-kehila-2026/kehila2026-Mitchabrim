@@ -221,18 +221,25 @@ export default function Dashboard() {
   };
 
 
-  const toggleTaskStatus = async (taskId, currentStatus) => {
-    let nextStatus = "פתוח";
-    if (currentStatus === "פתוח") nextStatus = "דחוף";
-    else if (currentStatus === "דחוף") nextStatus = "בוצע";
-
+  // Personal task statuses — canonical labels used going forward.
+  // Older data may still contain the previous labels; helpers normalize them.
+  const STATUS_OPTIONS = ["פתוחה", "חשובה", "הושלמה"];
+  const normalizeStatus = (s) => {
+    if (!s) return "פתוחה";
+    if (s === "פתוח" || s === "פתוחה") return "פתוחה";
+    if (s === "דחוף" || s === "חשובה") return "חשובה";
+    if (s === "בוצע" || s === "הושלמה") return "הושלמה";
+    return "פתוחה";
+  };
+  const setTaskStatus = async (taskId, next) => {
     try {
-      await updateAdminTaskStatus(taskId, nextStatus);
-      setTasks(tasks.map(t => t.id === taskId ? { ...t, status: nextStatus } : t));
+      await updateAdminTaskStatus(taskId, next);
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: next } : t)));
     } catch (error) {
       console.error("Error updating task:", error);
     }
   };
+
 
   const handleDeleteTask = async (taskId) => {
     try {
@@ -498,9 +505,9 @@ export default function Dashboard() {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
                 {[
                   { k: "all", label: `הכל (${tasks.length})` },
-                  { k: "open", label: `פתוחות (${tasks.filter(t => t.status === "פתוח").length})` },
-                  { k: "overdue", label: `דחופות (${tasks.filter(t => t.status === "דחוף").length})` },
-                  { k: "done", label: `הושלמו (${tasks.filter(t => t.status === "בוצע").length})` },
+                  { k: "open", label: `פתוחות (${tasks.filter(t => normalizeStatus(t.status) === "פתוחה").length})` },
+                  { k: "important", label: `חשובות (${tasks.filter(t => normalizeStatus(t.status) === "חשובה").length})` },
+                  { k: "done", label: `הושלמו (${tasks.filter(t => normalizeStatus(t.status) === "הושלמה").length})` },
                 ].map((f) => {
                   const active = taskFilter === f.k;
                   return (
@@ -517,19 +524,30 @@ export default function Dashboard() {
               <div className="scrollbox" style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 360, overflowY: "auto", paddingLeft: 6 }}>
                 {(() => {
                   const filtered = tasks.filter(t => {
-                    if (taskFilter === "open") return t.status === "פתוח";
-                    if (taskFilter === "overdue") return t.status === "דחוף";
-                    if (taskFilter === "done") return t.status === "בוצע";
+                    const s = normalizeStatus(t.status);
+                    if (taskFilter === "open") return s === "פתוחה";
+                    if (taskFilter === "important") return s === "חשובה";
+                    if (taskFilter === "done") return s === "הושלמה";
                     return true;
                   });
                   if (!filtered.length) return <div style={{ padding: 20, textAlign: "center", color: "#adb5bd", fontSize: 14 }}>אין משימות להצגה</div>;
                   return filtered.map((t) => {
                     const isEditing = editTaskId === t.id;
-                    const statusDotColor = t.status === "דחוף" ? "#dc3545" : t.status === "בוצע" ? "#1e6b2c" : "#c9a227";
+                    const st = normalizeStatus(t.status);
+                    const isDone = st === "הושלמה";
+                    const isImportant = st === "חשובה";
+                    const dotColor = isImportant ? "#dc3545" : isDone ? "#1e6b2c" : "#c9a227";
+                    const rowBg = isDone ? "#f4faf5" : isImportant ? "#fff5f5" : "#fff";
+                    const rowBorder = isDone ? "1px solid #c3e6cb" : isImportant ? "1px solid #f5c6cb" : "1px solid #e9ecef";
+                    const badge = isDone
+                      ? { bg: "#e8f5e9", color: "#1e6b2c", border: "#c3e6cb" }
+                      : isImportant
+                      ? { bg: "#fdecec", color: "#dc3545", border: "#f5c6cb" }
+                      : { bg: "#fff3cd", color: "#856404", border: "#ffeeba" };
                     return (
-                      <div key={t.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: "#fff", gap: 10, flexWrap: "wrap" }}>
+                      <div key={t.id} className="interactive-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: rowBg, border: rowBorder, gap: 10, flexWrap: "wrap" }}>
                         <div style={{ flex: 1, minWidth: 180, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span title={t.status || "פתוח"} style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: statusDotColor, flexShrink: 0 }} />
+                          <span title={st} style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: dotColor, flexShrink: 0 }} />
                           {isEditing ? (
                             <input
                               autoFocus
@@ -539,8 +557,9 @@ export default function Dashboard() {
                               style={{ flex: 1, padding: "6px 8px", border: "1px solid #c9a227", borderRadius: 6, fontSize: 13.5, fontFamily: "inherit" }}
                             />
                           ) : (
-                            <span style={{ color: t.status === "בוצע" ? "#adb5bd" : "#495057", fontSize: 13.5, fontWeight: 500, textDecoration: t.status === "בוצע" ? "line-through" : "none" }}>{t.title}</span>
+                            <span style={{ color: isDone ? "#adb5bd" : isImportant ? "#8b2c2c" : "#495057", fontSize: 13.5, fontWeight: isImportant ? 700 : 500, textDecoration: isDone ? "line-through" : "none" }}>{t.title}</span>
                           )}
+                          <span style={{ marginInlineStart: 4, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, backgroundColor: badge.bg, color: badge.color, border: `1px solid ${badge.border}` }}>{st}</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           {isEditing ? (
@@ -550,11 +569,16 @@ export default function Dashboard() {
                             </>
                           ) : (
                             <>
+                              <select
+                                value={st}
+                                onChange={(e) => setTaskStatus(t.id, e.target.value)}
+                                title="שינוי סטטוס"
+                                style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #ced4da", backgroundColor: "#fff", color: "#495057", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                              >
+                                {STATUS_OPTIONS.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
+                              </select>
                               <button onClick={() => setViewTask(t)} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: 12 }}>צפייה</button>
                               <button onClick={() => startEditTask(t)} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#fff7ec", border: "1px solid #f0c98a", cursor: "pointer", fontWeight: "bold", color: "#a07050", fontSize: 12 }}>עריכה</button>
-                              {t.status !== "בוצע" && (
-                                <button onClick={() => updateAdminTaskStatus(t.id, "בוצע").then(() => showToast("סומן כהושלם"))} style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#e8f5e9", border: "1px solid #c3e6cb", cursor: "pointer", fontWeight: "bold", color: "#1e6b2c", fontSize: 12 }}>סמן כהושלם</button>
-                              )}
                               <button type="button" onClick={() => handleDeleteTask(t.id)} className="icon-btn-danger" title="מחיקה" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, fontWeight: "bold", padding: 0 }}>✕</button>
                             </>
                           )}
@@ -565,6 +589,7 @@ export default function Dashboard() {
 
                 })()}
               </div>
+
               <form onSubmit={handleAddTask} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px dashed #ced4da", borderRadius: 10, backgroundColor: "#faf8f5", marginTop: 12 }}>
                 <input type="text" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="הוסף משימה חדשה ללוח..." style={{ background: "transparent", border: "none", outline: "none", flex: 1, fontSize: 13, color: "#495057", fontFamily: "inherit" }} />
                 <button type="submit" style={{ backgroundColor: "#8b2c2c", color: "white", border: "none", borderRadius: "50%", width: 24, height: 22, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 16, fontWeight: "bold", padding: 0 }}>+</button>
@@ -603,7 +628,7 @@ export default function Dashboard() {
               </button>
               <div style={{ display: "flex", gap: "10px" }}>
                 <button onClick={() => setSelectedRequest(null)} style={{ padding: "8px 20px", borderRadius: "8px", border: "1px solid #ced4da", backgroundColor: "#fff", cursor: "pointer", fontWeight: "bold", color: "#6c757d" }}>סגור</button>
-                <button onClick={() => { showToast("הפנייה הועברה לטיפול במערכת"); setSelectedRequest(null); navigate("/admin/requests"); }} style={{ padding: "8px 20px", borderRadius: "8px", border: "none", backgroundColor: "#8b2c2c", color: "white", cursor: "pointer", fontWeight: "bold" }}>אשר פנייה</button>
+                <button onClick={async () => { const id = selectedRequest.id; setSelectedRequest(null); await executeDeleteRequest(id); showToast("הפנייה אושרה והוסרה מהרשימה"); }} style={{ padding: "8px 20px", borderRadius: "8px", border: "none", backgroundColor: "#1e6b2c", color: "white", cursor: "pointer", fontWeight: "bold" }}>אשר פנייה</button>
               </div>
             </div>
           </div>

@@ -48,17 +48,24 @@ export default function PublicFooter() {
           <div className="footer-col">
             <h4>עקבו אחרינו</h4>
             <div className="footer-socials">
-              <a
-                href="https://www.facebook.com/profile.php?id=61588335013024"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Facebook"
-                className="f-soc"
-              >
-                FB
-              </a>
+              {(f.socials && f.socials.length > 0
+                ? f.socials
+                : [{ label: "FB", url: "https://www.facebook.com/profile.php?id=61588335013024", aria: "Facebook" }]
+              ).map((s, i) => (
+                <a
+                  key={i}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={s.aria || s.label}
+                  className="f-soc"
+                >
+                  {s.label}
+                </a>
+              ))}
             </div>
           </div>
+
 
         </div>
 
