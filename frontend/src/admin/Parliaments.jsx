@@ -19,6 +19,7 @@ import {
   deleteMeeting,
   getMeetingAttendance,
   upsertMeetingAttendance,
+  deleteMeetingAttendance,
   getMeetingExpenses,
   addMeetingExpense,
   updateMeetingExpense,
@@ -75,7 +76,7 @@ function isThisWeek(dateStr) {
 
 /* =================== Main page =================== */
 export default function Parliaments() {
-  const { areaNames, getNeighborhoods } = useAreasAndNeighborhoods();
+  const { areaNames, getNeighborhoods, allNeighborhoods } = useAreasAndNeighborhoods();
   const [parliaments, setParliaments] = useState([]);
   const [participantsMap, setParticipantsMap] = useState({});
   const [nextMeetingMap, setNextMeetingMap] = useState({}); // pid -> "YYYY-MM-DD" of next upcoming meeting
@@ -206,13 +207,19 @@ export default function Parliaments() {
     const q = search.trim().toLowerCase();
     return decorated.filter((p) => {
       if (filters.area && p.area !== filters.area) return false;
-      if (filters.neighborhood && p.neighborhood !== filters.neighborhood) return false;
+      if (filters.neighborhood) {
+        const list = Array.isArray(p.neighborhoods) && p.neighborhoods.length
+          ? p.neighborhoods
+          : (p.neighborhood ? [p.neighborhood] : []);
+        if (!list.includes(filters.neighborhood)) return false;
+      }
       if (filters.status && p.status !== filters.status) return false;
       if (filters.dateFrom && p.nextDate && p.nextDate < filters.dateFrom) return false;
       if (filters.dateTo && p.nextDate && p.nextDate > filters.dateTo) return false;
       if (q) {
+        const nbList = Array.isArray(p.neighborhoods) ? p.neighborhoods.join(" ") : (p.neighborhood || "");
         const hay = [
-          p.name, p.location, p.area, p.neighborhood, p.status, p.nextDate, p.notes,
+          p.name, p.location, p.area, nbList, p.status, p.nextDate, p.notes,
           ...(p.coordinators || []),
         ].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -228,6 +235,11 @@ export default function Parliaments() {
     arr.sort((a, b) => {
       let av, bv;
       if (key === "coordinator") { av = (a.coordinators || []).join(", "); bv = (b.coordinators || []).join(", "); }
+      else if (key === "neighborhoods") {
+        const la = Array.isArray(a.neighborhoods) && a.neighborhoods.length ? a.neighborhoods : (a.neighborhood ? [a.neighborhood] : []);
+        const lb = Array.isArray(b.neighborhoods) && b.neighborhoods.length ? b.neighborhoods : (b.neighborhood ? [b.neighborhood] : []);
+        av = la.join(", "); bv = lb.join(", ");
+      }
       else if (key === "members") { av = Number(a.members) || 0; bv = Number(b.members) || 0; }
       else { av = a[key] ?? ""; bv = b[key] ?? ""; }
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * mul;
@@ -255,6 +267,13 @@ export default function Parliaments() {
 
   const selected = parliaments.find((p) => p.id === selectedId) || null;
 
+  const chartData = useMemo(() => {
+    return filtered.map((p) => ({
+      name: p.name,
+      meetings: meetingsCountMap[p.id] || 0,
+    }));
+  }, [filtered, meetingsCountMap]);
+
   if (selected) {
     return (
       <ParliamentDetail
@@ -270,13 +289,6 @@ export default function Parliaments() {
       />
     );
   }
-
-  const chartData = useMemo(() => {
-    return filtered.map((p) => ({
-      name: p.name,
-      meetings: meetingsCountMap[p.id] || 0,
-    }));
-  }, [filtered, meetingsCountMap]);
 
   const active = decorated.filter((p) => p.status === "פעיל").length;
   const thisWeek = decorated.filter((p) => isThisWeek(p.nextDate)).length;
@@ -343,15 +355,13 @@ export default function Parliaments() {
                 {areaOptions.map((o) => <option key={o}>{o}</option>)}
               </select>
             </label>
-            {filters.area && (
-              <label>
-                <span style={filterLabelStyle}>שכונה</span>
-                <select className="filter-pill" value={filters.neighborhood} onChange={(e) => setFilters({ ...filters, neighborhood: e.target.value })}>
-                  <option value="">הכל</option>
-                  {(getNeighborhoods(filters.area) || []).map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </label>
-            )}
+            <label>
+              <span style={filterLabelStyle}>שכונה</span>
+              <select className="filter-pill" value={filters.neighborhood} onChange={(e) => setFilters({ ...filters, neighborhood: e.target.value })}>
+                <option value="">הכל</option>
+                {(allNeighborhoods || []).map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </label>
             <label>
               <span style={filterLabelStyle}>סטטוס</span>
               <select className="filter-pill" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
@@ -390,7 +400,12 @@ export default function Parliaments() {
               ),
             },
             { key: "nextDate", label: sortableHeader("nextDate", "מפגש הבא"), render: (r) => r.nextDate || "—" },
-            { key: "area", label: sortableHeader("area", "אזור") },
+            { key: "neighborhoods", label: sortableHeader("neighborhoods", "שכונה"), render: (r) => {
+              const list = Array.isArray(r.neighborhoods) && r.neighborhoods.length
+                ? r.neighborhoods
+                : (r.neighborhood ? [r.neighborhood] : []);
+              return list.length ? list.join(", ") : "—";
+            } },
             { key: "location", label: sortableHeader("location", "מיקום") },
             { key: "coordinator", label: sortableHeader("coordinator", "מלווה"), render: (r) => (r.coordinators || []).join(", ") },
             { key: "members", label: sortableHeader("members", "משתתפים") },
@@ -679,10 +694,34 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
 
   const handleRemoveParticipant = async (p) => {
     if (!window.confirm(`להסיר את ${p.firstName} ${p.lastName} מהפרלמנט?`)) return;
-    try { await removeParticipant(parl.id, p.id); }
-    catch (e) { console.warn("removeParticipant failed:", e); }
+    try {
+      // Preserve participant name in past/today meetings, and remove them
+      // from meetings that haven't happened yet.
+      const todayIso = new Date().toISOString().slice(0, 10);
+      await Promise.all(
+        (meetings || []).map(async (m) => {
+          const isFuture = m.date && m.date > todayIso;
+          if (isFuture) {
+            try { await deleteMeetingAttendance(parl.id, m.id, p.id); } catch {}
+          } else {
+            try {
+              await upsertMeetingAttendance(parl.id, m.id, p.id, {
+                firstName: p.firstName || "",
+                lastName: p.lastName || "",
+                elderlyId: p.elderlyId || "",
+                phone: p.phone || "",
+                homePhone: p.homePhone || "",
+                address: p.address || "",
+              });
+            } catch {}
+          }
+        }),
+      );
+      await removeParticipant(parl.id, p.id);
+    } catch (e) { console.warn("removeParticipant failed:", e); }
     setParticipants((prev) => prev.filter((x) => x.id !== p.id));
   };
+
 
   const handleAddMeeting = async (data) => {
     try {
@@ -690,6 +729,27 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
       setMeetings((prev) => [...prev, saved]);
       setMeetingArrived((prev) => ({ ...prev, [saved.id]: 0 }));
       setMeetingExpenseTotal((prev) => ({ ...prev, [saved.id]: 0 }));
+
+      // Snapshot the CURRENT participant list into this meeting's attendance
+      // collection as immutable AttendanceRecords (id + name + defaults).
+      // This locks the participant roster for this meeting at creation time,
+      // so future removals/additions don't rewrite past meetings.
+      await Promise.all(
+        (participants || []).map((p) =>
+          upsertMeetingAttendance(parl.id, saved.id, p.id, {
+            firstName: p.firstName || "",
+            lastName: p.lastName || "",
+            elderlyId: p.elderlyId || "",
+            phone: p.phone || "",
+            homePhone: p.homePhone || "",
+            address: p.address || "",
+            called: "לא",
+            confirmed: "ממתין",
+            arrived: "—",
+            notes: "",
+          }).catch((e) => console.warn("snapshot attendance failed", e)),
+        ),
+      );
     } catch (e) { console.warn("addMeeting failed:", e); }
     setShowAddMeeting(false);
   };
@@ -907,12 +967,36 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
     );
   };
 
+  // Immutable snapshot logic:
+  //  - Past meetings: show ONLY participants who already have an attendance
+  //    record for this meeting (i.e. were present in the parliament at the
+  //    time of the meeting). Late joiners never appear here, and removed
+  //    participants remain visible with their historical statuses.
+  //  - Today/future meetings: reflect the CURRENT list of active participants
+  //    (Rule 3). We still include any records for participants that were later
+  //    removed but had an attendance record saved.
+  const todayIsoStr = new Date().toISOString().slice(0, 10);
+  const isPastMeeting = !!(meeting.date && meeting.date < todayIsoStr);
+
   const displayParticipants = useMemo(() => {
-    const active = participants.map((p) => ({
-      ...p,
-      isActive: true,
-    }));
-    
+    if (isPastMeeting) {
+      return Object.keys(attendance).map((id) => {
+        const a = attendance[id] || {};
+        const activeMatch = participants.find((p) => p.id === id);
+        return {
+          id,
+          firstName: a.firstName || activeMatch?.firstName || "",
+          lastName: a.lastName || activeMatch?.lastName || "",
+          elderlyId: a.elderlyId || activeMatch?.elderlyId || "",
+          phone: a.phone || activeMatch?.phone || "",
+          homePhone: a.homePhone || activeMatch?.homePhone || "",
+          address: a.address || activeMatch?.address || "",
+          isActive: !!activeMatch,
+        };
+      });
+    }
+
+    const active = participants.map((p) => ({ ...p, isActive: true }));
     const historical = [];
     Object.keys(attendance).forEach((id) => {
       if (!active.some((p) => p.id === id)) {
@@ -920,7 +1004,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
         if (a.called === "כן" || a.confirmed === "כן" || a.confirmed === "לא" || a.arrived === "כן" || a.arrived === "לא" || (a.notes && a.notes.trim())) {
           historical.push({
             id,
-            firstName: a.firstName || "משתתף לשעבר",
+            firstName: a.firstName || "",
             lastName: a.lastName || "",
             elderlyId: a.elderlyId || "",
             phone: a.phone || "",
@@ -931,9 +1015,8 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
         }
       }
     });
-    
     return [...active, ...historical];
-  }, [participants, attendance]);
+  }, [participants, attendance, isPastMeeting]);
 
   const confirmed = displayParticipants.filter((p) => attFor(p.id).confirmed === "כן").length;
   const notComing = displayParticipants.filter((p) => attFor(p.id).confirmed === "לא").length;
@@ -1110,17 +1193,24 @@ const REQUIRED_LABELS = {
 };
 
 function ParliamentFormModal({ title, initial, existingNames = [], onClose, onSave, onDelete, areaOptions = [], volunteerOptions = [] }) {
-  const { getNeighborhoods } = useAreasAndNeighborhoods();
+  const { getNeighborhoods, allNeighborhoods } = useAreasAndNeighborhoods();
   const [f, setF] = useState(
-    initial || {
-      name: "",
-      location: "",
-      area: "",
-      neighborhood: "",
-      coordinators: [""],
-      status: "פעיל",
-      notes: "",
-    },
+    initial
+      ? {
+          ...initial,
+          neighborhood:
+            initial.neighborhood ||
+            (Array.isArray(initial.neighborhoods) ? initial.neighborhoods[0] || "" : ""),
+        }
+      : {
+          name: "",
+          location: "",
+          area: "",
+          neighborhood: "",
+          coordinators: [""],
+          status: "פעיל",
+          notes: "",
+        },
   );
   const [errors, setErrors] = useState([]);
 
@@ -1195,15 +1285,20 @@ function ParliamentFormModal({ title, initial, existingNames = [], onClose, onSa
               {areaOptions.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
-          {f.area && (
-            <div className="field">
-              <label>שכונה</label>
-              <select className="select" value={f.neighborhood || ""} onChange={(e) => setF({ ...f, neighborhood: e.target.value })}>
-                <option value="">בחר שכונה</option>
-                {(getNeighborhoods(f.area) || []).map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-          )}
+          <div className="field">
+            <label>שכונה</label>
+            <select
+              className="select"
+              value={f.neighborhood || ""}
+              onChange={(e) => setF({ ...f, neighborhood: e.target.value })}
+              disabled={!f.area}
+            >
+              <option value="">{f.area ? "בחר שכונה" : "בחר אזור תחילה"}</option>
+              {getNeighborhoods(f.area).map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
           <div className="field">
             <label>סטטוס *</label>
             <select className="select" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
@@ -1341,10 +1436,8 @@ function ParticipantProfileModal({ participant, onClose, onSave }) {
 
 /* =================== Add Participant Modal (multi-select) =================== */
 function AddParticipantModal({ elderlyList = [], excludeIds = [], onClose, onSave }) {
-  const excludeSet = new Set(excludeIds.map(String));
-  const available = elderlyList.filter(
-    (e) => (e.status || "פעיל") === "פעיל" && !excludeSet.has(String(e.id)),
-  );
+  const excludeSet = new Set(excludeIds.map(String).filter(Boolean));
+  const available = elderlyList.filter((e) => !excludeSet.has(String(e.id)));
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
   const toggle = (id) =>
