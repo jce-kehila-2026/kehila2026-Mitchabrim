@@ -8,6 +8,8 @@ import { getParliaments } from "@/services/parliamentsService.js";
 import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
 import { getJoinRequests } from "@/services/joinRequestsService.js";
 import { getFinancialRecords } from "@/services/financialService.js";
+import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
+
 import { 
   HeartHandshake, 
   Handshake, 
@@ -76,6 +78,17 @@ const CHART_COLORS = [
   "#4a148c",
   "#bf360c",
 ];
+
+const formatDeletedAt = (deletedAt) => {
+  if (!deletedAt) return "";
+  if (deletedAt.toDate && typeof deletedAt.toDate === "function") {
+    return deletedAt.toDate().toLocaleDateString("he-IL");
+  }
+  if (deletedAt.seconds) {
+    return new Date(deletedAt.seconds * 1000).toLocaleDateString("he-IL");
+  }
+  return String(deletedAt);
+};
 
 /* ============================================================
    REPORT DEFINITIONS - All data comes from Firebase only
@@ -197,6 +210,8 @@ const REPORT_TYPES = {
       { key: "groupName", label: "קבוצה מחלקת בפרויקט" },
       { key: "receives", label: "מקבל חבילה בפרויקט" },
       { key: "delivery", label: "סטטוס מסירה בפרויקט" },
+      { key: "isArchived", label: "מצב ארכיב" },
+      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "gender", "address", "mobile", "projectName", "groupName", "delivery"],
     filters: [
@@ -220,7 +235,7 @@ const REPORT_TYPES = {
     transform: (item) => ({
       ...item,
       isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: item.deletedAt || "",
+      deletedAt: formatDeletedAt(item.deletedAt),
     }),
   },
   volunteers: {
@@ -264,6 +279,8 @@ const REPORT_TYPES = {
       { key: "address", label: "כתובת" },
       { key: "insurance", label: "ביטוח" },
       { key: "notes", label: "הערות" },
+      { key: "isArchived", label: "מצב ארכיב" },
+      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "phone", "volunteerType", "group", "groupType", "status", "assigned", "start"],
     filters: [
@@ -287,28 +304,12 @@ const REPORT_TYPES = {
       { value: "start", label: "תאריך התחלה" },
     ],
     // ===== CHART DATA =====
-    getChartData: (data) => {
-      // Bar: Volunteers by Group
-      const groupCount = {};
-      data.forEach((item) => {
-        const key = item.group || "ללא קבוצה";
-        groupCount[key] = (groupCount[key] || 0) + 1;
-      });
-      const barData = Object.entries(groupCount)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
-
-      // Pie: Volunteers by Status
-      const statusCount = {};
-      data.forEach((item) => {
-        const key = item.status || "ללא סטטוס";
-        statusCount[key] = (statusCount[key] || 0) + 1;
-      });
-      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
-
-      return { barData, pieData };
-    },
-    transform: (item) => item,
+    getChartData: getVolunteerChartData,
+    transform: (item) => ({
+      ...item,
+      isArchived: item.isArchived ? "כן" : "לא",
+      deletedAt: formatDeletedAt(item.deletedAt),
+    }),
   },
   projects: {
     id: "projects",
@@ -352,13 +353,15 @@ const REPORT_TYPES = {
       { key: "groupNames", label: "קבוצות שותפות" },
       { key: "issues", label: "בעיות" },
       { key: "status", label: "סטטוס" },
+      { key: "isArchived", label: "מצב ארכיב" },
+      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "year", "status", "elderly", "delivered", "groupNames"],
     filters: [
       { key: "name", label: "פרויקט", type: "select" },
       { key: "status", label: "סטטוס", type: "select", options: ["מתוכנן", "בהכנה", "פעיל", "הסתיים"] },
       { key: "year", label: "שנה", type: "select" },
-      { key: "projectGroup", label: "קבוצה שותפה", type: "select" },
+      { key: "projectGroup", label: "קבוצה שותפה בפרויקט", type: "select" },
     ],
     sortOptions: [
       { value: "name", label: "שם" },
@@ -368,13 +371,17 @@ const REPORT_TYPES = {
     // ===== CHART DATA =====
     getChartData: (data) => {
       const barData = data
-        .map((item) => ({
-          name: item.name || "ללא שם",
-          delivered: Number(item.delivered) || 0,
-          total: Number(item.elderly) || 0,
-          year: item.year || "",
-          date: item.date || "",
-        }))
+        .map((item) => {
+          const name = item.name || "ללא שם";
+          const year = item.year ? ` (${item.year})` : "";
+          return {
+            name: `${name}${year}`,
+            delivered: Number(item.delivered) || 0,
+            total: Number(item.elderly) || 0,
+            year: item.year || "",
+            date: item.date || "",
+          };
+        })
         .sort((a, b) => {
           if (a.year !== b.year) {
             return String(a.year).localeCompare(String(b.year));
@@ -387,6 +394,8 @@ const REPORT_TYPES = {
     transform: (item) => ({
       ...item,
       progress: item.elderly ? Math.round((item.delivered / item.elderly) * 100) : 0,
+      isArchived: item.isArchived ? "כן" : "לא",
+      deletedAt: formatDeletedAt(item.deletedAt),
     }),
   },
   parliaments: {
@@ -413,6 +422,8 @@ const REPORT_TYPES = {
       { key: "nextDate", label: "מפגש הבא" },
       { key: "status", label: "סטטוס" },
       { key: "notes", label: "הערות" },
+      { key: "isArchived", label: "מצב ארכיב" },
+      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "location", "area", "members", "nextDate", "status"],
     filters: [
@@ -440,6 +451,8 @@ const REPORT_TYPES = {
     transform: (item) => ({
       ...item,
       coordinators: (item.coordinators || []).join(", "),
+      isArchived: item.isArchived ? "כן" : "לא",
+      deletedAt: formatDeletedAt(item.deletedAt),
     }),
   },
   joinRequests: {
@@ -568,19 +581,17 @@ const REPORT_TYPES = {
 /* ============================================================
    PDF Export Function
    ============================================================ */
-const exportToPDF = (report, rows, fields, filters, sort) => {
+const exportToPDF = (report, rows, fields, filters, sort, options = {}) => {
   if (!rows.length) {
     alert("אין נתונים לייצוא");
     return;
   }
 
-  const fsInput = prompt("נא להזין גודל גופן לטבלה ב-PDF (ברירת מחדל 14):", "14") || "14";
-  const fontSize = parseInt(fsInput) && !isNaN(fsInput) ? Number(fsInput) : 14;
-
-  const isLandscape = confirm("האם ברצונך להפיק את ה-PDF לרוחב (Landscape)?\nלחץ על 'אישור' עבור לרוחב, או 'ביטול' עבור לאורך (Portrait).");
-  const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
+  const { fontSize = 14, landscape = false } = options;
+  const pageSize = landscape ? "A4 landscape" : "A4 portrait";
 
   const cols = fields.map((k) => report.fields.find((f) => f.key === k)).filter(Boolean);
+  const columnCount = cols.length;
   const today = new Date().toLocaleDateString("he-IL");
 
   let filterChips = "";
@@ -600,51 +611,72 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
     })
     .join("");
 
-  let summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
-  const archived = rows.filter((d) => d.isArchived === "כן").length;
-  if (archived > 0) {
-    summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
-  }
-
+  let summaryItems = "";
   if (report.id === "elderly") {
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    const males = rows.filter((d) => d.gender === "זכר").length;
-    const females = rows.filter((d) => d.gender === "נקבה").length;
+    const uniqueElderly = Array.from(
+      new Map(rows.map((r) => [r.idNum || r.id, r])).values()
+    );
+    const active = uniqueElderly.filter((d) => d.status === "פעיל").length;
+    const males = uniqueElderly.filter((d) => d.gender === "זכר").length;
+    const females = uniqueElderly.filter((d) => d.gender === "נקבה").length;
+    const archived = uniqueElderly.filter((d) => d.isArchived === "כן").length;
+
     summaryItems += `
+      <div class="item">📊 סה"כ שורות (שיבוצים): <strong>${rows.length}</strong></div>
+      <div class="item">👥 סה"כ אזרחים ייחודיים: <strong>${uniqueElderly.length}</strong></div>
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
       <div class="item">👴 גברים: <strong>${males}</strong></div>
       <div class="item">👵 נשים: <strong>${females}</strong></div>
     `;
-  } else if (report.id === "volunteers") {
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
-    summaryItems += `
-      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-      <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
-    `;
-  } else if (report.id === "projects") {
-    const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    summaryItems += `
-      <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
-      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-    `;
-  } else if (report.id === "financial") {
-    const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
-    const expenses = rows.filter((d) => d.type === "הוצאה");
-    const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    summaryItems += `
-      <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
-      <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
-      <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
-    `;
-  } else if (report.id === "parliaments") {
-    const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
-    summaryItems += `
-      <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
-    `;
+    if (archived > 0) {
+      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
+    }
+  } else {
+    summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
+    const archived = rows.filter((d) => d.isArchived === "כן").length;
+    if (archived > 0) {
+      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
+    }
+
+    if (report.id === "volunteers") {
+      const active = rows.filter((d) => d.status === "פעיל").length;
+      const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
+      summaryItems += `
+        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+        <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
+      `;
+    } else if (report.id === "projects") {
+      const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
+      const active = rows.filter((d) => d.status === "פעיל").length;
+      summaryItems += `
+        <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
+        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+      `;
+    } else if (report.id === "financial") {
+      const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
+      const expenses = rows.filter((d) => d.type === "הוצאה");
+      const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      summaryItems += `
+        <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
+        <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
+        <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
+      `;
+    } else if (report.id === "parliaments") {
+      const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
+      summaryItems += `
+        <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
+      `;
+    }
   }
+
+  // Dynamic font size computation based on column count for landscape
+  let computedFont = fontSize;
+  if (columnCount > 6) {
+    const diff = columnCount - 6;
+    computedFont = Math.max(8, fontSize - diff);
+  }
+  const tableFontSize = Math.min(fontSize, computedFont);
 
   const html = `<!doctype html>
 <html dir="rtl" lang="he">
@@ -688,21 +720,26 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: ${fontSize}px;
+      font-size: ${tableFontSize}px;
+      table-layout: fixed;
     }
     th {
       background: #8B0000;
       color: white;
-      padding: 8px 6px;
+      padding: 8px 4px;
       text-align: right;
       border: 1px solid #6b0000;
       font-weight: 600;
+      word-wrap: break-word;
+      word-break: break-word;
     }
     td {
-      padding: 6px;
+      padding: 6px 4px;
       border: 1px solid #bbb;
       text-align: right;
       vertical-align: middle;
+      word-wrap: break-word;
+      word-break: break-word;
     }
     tbody tr:nth-child(even) td {
       background: #f9f6f4;
@@ -902,47 +939,7 @@ const renderElderlyCharts = (data) => {
 };
 
 const renderVolunteerCharts = (data) => {
-  const { barData, pieData } = REPORT_TYPES.volunteers.getChartData(data);
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
-      <SectionCard title="📊 מתנדבים לפי קבוצה">
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={barData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="value" fill="#D4A574" name="מספר מתנדבים" />
-          </BarChart>
-        </ResponsiveContainer>
-      </SectionCard>
-
-      <SectionCard title="🧩 התפלגות לפי סטטוס">
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {pieData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </SectionCard>
-    </div>
-  );
+  return <VolunteerCharts data={data} height={300} />;
 };
 
 const renderProjectCharts = (data) => {
@@ -1076,6 +1073,31 @@ const ReportBuilder = ({ reportKey, onBack }) => {
   const [filters, setFilters] = useState({});
   const [sort, setSort] = useState("");
   const [showFields, setShowFields] = useState(false);
+  const [pdfFontSize, setPdfFontSize] = useState(14);
+  const [pdfLandscape, setPdfLandscape] = useState(false);
+
+  const handleFilterChange = (key, val) => {
+    const newFilters = { ...filters, [key]: val };
+
+    if (reportKey === "volunteers") {
+      if (key === "volunteerType" && val !== "קבוצה") {
+        delete newFilters.groupType;
+        delete newFilters.group;
+      }
+      if (key === "groupType") {
+        if (newFilters.group) {
+          const isValidGroup = allData.some(
+            (r) => r.group === newFilters.group && r.groupType === val
+          );
+          if (!isValidGroup) {
+            delete newFilters.group;
+          }
+        }
+      }
+    }
+
+    setFilters(newFilters);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -1112,12 +1134,18 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           });
           opts[f.key] = [...new Set(allGroups)].filter(Boolean);
         } else {
-          opts[f.key] = [...new Set(allData.map((r) => r[f.key]).filter(Boolean))];
+          let list = [...new Set(allData.map((r) => r[f.key]).filter(Boolean))];
+          if (f.key === "groupName" && reportKey === "elderly") {
+            if (!list.includes("עצמאיים")) {
+              list.push("עצמאיים");
+            }
+          }
+          opts[f.key] = list;
         }
       }
     });
     return opts;
-  }, [allData, report]);
+  }, [allData, report, reportKey]);
 
   const filteredData = useMemo(() => {
     let result = allData.filter((row) => {
@@ -1161,19 +1189,33 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           type="date"
           className="input"
           value={value}
-          onChange={(e) => setFilters({ ...filters, [filter.key]: e.target.value })}
+          onChange={(e) => handleFilterChange(filter.key, e.target.value)}
           style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", minWidth: 160 }}
         />
       );
     }
 
     if (filter.type === "select") {
-      const options = filter.options || filterOptions[filter.key] || [];
+      let options = filter.options || filterOptions[filter.key] || [];
+
+      // Cascading logic for volunteers report
+      if (reportKey === "volunteers") {
+        if (filter.key === "groupType") {
+          options = options.filter((o) => o !== "עצמאי");
+        } else if (filter.key === "group") {
+          const filteredGroups = allData
+            .filter((r) => r.volunteerType === "קבוצה" && (!filters.groupType || r.groupType === filters.groupType))
+            .map((r) => r.group)
+            .filter(Boolean);
+          options = [...new Set(filteredGroups)];
+        }
+      }
+
       return (
         <select
           className="select"
           value={value}
-          onChange={(e) => setFilters({ ...filters, [filter.key]: e.target.value })}
+          onChange={(e) => handleFilterChange(filter.key, e.target.value)}
           style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", minWidth: 160, background: "white" }}
         >
           <option value="">{`כל ${filter.label}`}</option>
@@ -1241,12 +1283,19 @@ const ReportBuilder = ({ reportKey, onBack }) => {
       {report.filters.length > 0 && (
         <SectionCard title="סינון נתונים">
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {report.filters.map((f) => (
-              <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "#666", fontWeight: 500 }}>{f.label}</label>
-                {renderFilterInput(f)}
-              </div>
-            ))}
+            {report.filters.map((f) => {
+              if (reportKey === "volunteers" && (f.key === "groupType" || f.key === "group")) {
+                if (filters.volunteerType !== "קבוצה") {
+                  return null;
+                }
+              }
+              return (
+                <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "#666", fontWeight: 500 }}>{f.label}</label>
+                  {renderFilterInput(f)}
+                </div>
+              );
+            })}
           </div>
           <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
             {Object.values(filters).some((v) => v && v !== "") && (
@@ -1413,7 +1462,10 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           className="btn btn-primary"
           onClick={() => {
             const sortLabel = sort ? report.sortOptions?.find((o) => o.value === sort)?.label || sort : "";
-            exportToPDF(report, filteredData, selectedFields, filters, sortLabel);
+            exportToPDF(report, filteredData, selectedFields, filters, sortLabel, {
+              fontSize: pdfFontSize,
+              landscape: pdfLandscape,
+            });
           }}
           disabled={!filteredData.length || !selectedFields.length}
           style={{
@@ -1425,10 +1477,73 @@ const ReportBuilder = ({ reportKey, onBack }) => {
             cursor: filteredData.length && selectedFields.length ? "pointer" : "not-allowed",
             opacity: filteredData.length && selectedFields.length ? 1 : 0.6,
             fontSize: "14px",
+            fontWeight: "bold",
           }}
         >
           📄 ייצוא ל-PDF
         </button>
+
+        {/* PDF Settings Panel */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            padding: "6px 16px",
+            background: "#fdfbfa",
+            border: "1px solid #e2d6cf",
+            borderRadius: "8px",
+            fontSize: "13px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label htmlFor="pdfFontSizeInput" style={{ fontWeight: 500, color: "#555" }}>PDF:</label>
+            <input
+              id="pdfFontSizeInput"
+              type="number"
+              min="10"
+              max="20"
+              value={pdfFontSize}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val)) {
+                  setPdfFontSize(Math.min(20, Math.max(10, val)));
+                } else {
+                  setPdfFontSize("");
+                }
+              }}
+              onBlur={() => {
+                if (pdfFontSize === "" || isNaN(pdfFontSize)) {
+                  setPdfFontSize(14);
+                }
+              }}
+              style={{
+                width: "55px",
+                padding: "4px 8px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                textAlign: "center",
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontWeight: 500, color: "#555" }}>כיוון דף:</span>
+            <select
+              value={pdfLandscape ? "landscape" : "portrait"}
+              onChange={(e) => setPdfLandscape(e.target.value === "landscape")}
+              style={{
+                padding: "4px 8px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                background: "white",
+              }}
+            >
+              <option value="portrait">לאורך (Portrait)</option>
+              <option value="landscape">לרוחב (Landscape)</option>
+            </select>
+          </div>
+        </div>
         <div style={{ marginInlineStart: "auto", color: "#666", alignSelf: "center" }}>
           {loading ? "טוען…" : `${filteredData.length} רשומות`}
         </div>
@@ -1996,6 +2111,60 @@ ${chosen.map(buildGroupTable).join("")}
                     >
                       📄 PDF
                     </button>
+                    /*
+                    דוחות:
+    • מצב ארכיב- להוריד
+    • בחירת עמודות- אפשר להוריד תאריך מחיקה
+    • גודל פונט להגדיל ל14 – אם אפשר להגדיר בעת ההוצאה לPDF את גדול הפונט זה יהיה טוב
+    • לבדוק הוצאה לPDF לצורה רוחבית כדי שיהיה אפשר להכניס מספר רב יותר של עמודות 
+    • יציאה לpdf- יש למטה סיכום נתונים אז לשנות מ"זכרית/נקבות" ל"גברים/נשים"
+דוחות מתנדבים:
+גרפים- גם פה אפשר שיופיע בראש העמוד של ניהול מתנדבים 
+    • להוסיף אפשרות לסינון או מיון לפי סוג הקבוצה
+    • יש 2 סוגי מתנדבים: עצמאי או קבוצה
+    • בתוך הקבוצות יש מגוון של קבוצות וצריך את האופציה לראות רשימה של קבוצה מסוימת 
+    • אפשר להוריד בעמודות את תאריך המחיקה וארכיב
+דוח פרויקטים-
+    • גרף- מעולה, שיופיע בציר X את הפרויקטים בסדר כרונולוגי לאורך השנים, ובציר Y  את כמות האזרחים ותיקים שקיבלו חבילה
+    • סינון- חג- לשנות, לשנות ל"פרויקט"
+    • מצב ארכיב- אפשר להוריד
+    • מספר א.ו- אפשר לכתוב אזרחים ותיקים
+פרויקטים
+    • להפעיל כפתור הדפסת רשימה
+דוח פרויקטים-
+    • להוסיף סינון לפי קבוצות (חברת חשמל, בית ספר..)
+שאוכל להוציא רשימה של אזרחים ותיקים בפוריקט ספציפי לפי הקבוצה שמחלקת לו. 
+    • עצמאיים זה גם קבוצה..
+דוח פרלמנטים
+    • גרף פרלמנטים- ציר X  זה שמות הפרלמנטים, ציר Y מספר הפגישות שנעשו בפרלמנט הזה
+אפשר להעביר לחלק ניהול הפרלמנטים
+    • סינונים- להוסיף גם סינון שכונה
+    • מצב ארכיב אפשר להוריד
+    • ליצור כפתורי הדפסה מתאימים לייצוא דוחות פרלמנט:
+להוסיף אופציה לראות מידע על פרלמנט ספציפי (רשימת משתתפים בפרלמנט, או דוח אחר של מספר הפגישות והמידע של פרלמנט ספצפי)
+
+
+
+
+
+
+
+
+כמו המידע שמופיע פה- רשימות משתתפים/רשימות הפגישות
+    • מחיקת משתתף בפרלמנט- שהנתונים שלו יישמרו לדוגמא בפגישות 1 ו-2, אבל מפגישה 3 הוא יימחק ואני אוכל להכניס משתתף חדש 
+דוחות בקשת הצטרפות-
+להוסיף את כל העמודות (שם מלא, טלפון, הערות, סוג פניה, אימייל- להוסיף אימייל בבקשת הצטרפות בלי חובה למלא את המייל בשביל לשלוח את הבקשה)
+דוחות כספיים:
+    • לחבר לחלק ניהול הכספים
+    • סיכום הכנסות והוצאות לפי חג- לא חייב באותו מסמך, 
+    • ליצור כמו דוח כפסי כללי- לכל פרויקט 
+    • להוסיף אופציה של סינון של 2 סוגי קבלות: קבלה רגילה וקבלה 46 (החזר לעסקים מסוימים/מעל סכום מסוים) וגם שיופיע באפשרות הדפסה של זה
+אם אפשר להוסיף הוצאה לדוחות של ארגונים ואנשי קשר-
+כמו הדוחות האחרים שיש אפשרות בחירת עמודות, בד"כ אוציא את כל העמודות 
+אם אפשר לבחור שיופיעו כל אנשי הקשר של הארגון --- השלמה אחרי שאסתכל באתר 
+לעבור על אנשי קשר לאזרחים הותיקים לראות שיש הכל 
+
+                    */
                   }
                 >
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>

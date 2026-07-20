@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell } from "recharts";
+import VolunteerCharts from "@/components/admin/VolunteerCharts.jsx";
 
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
@@ -255,26 +256,7 @@ export default function Volunteers() {
     ensureFull();
   }, [ensureFull]);
 
-  const volunteerChartData = useMemo(() => {
-    if (!fullVolunteers) return { barData: [], pieData: [] };
-    const groupCount = {};
-    fullVolunteers.forEach((item) => {
-      const key = item.group || "ללא קבוצה";
-      groupCount[key] = (groupCount[key] || 0) + 1;
-    });
-    const barData = Object.entries(groupCount)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
 
-    const statusCount = {};
-    fullVolunteers.forEach((item) => {
-      const key = item.status || "ללא סטטוס";
-      statusCount[key] = (statusCount[key] || 0) + 1;
-    });
-    const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
-
-    return { barData, pieData };
-  }, [fullVolunteers]);
 
   const groupChartData = useMemo(() => {
     if (!groups) return { barData: [], pieData: [] };
@@ -610,43 +592,7 @@ export default function Volunteers() {
       {showCharts && !fullLoading && fullVolunteers && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginBottom: 20 }}>
           {tab === "volunteers" ? (
-            <>
-              <SectionCard title="📊 מתנדבים לפי קבוצה">
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={volunteerChartData.barData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="value" fill="#D4A574" name="מספר מתנדבים" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </SectionCard>
-
-              <SectionCard title="🧩 התפלגות לפי סטטוס">
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie
-                      data={volunteerChartData.pieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {volunteerChartData.pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </SectionCard>
-            </>
+            <VolunteerCharts data={fullVolunteers} height={260} />
           ) : (
             <>
               <SectionCard title="📊 מתנדבים רשומים בכל קבוצה">
