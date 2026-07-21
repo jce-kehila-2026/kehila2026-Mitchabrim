@@ -252,7 +252,7 @@ const REPORT_TYPES = {
           if (g.name) groupTypeMap[g.name] = g.type;
         });
         return (vols || []).map((v) => {
-          const isGroup = v.group && v.group !== "ללא קבוצה";
+          const isGroup = v.group && v.group !== "ללא קבוצה" && v.group !== "עצמאי" && v.group !== "עצמאיים";
           return {
             ...v,
             volunteerType: isGroup ? "קבוצה" : "עצמאי",
@@ -1216,11 +1216,20 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           className="select"
           value={value}
           onChange={(e) => handleFilterChange(filter.key, e.target.value)}
-          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", minWidth: 160, background: "white" }}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid #ddd",
+            minWidth: 160,
+            background: "white",
+            color: "#1a1a1a",
+          }}
         >
-          <option value="">{`כל ${filter.label}`}</option>
+          <option value="" style={{ color: "#666", background: "white" }}>
+            {`כל ${filter.label}`}
+          </option>
           {options.map((o) => (
-            <option key={o} value={o}>
+            <option key={o} value={o} style={{ color: "#1a1a1a", background: "white" }}>
               {o}
             </option>
           ))}
@@ -1331,15 +1340,15 @@ const ReportBuilder = ({ reportKey, onBack }) => {
                 border: "1px solid #ddd",
                 minWidth: 200,
                 background: "white",
-                color: sort ? "#1a1a1a" : "#666",
+                color: "#1a1a1a",
                 fontSize: "14px",
               }}
             >
-              <option value="" style={{ color: "#666" }}>
+              <option value="" style={{ color: "#666", background: "white" }}>
                 ללא מיון
               </option>
               {report.sortOptions.map((o) => (
-                <option key={o.value} value={o.value} style={{ color: "#1a1a1a" }}>
+                <option key={o.value} value={o.value} style={{ color: "#1a1a1a", background: "white" }}>
                   {o.label}
                 </option>
               ))}
@@ -1537,10 +1546,11 @@ const ReportBuilder = ({ reportKey, onBack }) => {
                 border: "1px solid #ccc",
                 borderRadius: "4px",
                 background: "white",
+                color: "#1a1a1a",
               }}
             >
-              <option value="portrait">לאורך (Portrait)</option>
-              <option value="landscape">לרוחב (Landscape)</option>
+              <option value="portrait" style={{ color: "#1a1a1a", background: "white" }}>לאורך (Portrait)</option>
+              <option value="landscape" style={{ color: "#1a1a1a", background: "white" }}>לרוחב (Landscape)</option>
             </select>
           </div>
         </div>
@@ -1813,11 +1823,12 @@ const HolidaySummary = ({ onBack }) => {
                 border: "1px solid #ddd",
                 minWidth: 150,
                 background: "white",
+                color: "#1a1a1a",
               }}
             >
-              <option value="">כל השנים</option>
+              <option value="" style={{ color: "#666", background: "white" }}>כל השנים</option>
               {years.map((y) => (
-                <option key={y} value={y}>
+                <option key={y} value={y} style={{ color: "#1a1a1a", background: "white" }}>
                   {y}
                 </option>
               ))}
@@ -1835,11 +1846,12 @@ const HolidaySummary = ({ onBack }) => {
                 border: "1px solid #ddd",
                 minWidth: 200,
                 background: "white",
+                color: "#1a1a1a",
               }}
             >
-              <option value="">כל הפרויקטים</option>
+              <option value="" style={{ color: "#666", background: "white" }}>כל הפרויקטים</option>
               {projects.map((p) => (
-                <option key={p} value={p}>
+                <option key={p} value={p} style={{ color: "#1a1a1a", background: "white" }}>
                   {p}
                 </option>
               ))}
