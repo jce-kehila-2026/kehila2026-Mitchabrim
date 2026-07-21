@@ -572,6 +572,7 @@ const REPORT_TYPES = {
     filters: [
       { key: "type", label: "סוג", type: "select", options: ["תרומה", "הוצאה"] },
       { key: "project", label: "פרויקט", type: "select" },
+      { key: "receiptType", label: "סוג קבלה", type: "select", options: ["קבלה רגילה", "קבלה 46"] },
     ],
     sortOptions: [
       { value: "date", label: "תאריך" },
