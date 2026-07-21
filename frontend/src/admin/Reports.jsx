@@ -7,7 +7,7 @@ import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.
 import { getParliaments } from "@/services/parliamentsService.js";
 import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
 import { getJoinRequests } from "@/services/joinRequestsService.js";
-import { getFinancialRecords } from "@/services/financialService.js";
+import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
 import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
 
 import { 
@@ -2273,7 +2273,34 @@ const FinancialChooser = ({ onBack }) => {
         >
           → חזרה לדוחות
         </button>
-        <h2 style={{ margin: 0, color: "#8B0000", display: "flex", alignItems: "center", gap: "8px" }}>
+        <button
+          className="btn"
+          onClick={async () => {
+            if (confirm("האם ברצונך לייצר נתוני סימולציה לבדיקת הדוחות הכספיים?")) {
+              try {
+                await seedFinancialDummyData();
+                alert("נתוני הסימולציה נוצרו בהצלחה! יש לרענן את העמוד.");
+                window.location.reload();
+              } catch (err) {
+                console.error(err);
+                alert("שגיאה ביצירת הנתונים: " + err.message);
+              }
+            }
+          }}
+          style={{
+            padding: "8px 16px",
+            background: "#fff5f5",
+            border: "1px solid #ffcccc",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontSize: "14px",
+            color: "#8B0000",
+            fontWeight: "bold",
+          }}
+        >
+          ⚙️ יצירת נתוני סימולציה
+        </button>
+        <h2 style={{ margin: 0, color: "#8B0000", display: "flex", alignItems: "center", gap: "8px", marginInlineStart: "auto" }}>
           <Coins size={24} /> דוחות כספיים
         </h2>
       </div>
