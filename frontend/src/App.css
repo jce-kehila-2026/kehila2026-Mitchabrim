@@ -57,6 +57,6 @@
 
 /* Force options to use their browser-initial backgrounds and text colors in dark/light mode */
 select option {
-  color: initial !important;
-  background-color: initial !important;
+  color: revert !important;
+  background-color: revert !important;
 }
