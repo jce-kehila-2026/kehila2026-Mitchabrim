@@ -4,7 +4,7 @@ import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
-import { getParliaments } from "@/services/parliamentsService.js";
+import { getParliaments, getParticipants, getMeetings } from "@/services/parliamentsService.js";
 import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
 import { getJoinRequests } from "@/services/joinRequestsService.js";
 import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
@@ -406,8 +406,41 @@ const REPORT_TYPES = {
     collection: "parliaments",
     loadData: async () => {
       try {
-        const data = await getParliaments();
-        return data || [];
+        const list = await getParliaments();
+        const today = new Date().toISOString().slice(0, 10);
+        
+        const resolved = await Promise.all(
+          (list || []).map(async (p) => {
+            try {
+              const [parts, meets] = await Promise.all([
+                getParticipants(p.id).catch(() => []),
+                getMeetings(p.id).catch(() => []),
+              ]);
+              const nextMeeting = meets
+                .filter((m) => m.date && m.date >= today)
+                .sort((a, b) => String(a.date).localeCompare(String(b.date))
+                  || String(a.startTime || "").localeCompare(String(b.startTime || "")));
+              
+              const pastMeetingsCount = meets.filter(m => m.date && m.date <= today).length;
+              
+              return {
+                ...p,
+                members: parts.length,
+                meetings: pastMeetingsCount,
+                nextDate: nextMeeting.length ? nextMeeting[0].date : "",
+              };
+            } catch (err) {
+              console.warn("Failed to load participants/meetings for parliament", p.id, err);
+              return {
+                ...p,
+                members: 0,
+                meetings: 0,
+                nextDate: "",
+              };
+            }
+          })
+        );
+        return resolved || [];
       } catch (error) {
         console.error("Failed to load parliaments from Firestore:", error);
         return [];
@@ -417,6 +450,7 @@ const REPORT_TYPES = {
       { key: "name", label: "שם הפרלמנט" },
       { key: "location", label: "מיקום" },
       { key: "area", label: "אזור" },
+      { key: "neighborhood", label: "שכונה" },
       { key: "coordinators", label: "מלווים" },
       { key: "members", label: "משתתפים" },
       { key: "nextDate", label: "מפגש הבא" },
@@ -425,9 +459,10 @@ const REPORT_TYPES = {
       { key: "isArchived", label: "מצב ארכיב" },
       { key: "deletedAt", label: "תאריך מחיקה" },
     ],
-    defaults: ["name", "location", "area", "members", "nextDate", "status"],
+    defaults: ["name", "location", "area", "neighborhood", "members", "nextDate", "status"],
     filters: [
       { key: "area", label: "אזור", type: "select" },
+      { key: "neighborhood", label: "שכונה", type: "select" },
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "בהכנה", "הסתיים"] },
     ],
     sortOptions: [
@@ -438,13 +473,13 @@ const REPORT_TYPES = {
     ],
     // ===== CHART DATA =====
     getChartData: (data) => {
-      // Bar: Parliament Members
+      // Bar: Parliament Meetings
       const barData = data
         .map((item) => ({
           name: item.name || "ללא שם",
-          members: item.members || 0,
+          meetings: item.meetings || 0,
         }))
-        .sort((a, b) => b.members - a.members);
+        .sort((a, b) => b.meetings - a.meetings);
 
       return { barData };
     },
@@ -968,7 +1003,7 @@ const renderParliamentCharts = (data) => {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
-      <SectionCard title="📊 מספר משתתפים בפרלמנטים">
+      <SectionCard title="📊 מספר פגישות בפרלמנטים">
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={barData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -976,7 +1011,7 @@ const renderParliamentCharts = (data) => {
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="members" fill="#7b1fa2" name="מספר משתתפים" />
+            <Bar dataKey="meetings" fill="#7b1fa2" name="מספר פגישות שבוצעו" />
           </BarChart>
         </ResponsiveContainer>
       </SectionCard>
