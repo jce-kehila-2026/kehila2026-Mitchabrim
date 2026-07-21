@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import "./App.css";
 import "./styles/public.css";
 import "./styles/admin.css";
@@ -44,6 +45,52 @@ const Vol = ({ children }) => (
 );
 
 export default function App() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const getPageTitle = (pathname) => {
+      const base = "פרויקט מתחברים";
+      
+      // Exact matches
+      if (pathname === "/") return `${base} — חיבור אזרחים בודדים לקהילה`;
+      if (pathname === "/login") return `התחברות | ${base}`;
+      if (pathname === "/forgot-password") return `איפוס סיסמה | ${base}`;
+      if (pathname === "/public-gallery") return `גלריית תמונות | ${base}`;
+      
+      // Dynamic matches
+      if (pathname.startsWith("/our-work/")) return `פרטי פעילות | ${base}`;
+      
+      // Admin section
+      if (pathname === "/admin") return `לוח בקרה מנהל | ${base}`;
+      if (pathname === "/admin/elderly") return `ניהול אזרחים ותיקים | ${base}`;
+      if (pathname === "/admin/elderly-contacts") return `אנשי קשר אזרחים ותיקים | ${base}`;
+      if (pathname.startsWith("/admin/elderly/")) return `פרופיל אזרח ותיק | ${base}`;
+      if (pathname === "/admin/volunteers") return `ניהול מתנדבים | ${base}`;
+      if (pathname === "/admin/organizations-contacts") return `אנשי קשר ארגונים | ${base}`;
+      if (pathname === "/admin/projects") return `ניהול פרויקטים | ${base}`;
+      if (pathname === "/admin/parliaments") return `ניהול פרלמנטים | ${base}`;
+      if (pathname === "/admin/media") return `ניהול מדיה | ${base}`;
+      if (pathname === "/admin/links") return `ניהול קישורים | ${base}`;
+      if (pathname === "/admin/financial") return `ניהול פיננסי | ${base}`;
+      if (pathname === "/admin/reports") return `דוחות מנהל | ${base}`;
+      if (pathname === "/admin/volunteer-reports") return `דוחות פעילות מתנדבים | ${base}`;
+      if (pathname === "/admin/settings") return `הגדרות מערכת | ${base}`;
+      if (pathname === "/admin/site-content") return `ניהול תוכן האתר | ${base}`;
+      if (pathname === "/admin/profile-update-requests") return `בקשות לעדכון פרופיל | ${base}`;
+      
+      // Volunteer section
+      if (pathname === "/volunteer") return `אזור מתנדב | ${base}`;
+      if (pathname === "/volunteer/report/new") return `דיווח על מפגש | ${base}`;
+      if (pathname === "/volunteer/reports") return `היסטוריית דיווחים | ${base}`;
+      if (pathname === "/volunteer/tasks") return `משימות מתנדב | ${base}`;
+      if (pathname === "/volunteer/profile") return `פרופיל אישי | ${base}`;
+      
+      return base;
+    };
+
+    document.title = getPageTitle(location.pathname);
+  }, [location.pathname]);
+
   return (
     <>
     <PublicAutoLogout />
