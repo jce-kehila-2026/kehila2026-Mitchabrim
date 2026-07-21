@@ -1310,12 +1310,12 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#8B0000",
-            border: "none",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "white",
+            color: "#8B0000",
             fontWeight: "bold",
           }}
         >
@@ -1813,12 +1813,12 @@ const HolidaySummary = ({ onBack }) => {
             onClick={onBack}
             style={{
               padding: "8px 16px",
-              background: "#8B0000",
-              border: "none",
-              borderRadius: "8px",
+              background: "white",
+              border: "1px solid #8B0000",
+              borderRadius: "6px",
               cursor: "pointer",
               fontSize: "14px",
-              color: "white",
+              color: "#8B0000",
               fontWeight: "bold",
             }}
           >
@@ -1841,12 +1841,12 @@ const HolidaySummary = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#8B0000",
-            border: "none",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "white",
+            color: "#8B0000",
             fontWeight: "bold",
           }}
         >
@@ -2108,12 +2108,12 @@ ${chosen.map(buildGroupTable).join("")}
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#8B0000",
-            border: "none",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "white",
+            color: "#8B0000",
             fontWeight: "bold",
           }}
         >
@@ -2309,12 +2309,12 @@ const FinancialChooser = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#8B0000",
-            border: "none",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "white",
+            color: "#8B0000",
             fontWeight: "bold",
           }}
         >
