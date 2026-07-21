@@ -1131,6 +1131,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           const allGroups = [];
           allData.forEach((r) => {
             if (r.groupList) allGroups.push(...r.groupList);
+            else if (r.groupName) allGroups.push(r.groupName);
           });
           opts[f.key] = [...new Set(allGroups)].filter(Boolean);
         } else {
@@ -1160,6 +1161,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           if (k.endsWith("To")) return rowDate <= filterDate;
         }
         if (k === "projectGroup") {
+          if (reportKey === "elderly") {
+            return row.groupName === v;
+          }
           return row.groupList && row.groupList.includes(v);
         }
         return row[k] === v;
@@ -1225,11 +1229,11 @@ const ReportBuilder = ({ reportKey, onBack }) => {
             color: "#1a1a1a",
           }}
         >
-          <option value="" style={{ color: "#666", background: "white" }}>
+          <option value="">
             {`כל ${filter.label}`}
           </option>
           {options.map((o) => (
-            <option key={o} value={o} style={{ color: "#1a1a1a", background: "white" }}>
+            <option key={o} value={o}>
               {o}
             </option>
           ))}
@@ -1344,11 +1348,11 @@ const ReportBuilder = ({ reportKey, onBack }) => {
                 fontSize: "14px",
               }}
             >
-              <option value="" style={{ color: "#666", background: "white" }}>
+              <option value="">
                 ללא מיון
               </option>
               {report.sortOptions.map((o) => (
-                <option key={o.value} value={o.value} style={{ color: "#1a1a1a", background: "white" }}>
+                <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
               ))}
@@ -1549,8 +1553,8 @@ const ReportBuilder = ({ reportKey, onBack }) => {
                 color: "#1a1a1a",
               }}
             >
-              <option value="portrait" style={{ color: "#1a1a1a", background: "white" }}>לאורך (Portrait)</option>
-              <option value="landscape" style={{ color: "#1a1a1a", background: "white" }}>לרוחב (Landscape)</option>
+              <option value="portrait">לאורך (Portrait)</option>
+              <option value="landscape">לרוחב (Landscape)</option>
             </select>
           </div>
         </div>
@@ -1584,7 +1588,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
               </thead>
               <tbody>
                 {filteredData.slice(0, 50).map((row, i) => (
-                  <tr key={row.id || i} style={i % 2 === 0 ? { background: "white" } : { background: "#f9f6f4" }}>
+                  <tr key={`${row.id || ''}-${row.projectName || ''}-${row.groupName || ''}-${i}`} style={i % 2 === 0 ? { background: "white" } : { background: "#f9f6f4" }}>
                     {selectedFields.map((k) => (
                       <td key={k} style={{ padding: "8px 6px", border: "1px solid #ddd", textAlign: "right" }}>
                         {row[k] == null || row[k] === "" ? "—" : String(row[k])}
@@ -1826,9 +1830,9 @@ const HolidaySummary = ({ onBack }) => {
                 color: "#1a1a1a",
               }}
             >
-              <option value="" style={{ color: "#666", background: "white" }}>כל השנים</option>
+              <option value="">כל השנים</option>
               {years.map((y) => (
-                <option key={y} value={y} style={{ color: "#1a1a1a", background: "white" }}>
+                <option key={y} value={y}>
                   {y}
                 </option>
               ))}
@@ -1849,9 +1853,9 @@ const HolidaySummary = ({ onBack }) => {
                 color: "#1a1a1a",
               }}
             >
-              <option value="" style={{ color: "#666", background: "white" }}>כל הפרויקטים</option>
+              <option value="">כל הפרויקטים</option>
               {projects.map((p) => (
-                <option key={p} value={p} style={{ color: "#1a1a1a", background: "white" }}>
+                <option key={p} value={p}>
                   {p}
                 </option>
               ))}
