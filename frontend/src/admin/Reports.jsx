@@ -1310,12 +1310,13 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
+            background: "#8B0000",
+            border: "none",
             borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "white",
+            fontWeight: "bold",
           }}
         >
           → חזרה לדוחות
@@ -1812,10 +1813,13 @@ const HolidaySummary = ({ onBack }) => {
             onClick={onBack}
             style={{
               padding: "8px 16px",
-              background: "#f5f0ed",
-              border: "1px solid #ddd",
+              background: "#8B0000",
+              border: "none",
               borderRadius: "8px",
               cursor: "pointer",
+              fontSize: "14px",
+              color: "white",
+              fontWeight: "bold",
             }}
           >
             → חזרה
@@ -1837,12 +1841,13 @@ const HolidaySummary = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
+            background: "#8B0000",
+            border: "none",
             borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "white",
+            fontWeight: "bold",
           }}
         >
           → חזרה
@@ -2103,12 +2108,13 @@ ${chosen.map(buildGroupTable).join("")}
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
+            background: "#8B0000",
+            border: "none",
             borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "white",
+            fontWeight: "bold",
           }}
         >
           → חזרה
@@ -2303,44 +2309,18 @@ const FinancialChooser = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
+            background: "#8B0000",
+            border: "none",
             borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "white",
+            fontWeight: "bold",
           }}
         >
           → חזרה לדוחות
         </button>
-        <button
-          className="btn"
-          onClick={async () => {
-            if (confirm("האם ברצונך לייצר נתוני סימולציה לבדיקת הדוחות הכספיים?")) {
-              try {
-                await seedFinancialDummyData();
-                alert("נתוני הסימולציה נוצרו בהצלחה! יש לרענן את העמוד.");
-                window.location.reload();
-              } catch (err) {
-                console.error(err);
-                alert("שגיאה ביצירת הנתונים: " + err.message);
-              }
-            }
-          }}
-          style={{
-            padding: "8px 16px",
-            background: "#fff5f5",
-            border: "1px solid #ffcccc",
-            borderRadius: "8px",
-            cursor: "pointer",
-            fontSize: "14px",
-            color: "#8B0000",
-            fontWeight: "bold",
-          }}
-        >
-          ⚙️ יצירת נתוני סימולציה
-        </button>
-        <h2 style={{ margin: 0, color: "#8B0000", display: "flex", alignItems: "center", gap: "8px", marginInlineStart: "auto" }}>
+        <h2 style={{ margin: 0, color: "#8B0000", display: "flex", alignItems: "center", gap: "8px" }}>
           <Coins size={24} /> דוחות כספיים
         </h2>
       </div>
