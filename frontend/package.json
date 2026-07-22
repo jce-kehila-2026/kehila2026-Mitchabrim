@@ -7,11 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:sec01": "node scripts/run-sec-01-tests.mjs",
+    "migrate:sec01:dry-run": "node scripts/sec-01-migrate-users.mjs",
+    "test:sec03": "node scripts/run-sec-03-tests.mjs",
+    "migrate:sec03:dry-run": "node scripts/sec-03-migrate-images.mjs",
+    "test:sec04": "node scripts/run-sec-04-tests.mjs",
+    "reconcile:sec04:dry-run": "node scripts/sec-04-reconcile-reports.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",
-    "lucide-react": "^1.24.0",
+    "lucide-react": "^1.21.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",

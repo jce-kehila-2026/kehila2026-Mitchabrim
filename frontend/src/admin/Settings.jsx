@@ -428,7 +428,7 @@ export default function Settings() {
   const handleStatusClick = (u) => {
     if (!u) return; 
     const loggedInEmail = auth?.currentUser?.email || "omaraqel253@gmail.com"; 
-    if (u?.email === loggedInEmail && u?.active) {
+    if (u?.email === loggedInEmail && u?.status === "active") {
       showToast("אינך יכול להשבית את עצמך מהמערכת!");
       return;
     }
@@ -439,7 +439,10 @@ export default function Settings() {
     try {
       const { user } = statusConfirm;
       if (!user?.id) throw new Error("Missing user ID");
-      await updateAllowedUser(user.id, { active: !user.active });
+      const result = await updateAllowedUser(user.id, {
+        status: user.status === "active" ? "inactive" : "active",
+      });
+      if (!result?.success) throw new Error(result?.error || "Status update failed");
       showToast(`סטטוס המשתמש עודכן בהצלחה`);
       await refreshUsers();
     } catch (error) {
@@ -681,12 +684,12 @@ export default function Settings() {
                       <td style={{ padding: "12px" }}>{u?.displayName || "—"}</td>
                       <td dir="ltr" style={{ padding: "12px", textAlign: "right", color: "#495057" }}>{u?.email || "—"}</td>
                       <td style={{ padding: "12px" }}>
-                        <span style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", background: u?.active ? "#e8f5e9" : "#fdecec", color: u?.active ? "#1e6b2c" : "#9b1c1c" }}>
-                          {u?.active ? "פעיל" : "לא פעיל"}
+                        <span style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", background: u?.status === "active" ? "#e8f5e9" : "#fdecec", color: u?.status === "active" ? "#1e6b2c" : "#9b1c1c" }}>
+                          {u?.status === "active" ? "פעיל" : "לא פעיל"}
                         </span>
                       </td>
                       <td style={{ padding: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
-                        <button onClick={() => handleStatusClick(u)} style={getActionBtnStyle("#495057", "#f8f9fa", "#ced4da")}>{u?.active ? "השבת" : "הפעל"}</button>
+                        <button onClick={() => handleStatusClick(u)} style={getActionBtnStyle("#495057", "#f8f9fa", "#ced4da")}>{u?.status === "active" ? "השבת" : "הפעל"}</button>
                         <button onClick={() => handlePasswordClick(u)} disabled={resendingId === u?.id || !u?.email} style={{ ...getActionBtnStyle("#495057", "#f8f9fa", "#ced4da"), opacity: (resendingId === u?.id || !u?.email) ? 0.5 : 1 }}>שלח קישור סיסמה</button>
                         <button onClick={() => handleDeleteClick(u)} style={getActionBtnStyle("#dc3545", "#fdecec", "#f5c6cb")}>מחיקה</button>
                       </td>
@@ -797,10 +800,10 @@ export default function Settings() {
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1500, direction: "rtl" }}>
           <div style={{ backgroundColor: "white", padding: "24px", borderRadius: "16px", width: "90%", maxWidth: "400px", boxShadow: "0 10px 30px rgba(0,0,0,0.2)", textAlign: "center" }}>
             <h3 style={{ margin: "0 0 10px 0", color: "#343a40", fontWeight: "bold", fontSize: "1.2rem" }}>
-              {statusConfirm.user?.active ? "השבתת משתמש" : "הפעלת משתמש"}
+              {statusConfirm.user?.status === "active" ? "השבתת משתמש" : "הפעלת משתמש"}
             </h3>
             <p style={{ color: "#6c757d", marginBottom: "20px", fontSize: "15px" }}>
-              האם אתה בטוח שברצונך {statusConfirm.user?.active ? "להשבית" : "להפעיל"} את המשתמש <strong>"{statusConfirm.user?.displayName || statusConfirm.user?.email}"</strong>?
+              האם אתה בטוח שברצונך {statusConfirm.user?.status === "active" ? "להשבית" : "להפעיל"} את המשתמש <strong>"{statusConfirm.user?.displayName || statusConfirm.user?.email}"</strong>?
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
               <button style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#f8f9fa", color: "#495057", border: "1px solid #ced4da", fontWeight: "bold", cursor: "pointer" }} onClick={() => setStatusConfirm({ isOpen: false, user: null })}>ביטול</button>
