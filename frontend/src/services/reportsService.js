@@ -12,21 +12,23 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
-import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
+import { sanitizeText } from "../utils/sanitize";
+import { normalizeVolunteerReportInput } from "./volunteerReportPolicy.js";
 
 const reportsCollection = collection(db, "volunteerReports");
 
 export async function createVolunteerReport(reportData) {
-  const clean = sanitizeFormData(reportData);
-  const docRef = await addDoc(reportsCollection, {
+  const clean = normalizeVolunteerReportInput(reportData);
+  const payload = {
     ...clean,
     status: "pending",
     reviewedAt: null,
     reviewedBy: null,
     adminNote: "",
     createdAt: serverTimestamp(),
-  });
-  return { id: docRef.id, ...clean };
+  };
+  const docRef = await addDoc(reportsCollection, payload);
+  return { id: docRef.id, ...payload };
 }
 
 export async function getReportsForVolunteer(volunteerId) {
