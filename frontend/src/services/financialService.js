@@ -108,3 +108,131 @@ export async function uploadReceiptFile(file) {
   const url = await getDownloadURL(fileRef);
   return { url, path };
 }
+
+/**
+ * Seed dummy data for testing the three types of financial reports.
+ */
+export async function seedFinancialDummyData() {
+  const dummyRecords = [
+    {
+      type: "תרומה",
+      subType: "העברה ביט",
+      name: "ישראל ישראلي",
+      amount: 150,
+      date: "2024-03-15",
+      project: "פרויקט פסח 2024",
+      receiptType: "קבלה רגילה",
+      receiptSent: "כן"
+    },
+    {
+      type: "תרומה",
+      subType: "העברה במזומן",
+      name: "רונית לוי",
+      amount: 500,
+      date: "2024-03-18",
+      project: "פרויקט פסח 2024",
+      receiptType: "קבלה 46",
+      receiptSent: "כן"
+    },
+    {
+      type: "תרומה",
+      subType: "העברה מנגלה קהילתי גילה",
+      name: "אברהם כהן",
+      amount: 1000,
+      date: "2024-09-10",
+      project: "פרויקט ראש השנה 2024",
+      receiptType: "קבלה 46",
+      receiptSent: "כן"
+    },
+    {
+      type: "תרומה",
+      subType: "העברה ביט",
+      name: "שרה לוין",
+      amount: 250,
+      date: "2024-09-12",
+      project: "פרויקט ראש השנה 2024",
+      receiptType: "קבלה רגילה",
+      receiptSent: "לא"
+    },
+    {
+      type: "תרומה",
+      subType: "העברה ביט",
+      name: "אורן ברק",
+      amount: 120,
+      date: "2025-04-05",
+      project: "פרויקט פסח 2025",
+      receiptType: "קבלה רגילה",
+      receiptSent: "כן"
+    },
+    {
+      type: "תרומה",
+      subType: "העברה במזומן",
+      name: "חברה בע\"מ",
+      amount: 5000,
+      date: "2025-04-10",
+      project: "פרויקט פסח 2025",
+      receiptType: "קבלה 46",
+      receiptSent: "כן"
+    },
+    {
+      type: "הוצאה",
+      subType: "קניות מזון",
+      name: "רכישת סלי מזון",
+      amount: 2500,
+      date: "2024-03-20",
+      project: "פרויקט פסח 2024",
+      receiptType: "קבלה רגילה",
+      receiptSent: "כן"
+    },
+    {
+      type: "הוצאה",
+      subType: "שיווק",
+      name: "הוצאות פרסום ושיווק",
+      amount: 400,
+      date: "2024-03-22",
+      project: "פרויקט פסח 2024",
+      receiptType: "",
+      receiptSent: ""
+    },
+    {
+      type: "הוצאה",
+      subType: "קניות חבילות שי",
+      name: "רכישת חבילות שי",
+      amount: 3500,
+      date: "2024-09-15",
+      project: "פרויקט ראש השנה 2024",
+      receiptType: "קבלה רגילה",
+      receiptSent: "כן"
+    },
+    {
+      type: "הוצאה",
+      subType: "לוגיסטיקה",
+      name: "הובלה ולוגיסטיקה",
+      amount: 600,
+      date: "2024-09-18",
+      project: "פרויקט ראש השנה 2024",
+      receiptType: "",
+      receiptSent: ""
+    },
+    {
+      type: "הוצאה",
+      subType: "קניות מזון",
+      name: "רכישת סלי מזון פסח",
+      amount: 4500,
+      date: "2025-04-12",
+      project: "פרויקט פסח 2025",
+      receiptType: "קבלה רגילה",
+      receiptSent: "כן"
+    }
+  ];
+
+  const reportsCol = collection(db, "financial");
+  const liveCol = collection(db, "financialTransactions");
+
+  await Promise.all(
+    dummyRecords.map(async (record) => {
+      await addDoc(reportsCol, { ...record, createdAt: new Date() });
+      await addDoc(liveCol, { ...record, createdAt: new Date() });
+    })
+  );
+}
