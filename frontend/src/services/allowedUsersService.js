@@ -31,7 +31,9 @@ const COLLECTION = "users";
 const normalizeEmail = (email) => (email || "").trim().toLowerCase();
 const emailToId = (email) => normalizeEmail(email).replace(/[^a-z0-9]/g, "_");
 
-const isUserActive = (u) => (u?.status != null ? u.status === "active" : u?.active === true);
+// `status` is authoritative. `active` is retained only as a compatibility
+// mirror for older UI/data consumers and must not grant access by itself.
+export const isUserActive = (u) => u?.status === "active";
 
 const resolveEmail = (u) => {
   const e = normalizeEmail(u?.email);
@@ -47,6 +49,16 @@ const normalizeUser = (id, data) => ({
   displayName: data.displayName || (data.fullName && !String(data.fullName).includes("@") ? data.fullName : ""),
   active: isUserActive(data),
 });
+
+const withCanonicalAccountStatus = (data) => {
+  if (data?.status === "active" || data?.status === "inactive") {
+    return { ...data, active: data.status === "active" };
+  }
+  if (typeof data?.active === "boolean") {
+    return { ...data, status: data.active ? "active" : "inactive" };
+  }
+  return { ...data };
+};
 
 const devLog = (...args) => console.info("[auth-debug]", ...args);
 
@@ -94,11 +106,16 @@ export const resolveUserAccess = async ({ uid, email }) => {
       const byEmail = await getDocs(query(collection(db, COLLECTION), where("email", "==", normalized)));
       if (!byEmail.empty) {
         const d = byEmail.docs[0];
-        const user = normalizeUser(d.id, d.data());
+        const canonicalData = withCanonicalAccountStatus(d.data());
+        const user = normalizeUser(d.id, canonicalData);
         // Migrate: if the doc id is not the auth UID, mirror it to users/{uid}
         if (uid && d.id !== uid) {
           try {
-            await setDoc(doc(db, COLLECTION, uid), { ...d.data(), email: normalized }, { merge: true });
+            await setDoc(
+              doc(db, COLLECTION, uid),
+              { ...canonicalData, email: normalized },
+              { merge: true },
+            );
             devLog("mirrored legacy doc to users/{uid}", { from: d.id, to: uid });
           } catch (e) {
             devLog("mirror failed", e.message);
@@ -306,9 +323,19 @@ export const updateAllowedUser = async (id, patch) => {
   try {
     const clean = { ...patch, updatedAt: serverTimestamp() };
     if (clean.email) clean.email = normalizeEmail(clean.email);
-    if (typeof clean.active === "boolean") {
+    // Accept the old `{ active: boolean }` call shape for compatibility, but
+    // immediately translate it to the authoritative status field. Conflicting
+    // input is rejected instead of silently choosing the less-safe value.
+    if (typeof clean.active === "boolean" && clean.status == null) {
       clean.status = clean.active ? "active" : "inactive";
-    } else if (clean.status) {
+    }
+    if (clean.status != null) {
+      if (!["active", "inactive"].includes(clean.status)) {
+        return { success: false, error: "Invalid account status" };
+      }
+      if (typeof clean.active === "boolean" && clean.active !== (clean.status === "active")) {
+        return { success: false, error: "Conflicting account status fields" };
+      }
       clean.active = clean.status === "active";
     }
     await updateDoc(doc(db, COLLECTION, id), clean);
