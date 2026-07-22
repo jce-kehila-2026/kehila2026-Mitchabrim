@@ -1,23 +1,19 @@
-// src/services/imagesService.js
-// Service layer for the "images" gallery collection and its Storage files.
-//
-// Public read path (getPublicImages) is used by the public /gallery and
-// homepage. Admin flows (list/upload/edit/delete/toggle) are used by
-// src/admin/Media.jsx. Firestore collection name ("images") and document
-// fields (title, category, notes, url, uploadedAt, displayDate, isPublic)
-// are unchanged. Storage path convention ("images/<ts>_<filename>") is
-// unchanged.
+// Gallery metadata and Firebase Storage lifecycle.
+// SEC-03: managed files are separated into public/private paths. Private
+// metadata never persists a Firebase download-token URL.
 
 import { db, storage } from "../firebase";
 import {
   collection,
   getDocs,
+  getDoc,
   query,
   where,
   limit,
-  addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   doc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -25,138 +21,183 @@ import {
   ref,
   uploadBytes,
   getDownloadURL,
+  getBlob,
+  getMetadata,
   deleteObject,
 } from "firebase/storage";
+import {
+  imageStoragePath,
+  isPathPrivate,
+  isPathPublic,
+  resolveManagedImagePath,
+} from "./imageStoragePolicy";
 
 const IMAGES_COLLECTION = "images";
-const IMAGES_STORAGE_FOLDER = "images";
 
-/**
- * Fetch all public images (isPublic == true), up to a hard cap.
- * Firestore rules require the where("isPublic","==",true) filter
- * for anonymous reads to succeed.
- *
- * Returns { id, ...docData }[] sorted by uploadedAt desc when available.
- * Callers do their own category filtering / slicing.
- *
- * Collection: "images" (unchanged)
- */
+const objectMetadata = (metadata = {}) => ({
+  contentType: metadata.contentType || undefined,
+  cacheControl: metadata.cacheControl || undefined,
+  contentDisposition: metadata.contentDisposition || undefined,
+  customMetadata: metadata.customMetadata || undefined,
+});
+
+const runtimePreviewUrl = (blob) => (
+  typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+    ? URL.createObjectURL(blob)
+    : ""
+);
+
+function fileNameFromPath(path) {
+  return String(path || "image").split("/").at(-1) || "image";
+}
+
+export async function loadAdminImagePreview(image) {
+  if (image.isPublic) return image;
+  const path = resolveManagedImagePath(image);
+  if (!path) return image;
+  try {
+    const blob = await getBlob(ref(storage, path));
+    return { ...image, url: runtimePreviewUrl(blob), previewIsTemporary: true };
+  } catch (error) {
+    console.warn("Unable to load private image preview:", image.id, error?.code || error?.message);
+    return image;
+  }
+}
+
 export async function getPublicImages({ max = 500 } = {}) {
-  const q = query(
-    collection(db, IMAGES_COLLECTION),
-    where("isPublic", "==", true),
-    limit(max)
-  );
+  const q = query(collection(db, IMAGES_COLLECTION), where("isPublic", "==", true), limit(max));
   const snap = await getDocs(q);
   const items = [];
   snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
-
   items.sort((a, b) => {
     const timeA = a.uploadedAt?.seconds || a.uploadedAt?.toMillis?.() || 0;
     const timeB = b.uploadedAt?.seconds || b.uploadedAt?.toMillis?.() || 0;
     return timeB - timeA;
   });
-
   return items;
 }
 
-/**
- * Admin-only: list every image document (public and private).
- * Firestore rules require isAdmin() for unfiltered list access.
- * Returns { id, ...docData }[] in whatever order Firestore returns.
- */
 export async function getAllImages() {
   const snap = await getDocs(collection(db, IMAGES_COLLECTION));
-  const items = [];
-  snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
-  return items;
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-/**
- * Admin-only: upload an image File to Storage and create its Firestore doc.
- * Preserves the original Media.jsx behavior exactly:
- *   1. Upload to `images/<Date.now()>_<file.name>`
- *   2. getDownloadURL
- *   3. addDoc({ title, category, notes, url, uploadedAt: serverTimestamp(),
- *              displayDate: today he-IL, isPublic })
- *
- * Returns { id, ...newImageDoc } so the caller can update local state.
- */
 export async function uploadImage({ file, title, category, notes, isPublic }) {
-  const storageRef = ref(
-    storage,
-    `${IMAGES_STORAGE_FOLDER}/${Date.now()}_${file.name}`
-  );
+  const imageRef = doc(collection(db, IMAGES_COLLECTION));
+  const publicFlag = isPublic === true;
+  const storagePath = imageStoragePath({ imageId: imageRef.id, fileName: file.name, isPublic: publicFlag });
+  const storageRef = ref(storage, storagePath);
   await uploadBytes(storageRef, file);
-  const url = await getDownloadURL(storageRef);
 
-  const todayDate = new Date().toLocaleDateString("he-IL");
+  try {
+    const url = publicFlag ? await getDownloadURL(storageRef) : "";
+    const newImageDoc = {
+      title,
+      category,
+      notes: notes || "",
+      url,
+      storagePath,
+      uploadedAt: serverTimestamp(),
+      displayDate: new Date().toLocaleDateString("he-IL"),
+      isPublic: publicFlag,
+    };
+    await setDoc(imageRef, newImageDoc);
+    return { id: imageRef.id, ...newImageDoc };
+  } catch (error) {
+    await deleteObject(storageRef).catch(() => {});
+    throw error;
+  }
+}
 
-  const newImageDoc = {
-    title,
-    category,
-    notes: notes || "",
-    url,
-    uploadedAt: serverTimestamp(),
-    displayDate: todayDate,
-    isPublic: isPublic || false,
+async function moveManagedImage(image, nextIsPublic) {
+  const sourcePath = resolveManagedImagePath(image);
+  if (!sourcePath) {
+    throw new Error("External image visibility cannot be made private by Firebase Storage");
+  }
+
+  const alreadyCorrect = nextIsPublic ? isPathPublic(sourcePath) : isPathPrivate(sourcePath);
+  if (alreadyCorrect) {
+    const url = nextIsPublic ? (image.url || await getDownloadURL(ref(storage, sourcePath))) : "";
+    await updateDoc(doc(db, IMAGES_COLLECTION, image.id), {
+      isPublic: nextIsPublic,
+      storagePath: sourcePath,
+      url,
+    });
+    return { ...image, isPublic: nextIsPublic, storagePath: sourcePath, url };
+  }
+
+  const sourceRef = ref(storage, sourcePath);
+  const [blob, metadata] = await Promise.all([getBlob(sourceRef), getMetadata(sourceRef)]);
+  const targetPath = imageStoragePath({
+    imageId: image.id,
+    fileName: fileNameFromPath(sourcePath),
+    isPublic: nextIsPublic,
+  });
+  const targetRef = ref(storage, targetPath);
+  await uploadBytes(targetRef, blob, objectMetadata(metadata));
+
+  const nextUrl = nextIsPublic ? await getDownloadURL(targetRef) : "";
+  const originalHadStoragePath = typeof image.storagePath === "string" && image.storagePath.length > 0;
+  const rollbackPatch = {
+    isPublic: image.isPublic === true,
+    url: image.url || "",
+    storagePath: originalHadStoragePath ? image.storagePath : deleteField(),
   };
 
-  const docRef = await addDoc(collection(db, IMAGES_COLLECTION), newImageDoc);
-  return { id: docRef.id, ...newImageDoc };
+  try {
+    await updateDoc(doc(db, IMAGES_COLLECTION, image.id), {
+      isPublic: nextIsPublic,
+      storagePath: targetPath,
+      url: nextUrl,
+    });
+    await deleteObject(sourceRef);
+  } catch (error) {
+    await updateDoc(doc(db, IMAGES_COLLECTION, image.id), rollbackPatch).catch(() => {});
+    await deleteObject(targetRef).catch(() => {});
+    throw error;
+  }
+
+  return {
+    ...image,
+    isPublic: nextIsPublic,
+    storagePath: targetPath,
+    url: nextUrl,
+  };
 }
 
-/**
- * Admin-only: update the editable fields of an image doc.
- * Preserves the exact field list from Media.jsx handleUpdateImageDetails.
- */
 export async function updateImage(imageId, { title, category, notes, isPublic }) {
-  await updateDoc(doc(db, IMAGES_COLLECTION, imageId), {
-    title,
-    category,
-    notes: notes || "",
-    isPublic: isPublic || false,
-  });
+  const imageSnap = await getDoc(doc(db, IMAGES_COLLECTION, imageId));
+  if (!imageSnap.exists()) throw new Error("Image metadata not found");
+  let image = { id: imageSnap.id, ...imageSnap.data() };
+  if (image.isPublic !== (isPublic === true)) {
+    image = await moveManagedImage(image, isPublic === true);
+  }
+  await updateDoc(doc(db, IMAGES_COLLECTION, imageId), { title, category, notes: notes || "" });
+  return { ...image, title, category, notes: notes || "" };
 }
 
-/**
- * Admin-only: toggle only the isPublic flag on an image doc.
- */
-export async function toggleImagePublic(imageId, isPublic) {
-  await updateDoc(doc(db, IMAGES_COLLECTION, imageId), { isPublic });
+export async function toggleImagePublic(imageOrId, isPublic) {
+  const imageId = typeof imageOrId === "string" ? imageOrId : imageOrId?.id;
+  const snap = await getDoc(doc(db, IMAGES_COLLECTION, imageId));
+  if (!snap.exists()) throw new Error("Image metadata not found");
+  const image = { id: snap.id, ...snap.data() };
+  return moveManagedImage(image, isPublic === true);
 }
 
-/**
- * Admin-only: delete an image.
- *
- * Preserves the exact order from the original Media.jsx:
- *   1. deleteDoc(images/{id})
- *   2. deleteObject(storage ref built from image.url)
- *
- * The Storage delete may throw for legacy/mock docs whose `url` is not a
- * Storage download URL (e.g. seeded Unsplash URLs). The caller keeps the
- * try/catch that already surrounded this flow so error surfacing stays
- * identical to the previous behavior.
- */
 export async function deleteImage(image) {
+  const storagePath = resolveManagedImagePath(image);
+  if (storagePath) {
+    await deleteObject(ref(storage, storagePath)).catch((error) => {
+      if (error?.code !== "storage/object-not-found") throw error;
+    });
+  }
   await deleteDoc(doc(db, IMAGES_COLLECTION, image.id));
-  const imageStorageRef = ref(storage, image.url);
-  await deleteObject(imageStorageRef);
 }
 
-/**
- * Admin-only: create a raw image doc (no Storage upload). Used by the
- * "seed mock images" dev helper which references external Unsplash URLs.
- * Preserves the exact fields written by the original Media.jsx.
- */
-export async function createImageDoc({
-  title,
-  category,
-  notes,
-  url,
-  displayDate,
-  isPublic,
-}) {
+export async function createImageDoc({ title, category, notes, url, displayDate, isPublic }) {
+  if (isPublic !== true) {
+    throw new Error("External image URLs cannot be protected as private Firebase images");
+  }
   const newDoc = {
     title,
     category,
@@ -164,8 +205,9 @@ export async function createImageDoc({
     url,
     uploadedAt: serverTimestamp(),
     displayDate,
-    isPublic: !!isPublic,
+    isPublic: true,
   };
-  const docRef = await addDoc(collection(db, IMAGES_COLLECTION), newDoc);
-  return { id: docRef.id, ...newDoc };
+  const imageRef = doc(collection(db, IMAGES_COLLECTION));
+  await setDoc(imageRef, newDoc);
+  return { id: imageRef.id, ...newDoc };
 }

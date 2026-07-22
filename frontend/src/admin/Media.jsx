@@ -6,6 +6,7 @@ import { Search, Globe } from "lucide-react";
 // Firestore + Storage access is encapsulated in the images service.
 import {
   getAllImages,
+  loadAdminImagePreview,
   uploadImage,
   updateImage,
   deleteImage as deleteImageService,
@@ -20,6 +21,7 @@ const CATEGORIES = ["פרלמנטים", "מתנדבים", "חגים", "שיוו�
 export default function Media() {
   const [imagesList, setImagesList] = useState([]);
   const fileInputRef = useRef(null);
+  const previewGenerationRef = useRef(0);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -45,16 +47,46 @@ export default function Media() {
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
+    const generation = ++previewGenerationRef.current;
+
+    const loadPreview = async (image) => {
+      if (image.isPublic) return;
+      const preview = await loadAdminImagePreview(image);
+      if (generation !== previewGenerationRef.current || !preview.previewIsTemporary) return;
+      setImagesList((current) => current.map((item) => (
+        item.id === image.id && item.storagePath === image.storagePath && !item.isPublic
+          ? preview
+          : item
+      )));
+    };
+
     const fetchImages = async () => {
       try {
         const fetchedImages = await getAllImages();
+        if (generation !== previewGenerationRef.current) return;
         setImagesList(fetchedImages);
+        fetchedImages.forEach((image) => { void loadPreview(image); });
       } catch (error) {
         console.error("Error fetching images:", error);
       }
     };
     fetchImages();
+    return () => {
+      if (generation === previewGenerationRef.current) previewGenerationRef.current += 1;
+    };
   }, []);
+
+  const loadPreviewIntoList = async (image) => {
+    if (image.isPublic) return image;
+    const preview = await loadAdminImagePreview(image);
+    if (!preview.previewIsTemporary) return image;
+    setImagesList((current) => current.map((item) => (
+      item.id === image.id && item.storagePath === image.storagePath && !item.isPublic
+        ? preview
+        : item
+    )));
+    return preview;
+  };
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -123,6 +155,7 @@ export default function Media() {
         isPublic: formData.isPublic || false,
       });
       setImagesList((prevList) => [...prevList, created]);
+      void loadPreviewIntoList(created);
 
       showToast("התמונה הועלתה ונשמרה בהצלחה!");
       setIsModalOpen(false);
@@ -165,10 +198,11 @@ export default function Media() {
     e.stopPropagation();
     try {
       const newStatus = !img.isPublic;
-      await toggleImagePublic(img.id, newStatus);
+      const updated = await toggleImagePublic(img, newStatus);
       setImagesList((prevList) =>
-        prevList.map((item) => (item.id === img.id ? { ...item, isPublic: newStatus } : item))
+        prevList.map((item) => (item.id === img.id ? updated : item))
       );
+      void loadPreviewIntoList(updated);
       showToast(newStatus ? "התמונה צורפה למوقع הציבורי בהצלחה!" : "התמונה הוסרה מהאתר הציבורי בהצלחה!");
     } catch (error) {
       console.error("Error updating image public status:", error);
@@ -187,7 +221,7 @@ export default function Media() {
     const cleanNotes = sanitizeText(detailsModal.image.notes, 1000);
     if (!cleanTitle) { showToast("אנא הזן שם לתמונה"); setIsUpdating(false); return; }
     try {
-      await updateImage(detailsModal.image.id, {
+      const updated = await updateImage(detailsModal.image.id, {
         title: cleanTitle,
         category: detailsModal.image.category,
         notes: cleanNotes,
@@ -197,16 +231,13 @@ export default function Media() {
       setImagesList((prevList) =>
         prevList.map((img) =>
           img.id === detailsModal.image.id
-            ? {
-                ...img,
-                title: cleanTitle,
-                category: detailsModal.image.category,
-                notes: cleanNotes,
-                isPublic: detailsModal.image.isPublic || false,
-              }
+            ? updated
             : img,
         ),
       );
+
+      setDetailsModal({ isOpen: true, image: updated });
+      void loadPreviewIntoList(updated);
 
       showToast("פרטי התמונה עודכנו בהצלחה!");
     } catch (error) {
