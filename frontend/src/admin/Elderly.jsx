@@ -48,6 +48,7 @@ import { sanitizeFormData } from "@/utils/sanitize";
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
    useAreasAndNeighborhoods hook — no hardcoded lists here. */
 const VOLUNTEER_STATUS_OPTIONS = ["כן", "לא", "קשר טלפוני"];
+const GENDER_OPTIONS = ["זכר", "נקבה"];
 const MARITAL_OPTIONS = ["רווק/ה", "נשוי/אה", "גרוש/ה", "אלמן/ה"];
 const LANGUAGE_OPTIONS = ["עברית", "ערבית", "אנגלית", "ספרדית", "צרפתית", "רוסית", "סינית", "יפנית"];
 const STATUS_OPTIONS = ["פעיל", "נפטר", "לא פעיל"];
@@ -554,6 +555,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
             <D label="שם משפחה" value={entry.lastName} />
             <D label="ת.ז" value={entry.idNum} />
             <D label="תאריך לידה" value={entry.birth} />
+            <D label="מגדר" value={entry.gender} />
             <D label="מצב משפחתי" value={entry.marital} />
           </div>
         </div>
@@ -662,7 +664,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
 
   const [f, setF] = useState(
     initial || {
-      firstName: "", lastName: "", idNum: "", birth: "",
+      firstName: "", lastName: "", idNum: "", birth: "", gender: "",
       mobile: "", homePhone: "",
       area: "", neighborhood: "", address: "",
       lastContact: "",
@@ -800,6 +802,13 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               {fieldErrors.idNum && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.idNum}</div>}
             </div>
             <div className="field"><label>תאריך לידה</label><input className="input" type="date" value={f.birth} onChange={set("birth")} />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
+            <div className="field">
+              <label>מגדר</label>
+              <select className="select" value={f.gender || ""} onChange={set("gender")}>
+                <option value="">בחר מגדר</option>
+                {GENDER_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
             <div className="field">
               <label>מצב משפחתי</label>
               <select className="select" value={f.marital} onChange={set("marital")}>
