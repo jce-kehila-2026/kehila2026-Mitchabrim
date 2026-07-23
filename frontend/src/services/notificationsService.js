@@ -15,21 +15,21 @@ import {
   onSnapshot,
   doc,
   updateDoc,
+  deleteDoc,
+  getDocs,
 } from "firebase/firestore";
 
 const COLLECTION = "notifications";
 
 /**
  * Subscribe to admin notifications, newest first.
- * Preserves the exact query used by AdminTopbar/HeroTopbar:
- *   orderBy("createdAt", "desc"), limit(20)
  *
  * @param {(items: Array) => void} onData
  * @param {(err: Error) => void} [onError]
  * @param {{ max?: number }} [opts]
  * @returns {() => void} unsubscribe
  */
-export function subscribeAdminNotifications(onData, onError, { max = 20 } = {}) {
+export function subscribeAdminNotifications(onData, onError, { max = 10 } = {}) {
   const q = query(
     collection(db, COLLECTION),
     orderBy("createdAt", "desc"),
@@ -47,9 +47,27 @@ export function subscribeAdminNotifications(onData, onError, { max = 20 } = {}) 
 
 /**
  * Mark a single admin notification as read.
- * Requires isAdmin() per Firestore rules.
  */
 export async function markAdminNotificationRead(notificationId) {
   if (!notificationId) return;
   await updateDoc(doc(db, COLLECTION, notificationId), { read: true });
+}
+
+/**
+ * Keep only the latest `maxKeep` admin notifications. Older ones are
+ * deleted (fire-and-forget). Requires isAdmin() per Firestore rules.
+ * Returns the number of deleted docs.
+ */
+export async function pruneAdminNotifications(maxKeep = 10) {
+  try {
+    const q = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    const extras = snap.docs.slice(maxKeep);
+    if (!extras.length) return 0;
+    await Promise.all(extras.map((d) => deleteDoc(d.ref).catch(() => {})));
+    return extras.length;
+  } catch (e) {
+    console.warn("pruneAdminNotifications:", e.message);
+    return 0;
+  }
 }

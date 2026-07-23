@@ -111,7 +111,9 @@ export default function Settings() {
           ];
           setAreas(sortAreas(loadedAreas));
 
-          // Smart migration & loading for Categories
+          // Categories are locked to two fixed groups: image + link.
+          // The admin can only manage items inside these groups.
+          const FIXED_GROUPS = ["קטגוריות תמונות", "קטגוריות קישורים"];
           const dbCats = data?.categories;
           let loadedCats = [];
           if (Array.isArray(dbCats)) {
@@ -121,13 +123,17 @@ export default function Settings() {
               title: key === 'images' ? "קטגוריות תמונות" : (key === 'links' ? "קטגוריות קישורים" : key),
               items: Array.isArray(val) ? val : []
             }));
-          } else {
-            loadedCats = [
-              { title: "קטגוריות תמונות", items: ["פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"] },
-              { title: "קטגוריות קישורים", items: ["טפסים", "מסמכים", "תקשורת", "קישורים חיצוניים"] }
-            ];
           }
-          setCategories(sortCategories(loadedCats));
+          // Ensure both fixed groups exist; drop any legacy extra groups from the UI.
+          const byTitle = new Map(loadedCats.map((g) => [g?.title, g]));
+          const normalizedCats = FIXED_GROUPS.map((title) => {
+            const existing = byTitle.get(title);
+            if (existing) return { title, items: Array.isArray(existing.items) ? existing.items : [] };
+            if (title === "קטגוריות תמונות") return { title, items: ["פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"] };
+            return { title, items: ["טפסים", "מסמכים", "תקשורת", "קישורים חיצוניים"] };
+          });
+          setCategories(sortCategories(normalizedCats));
+
         }
       } catch (error) {
         console.error("Error fetching settings:", error);
@@ -422,7 +428,7 @@ export default function Settings() {
   const handleStatusClick = (u) => {
     if (!u) return; 
     const loggedInEmail = auth?.currentUser?.email || "omaraqel253@gmail.com"; 
-    if (u?.email === loggedInEmail && u?.active) {
+    if (u?.email === loggedInEmail && u?.status === "active") {
       showToast("אינך יכול להשבית את עצמך מהמערכת!");
       return;
     }
@@ -433,7 +439,10 @@ export default function Settings() {
     try {
       const { user } = statusConfirm;
       if (!user?.id) throw new Error("Missing user ID");
-      await updateAllowedUser(user.id, { active: !user.active });
+      const result = await updateAllowedUser(user.id, {
+        status: user.status === "active" ? "inactive" : "active",
+      });
+      if (!result?.success) throw new Error(result?.error || "Status update failed");
       showToast(`סטטוס המשתמש עודכן בהצלחה`);
       await refreshUsers();
     } catch (error) {
@@ -675,12 +684,12 @@ export default function Settings() {
                       <td style={{ padding: "12px" }}>{u?.displayName || "—"}</td>
                       <td dir="ltr" style={{ padding: "12px", textAlign: "right", color: "#495057" }}>{u?.email || "—"}</td>
                       <td style={{ padding: "12px" }}>
-                        <span style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", background: u?.active ? "#e8f5e9" : "#fdecec", color: u?.active ? "#1e6b2c" : "#9b1c1c" }}>
-                          {u?.active ? "פעיל" : "לא פעיל"}
+                        <span style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", background: u?.status === "active" ? "#e8f5e9" : "#fdecec", color: u?.status === "active" ? "#1e6b2c" : "#9b1c1c" }}>
+                          {u?.status === "active" ? "פעיל" : "לא פעיל"}
                         </span>
                       </td>
                       <td style={{ padding: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
-                        <button onClick={() => handleStatusClick(u)} style={getActionBtnStyle("#495057", "#f8f9fa", "#ced4da")}>{u?.active ? "השבת" : "הפעל"}</button>
+                        <button onClick={() => handleStatusClick(u)} style={getActionBtnStyle("#495057", "#f8f9fa", "#ced4da")}>{u?.status === "active" ? "השבת" : "הפעל"}</button>
                         <button onClick={() => handlePasswordClick(u)} disabled={resendingId === u?.id || !u?.email} style={{ ...getActionBtnStyle("#495057", "#f8f9fa", "#ced4da"), opacity: (resendingId === u?.id || !u?.email) ? 0.5 : 1 }}>שלח קישור סיסמה</button>
                         <button onClick={() => handleDeleteClick(u)} style={getActionBtnStyle("#dc3545", "#fdecec", "#f5c6cb")}>מחיקה</button>
                       </td>
@@ -744,25 +753,18 @@ export default function Settings() {
           <h3 style={{ margin: 0, color: "#8b2c2c", fontWeight: "bold", fontSize: "1.2rem" }}>קטגוריות מידע</h3>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "#fcfaf8", padding: "12px 16px", borderRadius: "10px", border: "1px solid #e9ecef", marginBottom: "20px", direction: "rtl" }}>
-          <span style={{ fontWeight: "bold", color: "#495057", fontSize: "14px" }}>+ קבוצת קטגוריות חדשה:</span>
-          <form onSubmit={handleAddCategoryGroup} style={{ display: "flex", gap: "8px", flex: 1 }}>
-            <input value={newCategoryGroupName || ""} onChange={(e) => setNewCategoryGroupName(e.target.value)} placeholder="הכנס שם קבוצה (למשל: וידאו, מסמכים)..." style={{ ...inputStyle, padding: "8px 12px", flex: 1, maxWidth: "300px" }} />
-            <button type="submit" style={{ padding: "8px 20px", borderRadius: "8px", backgroundColor: "#8b2c2c", color: "white", border: "none", fontWeight: "bold", cursor: "pointer" }}>הוסף</button>
-          </form>
-        </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px", direction: "rtl" }}>
           {(categories || []).map((catGroup, i) => (
             <div key={i} style={compactCardStyle}>
               <div style={compactCardHeaderStyle}>
                 <h4 style={{ margin: 0, color: "#343a40", fontSize: "15px", fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
-                   {/* Uniform Brand Color Dot #8b2c2c */}
                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#8b2c2c", display: "inline-block" }}></span> 
                    {catGroup?.title || "קבוצה"}
                 </h4>
-                <button onClick={() => requestDeleteCategoryGroup(i)} style={textBtnDangerStyle} title="מחק קבוצה">מחק קבוצה</button>
+                <span title="קבוצה קבועה" aria-label="קבוצה קבועה" style={{ fontSize: "13px", color: "#9e8a7a" }}>🔒</span>
               </div>
+
               
               <div style={{ padding: "16px", display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
                 {(catGroup?.items || []).map((item, j) => (
@@ -798,10 +800,10 @@ export default function Settings() {
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1500, direction: "rtl" }}>
           <div style={{ backgroundColor: "white", padding: "24px", borderRadius: "16px", width: "90%", maxWidth: "400px", boxShadow: "0 10px 30px rgba(0,0,0,0.2)", textAlign: "center" }}>
             <h3 style={{ margin: "0 0 10px 0", color: "#343a40", fontWeight: "bold", fontSize: "1.2rem" }}>
-              {statusConfirm.user?.active ? "השבתת משתמש" : "הפעלת משתמש"}
+              {statusConfirm.user?.status === "active" ? "השבתת משתמש" : "הפעלת משתמש"}
             </h3>
             <p style={{ color: "#6c757d", marginBottom: "20px", fontSize: "15px" }}>
-              האם אתה בטוח שברצונך {statusConfirm.user?.active ? "להשבית" : "להפעיל"} את המשתמש <strong>"{statusConfirm.user?.displayName || statusConfirm.user?.email}"</strong>?
+              האם אתה בטוח שברצונך {statusConfirm.user?.status === "active" ? "להשבית" : "להפעיל"} את המשתמש <strong>"{statusConfirm.user?.displayName || statusConfirm.user?.email}"</strong>?
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
               <button style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#f8f9fa", color: "#495057", border: "1px solid #ced4da", fontWeight: "bold", cursor: "pointer" }} onClick={() => setStatusConfirm({ isOpen: false, user: null })}>ביטול</button>

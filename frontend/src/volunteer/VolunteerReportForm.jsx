@@ -6,15 +6,10 @@ import { createVolunteerReport } from "@/services/reportsService.js";
 import { useAuth } from "@/context/AuthContext.jsx";
 import { validateDate } from "@/utils/validation";
 import { sanitizeFormData, sanitizeText } from "@/utils/sanitize";
-import {
-  Calendar, Tag, User, CheckCircle2, Clock, Activity,
-  AlertTriangle, HelpCircle, MessageSquare, Send, Info, Save,
-} from "lucide-react";
+import { VOLUNTEER_REPORT_TYPES } from "@/services/volunteerReportPolicy.js";
+import { Calendar, Tag, User, MessageSquare, Send, Info } from "lucide-react";
 
-const EMPTY_FORM = {
-  date: "", type: "", elderlyId: "", held: "", duration: "",
-  condition: "", needs: "", problem: "", notes: "",
-};
+const EMPTY_FORM = { date: "", type: "", elderlyId: "", notes: "" };
 
 const volunteerFullName = (v) =>
   v?.fullName || v?.name ||
@@ -55,7 +50,6 @@ export default function VolunteerReportForm() {
     return () => { cancelled = true; };
   }, [volunteer?.id]);
 
-
   const set = (k) => (e) => setForm((prev) => ({ ...prev, [k]: e.target.value }));
 
   const submit = async (e) => {
@@ -66,7 +60,6 @@ export default function VolunteerReportForm() {
     const dateErr = validateDate(form.date);
     if (dateErr) { setSubmitError(`תאריך המפגש: ${dateErr}`); return; }
     if (!form.type) { setSubmitError("יש לבחור סוג מפגש"); return; }
-    if (!form.held) { setSubmitError("יש לציין האם המפגש התקיים"); return; }
 
     const selectedElderly = myElderly.find((el) => el.id === form.elderlyId);
     if (!selectedElderly) {
@@ -83,11 +76,6 @@ export default function VolunteerReportForm() {
       elderlyName: elderlyFullName(selectedElderly),
       reportDate: form.date,
       reportType: form.type,
-      meetingDuration: form.duration,
-      wasMeetingHeld: form.held,
-      generalStatusAfterMeeting: form.condition,
-      needsFollowUp: form.needs,
-      problemType: form.problem,
       notes: sanitizeText(form.notes, 2000),
     });
 
@@ -147,8 +135,7 @@ export default function VolunteerReportForm() {
                 <L icon={Tag}>סוג המפגש</L>
                 <select className="select" value={form.type} onChange={set("type")} required>
                   <option value="">בחר/י...</option>
-                  <option>ביקור בית</option><option>שיחת טלפון</option><option>ליווי</option>
-                  <option>חלוקת חבילה</option><option>מפגש פרלמנט</option><option>אחר</option>
+                  {VOLUNTEER_REPORT_TYPES.map((type) => <option key={type}>{type}</option>)}
                 </select>
               </div>
 
@@ -168,54 +155,14 @@ export default function VolunteerReportForm() {
                 </select>
               </div>
 
-              <div className="vol-field">
-                <L icon={Clock}>משך המפגש</L>
-                <select className="select" value={form.duration} onChange={set("duration")}>
-                  <option value="">בחר/י...</option>
-                  <option>עד 30 דקות</option><option>30-60 דקות</option><option>יותר משעה</option>
-                </select>
-              </div>
-              <div className="vol-field">
-                <L icon={CheckCircle2}>האם המפגש התקיים</L>
-                <select className="select" value={form.held} onChange={set("held")} required>
-                  <option value="">בחר/י...</option>
-                  <option>התקיים</option><option>לא התקיים</option><option>נדחה</option>
-                  <option>לא היה מענה</option><option>האזרח הוותיק לא היה בבית</option>
-                </select>
-              </div>
-
-              <div className="vol-field">
-                <L icon={Activity}>מצב כללי של האזרח הוותיק</L>
-                <select className="select" value={form.condition} onChange={set("condition")}>
-                  <option value="">בחר/י...</option>
-                  <option>טוב</option><option>רגיל</option><option>צריך מעקב</option><option>דחוף לפנות לרכזת</option>
-                </select>
-              </div>
-              <div className="vol-field">
-                <L icon={HelpCircle}>האם נדרשת התערבות רכזת</L>
-                <select className="select" value={form.needs} onChange={set("needs")}>
-                  <option value="">בחר/י...</option>
-                  <option>כן</option><option>לא</option>
-                </select>
-              </div>
-
               <div className="vol-field col-span-full">
-                <L icon={AlertTriangle}>סוג הבעיה</L>
-                <select className="select" value={form.problem} onChange={set("problem")}>
-                  <option value="">בחר/י...</option>
-                  <option>אין בעיה</option><option>בעיה בריאותית כללית</option><option>קושי רגשי / בדידות</option>
-                  <option>בעיה לוגיסטית</option><option>לא היה מענה</option><option>פרטי קשר לא נכונים</option><option>אחר</option>
-                </select>
-              </div>
-
-              <div className="vol-field col-span-full">
-                <L icon={MessageSquare}>הערות נוספות</L>
-                <textarea className="textarea" rows={4} value={form.notes} onChange={set("notes")} />
+                <L icon={MessageSquare}>תיאור המפגש</L>
+                <textarea className="textarea" rows={5} value={form.notes} onChange={set("notes")} />
               </div>
             </div>
 
             <div className="vol-form-footer">
-              <div className="vol-autosave"><Info size={14} /> השינויים נשמרים אוטומטית</div>
+              <div className="vol-autosave"><Info size={14} /> יש למלא את הטופס ולשלוח</div>
               <div className="vol-form-actions">
                 <button type="button" className="vol-btn vol-btn-outline" onClick={() => setForm(EMPTY_FORM)}>
                   ניקוי טופס

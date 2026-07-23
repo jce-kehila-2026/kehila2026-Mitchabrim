@@ -136,6 +136,13 @@ export async function getMeetingAttendance(parliamentId, meetingId) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+export async function deleteMeetingAttendance(parliamentId, meetingId, participantId) {
+  const ref = doc(
+    db, "parliaments", parliamentId, "meetings", meetingId, "attendance", String(participantId)
+  );
+  await deleteDoc(ref);
+}
+
 export async function upsertMeetingAttendance(parliamentId, meetingId, participantId, data) {
   const ref = doc(
     db, "parliaments", parliamentId, "meetings", meetingId, "attendance", String(participantId)

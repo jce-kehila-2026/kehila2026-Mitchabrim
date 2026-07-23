@@ -14,6 +14,7 @@ export const createUser = async (userId, phoneNumber, fullName, role) => {
       fullName: fullName || "",
       role: role || "volunteer", // admin / volunteer
       status: "active",
+      active: true, // legacy compatibility mirror; authorization uses status
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
     };
@@ -97,9 +98,13 @@ export const updateUserRole = async (userId, newRole) => {
 // تحديث حالة المستخدم
 export const updateUserStatus = async (userId, status) => {
   try {
+    if (!["active", "inactive"].includes(status)) {
+      return { success: false, error: "Invalid account status" };
+    }
     const userRef = doc(db, USERS_COLLECTION, userId);
     await updateDoc(userRef, {
       status: status, // active / inactive
+      active: status === "active", // compatibility mirror only
     });
     return { success: true };
   } catch (error) {

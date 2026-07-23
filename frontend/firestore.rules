@@ -22,10 +22,11 @@ service cloud.firestore {
 
     function isActiveUser() {
       return hasUserDoc()
-        && (
-          userDoc().data.status == 'active'
-          || userDoc().data.active == true
-        );
+        // `status` is the single authoritative account-state field. The
+        // legacy `active` boolean may remain as a compatibility mirror, but
+        // it must never grant authorization.
+        && 'status' in userDoc().data
+        && userDoc().data.status == 'active';
     }
 
     function isAdmin() {
@@ -40,6 +41,57 @@ service cloud.firestore {
 
     function linkedVolunteerId() {
       return userDoc().data.linkedVolunteerId;
+    }
+
+    function volunteerReportHasValidShape() {
+      return request.resource.data.keys().hasOnly([
+          'volunteerId', 'volunteerAuthUid', 'volunteerName', 'volunteerEmail',
+          'elderlyId', 'elderlyName', 'reportDate', 'reportType', 'notes',
+          'status', 'reviewedAt', 'reviewedBy', 'adminNote', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'volunteerId', 'volunteerAuthUid', 'volunteerName', 'volunteerEmail',
+          'elderlyId', 'elderlyName', 'reportDate', 'reportType', 'notes',
+          'status', 'reviewedAt', 'reviewedBy', 'adminNote', 'createdAt'
+        ])
+        && request.resource.data.volunteerId is string
+        && request.resource.data.volunteerId.size() > 0
+        && request.resource.data.volunteerId.size() <= 200
+        && request.resource.data.volunteerAuthUid is string
+        && request.resource.data.volunteerName is string
+        && request.resource.data.volunteerName.size() > 0
+        && request.resource.data.volunteerName.size() <= 200
+        && request.resource.data.volunteerEmail is string
+        && request.resource.data.volunteerEmail.size() > 0
+        && request.resource.data.volunteerEmail.size() <= 320
+        && request.resource.data.elderlyId is string
+        && request.resource.data.elderlyId.size() > 0
+        && request.resource.data.elderlyId.size() <= 200
+        && request.resource.data.elderlyName is string
+        && request.resource.data.elderlyName.size() > 0
+        && request.resource.data.elderlyName.size() <= 200
+        && request.resource.data.reportDate is string
+        && request.resource.data.reportDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.reportType in [
+          'ביקור בית', 'שיחת טלפון', 'ליווי',
+          'חלוקת חבילה', 'מפגש פרלמנט', 'אחר'
+        ]
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() <= 2000
+        && request.resource.data.status == 'pending'
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedBy == null
+        && request.resource.data.adminNote == ''
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function volunteerReportHasValidRelationships() {
+      return request.resource.data.volunteerAuthUid == request.auth.uid
+        && request.resource.data.volunteerId == linkedVolunteerId()
+        && request.resource.data.volunteerEmail == request.auth.token.email
+        && exists(/databases/$(database)/documents/volunteers/$(linkedVolunteerId()))
+        && exists(/databases/$(database)/documents/elderly/$(request.resource.data.elderlyId))
+        && get(/databases/$(database)/documents/elderly/$(request.resource.data.elderlyId)).data.volId == linkedVolunteerId();
     }
 
     function isOwnVolunteerDoc(volunteerId) {
@@ -269,7 +321,8 @@ service cloud.firestore {
         );
 
       allow create: if isVolunteer()
-        && request.resource.data.volunteerAuthUid == request.auth.uid;
+        && volunteerReportHasValidShape()
+        && volunteerReportHasValidRelationships();
 
       allow update, delete: if isAdmin();
     }

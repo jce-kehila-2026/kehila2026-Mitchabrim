@@ -1,9 +1,10 @@
-import { useEffect } from "react"; // 1. أضفنا هذا السطر
+import { useEffect } from "react";
 import { Link, useParams, Navigate } from "react-router-dom";
 import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
 import BackgroundDecorations from "@/components/public/BackgroundDecorations.jsx";
 import { getActivityBySlug } from "@/data/activities";
+import useSiteContent from "@/hooks/useSiteContent";
 
 function NL({ text }) {
   return (text || "").split("\n").map((line, i, arr) => (
@@ -21,14 +22,22 @@ function NL({ text }) {
 
 export default function ActivityDetail() {
   const { slug } = useParams();
-  const activity = getActivityBySlug(slug);
+  const base = getActivityBySlug(slug);
+  const { content } = useSiteContent();
+  const override = content?.activities?.details?.[slug] || {};
 
-  // 2. إجبار الصفحة تفتح من أعلى دائماً (حل المشكلة 2)
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [slug]);
 
-  if (!activity) return <Navigate to="/" replace />;
+  if (!base) return <Navigate to="/" replace />;
+
+  const activity = {
+    title: override.title?.trim() || base.title,
+    longDescription: override.longDescription?.trim() || base.longDescription,
+    image: override.image?.trim() || base.image,
+  };
+
 
   return (
     <div className="homepage-background">

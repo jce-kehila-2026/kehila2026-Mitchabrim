@@ -4,11 +4,13 @@ import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
-import { getParliaments, getParticipants, getMeetings } from "@/services/parliamentsService.js";
+import { getParliaments } from "@/services/parliamentsService.js";
 import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
 import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
 import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
 
+import { getJoinRequests } from "@/services/joinRequestsService.js";
+import { getFinancialRecords } from "@/services/financialService.js";
 import { 
   HeartHandshake, 
   Handshake, 
@@ -78,17 +80,6 @@ const CHART_COLORS = [
   "#bf360c",
 ];
 
-const formatDeletedAt = (deletedAt) => {
-  if (!deletedAt) return "";
-  if (deletedAt.toDate && typeof deletedAt.toDate === "function") {
-    return deletedAt.toDate().toLocaleDateString("he-IL");
-  }
-  if (deletedAt.seconds) {
-    return new Date(deletedAt.seconds * 1000).toLocaleDateString("he-IL");
-  }
-  return String(deletedAt);
-};
-
 /* ============================================================
    REPORT DEFINITIONS - All data comes from Firebase only
    No SEED data - pure Firestore connection
@@ -136,6 +127,11 @@ const REPORT_TYPES = {
       { key: "language", label: "שפת דיבור" },
       { key: "isArchived", label: "מצב ארכיב" },
       { key: "deletedAt", label: "תאריך מחיקה" },
+      { key: "projectName", label: "שם הפרויקט" },
+      { key: "projectYear", label: "שנת פרויקט" },
+      { key: "groupName", label: "קבוצה מחלקת בפרויקט" },
+      { key: "receives", label: "מקבל חבילה בפרויקט" },
+      { key: "delivery", label: "סטטוס מסירה בפרויקט" },
     ],
     defaults: ["name", "gender", "address", "mobile", "neighborhood", "status"],
     filters: [
@@ -155,7 +151,7 @@ const REPORT_TYPES = {
     transform: (item) => ({
       ...item,
       isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: formatDeletedAt(item.deletedAt),
+      deletedAt: item.deletedAt || "",
     }),
   },
   volunteers: {
@@ -172,7 +168,7 @@ const REPORT_TYPES = {
           if (g.name) groupTypeMap[g.name] = g.type;
         });
         return (vols || []).map((v) => {
-          const isGroup = v.group && v.group !== "ללא קבוצה" && v.group !== "עצמאי" && v.group !== "עצמאיים";
+          const isGroup = v.group && v.group !== "ללא קבוצה";
           return {
             ...v,
             volunteerType: isGroup ? "קבוצה" : "עצמאי",
@@ -186,6 +182,7 @@ const REPORT_TYPES = {
     },
     fields: [
       { key: "name", label: "שם מלא" },
+      { key: "gender", label: "מגדר" },
       { key: "phone", label: "טלפון" },
       { key: "volunteerType", label: "סוג מתנדב" },
       { key: "group", label: "קבוצה" },
@@ -199,11 +196,10 @@ const REPORT_TYPES = {
       { key: "address", label: "כתובת" },
       { key: "insurance", label: "ביטוח" },
       { key: "notes", label: "הערות" },
-      { key: "isArchived", label: "מצב ארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
-    defaults: ["name", "phone", "volunteerType", "group", "groupType", "status", "assigned", "start"],
+    defaults: ["name", "gender", "phone", "volunteerType", "group", "groupType", "status", "assigned", "start"],
     filters: [
+      { key: "gender", label: "מגדר", type: "select", options: ["זכר", "נקבה"] },
       { key: "volunteerType", label: "סוג מתנדב", type: "select", options: ["עצמאי", "קבוצה"] },
       { key: "group", label: "קבוצה", type: "select" },
       { key: "groupType", label: "סוג קבוצה", type: "select", options: ["סטודנטים", "בית ספר", "חברה", "עמותה", "עצמאי", "אחר"] },
@@ -224,12 +220,28 @@ const REPORT_TYPES = {
       { value: "start", label: "תאריך התחלה" },
     ],
     // ===== CHART DATA =====
-    getChartData: getVolunteerChartData,
-    transform: (item) => ({
-      ...item,
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: formatDeletedAt(item.deletedAt),
-    }),
+    getChartData: (data) => {
+      // Bar: Volunteers by Group
+      const groupCount = {};
+      data.forEach((item) => {
+        const key = item.group || "ללא קבוצה";
+        groupCount[key] = (groupCount[key] || 0) + 1;
+      });
+      const barData = Object.entries(groupCount)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+
+      // Pie: Volunteers by Status
+      const statusCount = {};
+      data.forEach((item) => {
+        const key = item.status || "ללא סטטוס";
+        statusCount[key] = (statusCount[key] || 0) + 1;
+      });
+      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
+
+      return { barData, pieData };
+    },
+    transform: (item) => item,
   },
   projects: {
     id: "projects",
@@ -273,15 +285,13 @@ const REPORT_TYPES = {
       { key: "groupNames", label: "קבוצות שותפות" },
       { key: "issues", label: "בעיות" },
       { key: "status", label: "סטטוס" },
-      { key: "isArchived", label: "מצב ארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
     defaults: ["name", "year", "status", "elderly", "delivered", "groupNames"],
     filters: [
       { key: "name", label: "פרויקט", type: "select" },
       { key: "status", label: "סטטוס", type: "select", options: ["מתוכנן", "בהכנה", "פעיל", "הסתיים"] },
       { key: "year", label: "שנה", type: "select" },
-      { key: "projectGroup", label: "קבוצה שותפה בפרויקט", type: "select" },
+      { key: "projectGroup", label: "קבוצה שותפה", type: "select" },
     ],
     sortOptions: [
       { value: "name", label: "שם" },
@@ -291,17 +301,13 @@ const REPORT_TYPES = {
     // ===== CHART DATA =====
     getChartData: (data) => {
       const barData = data
-        .map((item) => {
-          const name = item.name || "ללא שם";
-          const year = item.year ? ` (${item.year})` : "";
-          return {
-            name: `${name}${year}`,
-            delivered: Number(item.delivered) || 0,
-            total: Number(item.elderly) || 0,
-            year: item.year || "",
-            date: item.date || "",
-          };
-        })
+        .map((item) => ({
+          name: item.name || "ללא שם",
+          delivered: Number(item.delivered) || 0,
+          total: Number(item.elderly) || 0,
+          year: item.year || "",
+          date: item.date || "",
+        }))
         .sort((a, b) => {
           if (a.year !== b.year) {
             return String(a.year).localeCompare(String(b.year));
@@ -314,8 +320,6 @@ const REPORT_TYPES = {
     transform: (item) => ({
       ...item,
       progress: item.elderly ? Math.round((item.delivered / item.elderly) * 100) : 0,
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: formatDeletedAt(item.deletedAt),
     }),
   },
   parliaments: {
@@ -326,41 +330,8 @@ const REPORT_TYPES = {
     collection: "parliaments",
     loadData: async () => {
       try {
-        const list = await getParliaments();
-        const today = new Date().toISOString().slice(0, 10);
-        
-        const resolved = await Promise.all(
-          (list || []).map(async (p) => {
-            try {
-              const [parts, meets] = await Promise.all([
-                getParticipants(p.id).catch(() => []),
-                getMeetings(p.id).catch(() => []),
-              ]);
-              const nextMeeting = meets
-                .filter((m) => m.date && m.date >= today)
-                .sort((a, b) => String(a.date).localeCompare(String(b.date))
-                  || String(a.startTime || "").localeCompare(String(b.startTime || "")));
-              
-              const pastMeetingsCount = meets.filter(m => m.date && m.date <= today).length;
-              
-              return {
-                ...p,
-                members: parts.length,
-                meetings: pastMeetingsCount,
-                nextDate: nextMeeting.length ? nextMeeting[0].date : "",
-              };
-            } catch (err) {
-              console.warn("Failed to load participants/meetings for parliament", p.id, err);
-              return {
-                ...p,
-                members: 0,
-                meetings: 0,
-                nextDate: "",
-              };
-            }
-          })
-        );
-        return resolved || [];
+        const data = await getParliaments();
+        return data || [];
       } catch (error) {
         console.error("Failed to load parliaments from Firestore:", error);
         return [];
@@ -370,19 +341,15 @@ const REPORT_TYPES = {
       { key: "name", label: "שם הפרלמנט" },
       { key: "location", label: "מיקום" },
       { key: "area", label: "אזור" },
-      { key: "neighborhood", label: "שכונה" },
       { key: "coordinators", label: "מלווים" },
       { key: "members", label: "משתתפים" },
       { key: "nextDate", label: "מפגש הבא" },
       { key: "status", label: "סטטוס" },
       { key: "notes", label: "הערות" },
-      { key: "isArchived", label: "מצב ארכיב" },
-      { key: "deletedAt", label: "תאריך מחיקה" },
     ],
-    defaults: ["name", "location", "area", "neighborhood", "members", "nextDate", "status"],
+    defaults: ["name", "location", "area", "members", "nextDate", "status"],
     filters: [
       { key: "area", label: "אזור", type: "select" },
-      { key: "neighborhood", label: "שכונה", type: "select" },
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "בהכנה", "הסתיים"] },
     ],
     sortOptions: [
@@ -393,21 +360,19 @@ const REPORT_TYPES = {
     ],
     // ===== CHART DATA =====
     getChartData: (data) => {
-      // Bar: Parliament Meetings
+      // Bar: Parliament Members
       const barData = data
         .map((item) => ({
           name: item.name || "ללא שם",
-          meetings: item.meetings || 0,
+          members: item.members || 0,
         }))
-        .sort((a, b) => b.meetings - a.meetings);
+        .sort((a, b) => b.members - a.members);
 
       return { barData };
     },
     transform: (item) => ({
       ...item,
       coordinators: (item.coordinators || []).join(", "),
-      isArchived: item.isArchived ? "כן" : "לא",
-      deletedAt: formatDeletedAt(item.deletedAt),
     }),
   },
   financial: {
@@ -439,7 +404,6 @@ const REPORT_TYPES = {
     filters: [
       { key: "type", label: "סוג", type: "select", options: ["תרומה", "הוצאה"] },
       { key: "project", label: "פרויקט", type: "select" },
-      { key: "receiptType", label: "סוג קבלה", type: "select", options: ["קבלה רגילה", "קבלה 46"] },
     ],
     sortOptions: [
       { value: "date", label: "תאריך" },
@@ -484,17 +448,19 @@ const REPORT_TYPES = {
 /* ============================================================
    PDF Export Function
    ============================================================ */
-const exportToPDF = (report, rows, fields, filters, sort, options = {}) => {
+const exportToPDF = (report, rows, fields, filters, sort) => {
   if (!rows.length) {
     alert("אין נתונים לייצוא");
     return;
   }
 
-  const { fontSize = 14, landscape = false } = options;
-  const pageSize = landscape ? "A4 landscape" : "A4 portrait";
+  const fsInput = prompt("נא להזין גודל גופן לטבלה ב-PDF (ברירת מחדל 14):", "14") || "14";
+  const fontSize = parseInt(fsInput) && !isNaN(fsInput) ? Number(fsInput) : 14;
+
+  const isLandscape = confirm("האם ברצונך להפיק את ה-PDF לרוחב (Landscape)?\nלחץ על 'אישור' עבור לרוחב, או 'ביטול' עבור לאורך (Portrait).");
+  const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
 
   const cols = fields.map((k) => report.fields.find((f) => f.key === k)).filter(Boolean);
-  const columnCount = cols.length;
   const today = new Date().toLocaleDateString("he-IL");
 
   let filterChips = "";
@@ -520,62 +486,52 @@ const exportToPDF = (report, rows, fields, filters, sort, options = {}) => {
     const males = rows.filter((d) => d.gender === "זכר").length;
     const females = rows.filter((d) => d.gender === "נקבה").length;
     const archived = rows.filter((d) => d.isArchived === "כן" || d.isArchived === "כן").length;
+  let summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
+  const archived = rows.filter((d) => d.isArchived === "כן").length;
+  if (archived > 0) {
+    summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
+  }
 
+  if (report.id === "elderly") {
+    const active = rows.filter((d) => d.status === "פעיל").length;
+    const males = rows.filter((d) => d.gender === "זכר").length;
+    const females = rows.filter((d) => d.gender === "נקבה").length;
     summaryItems += `
       <div class="item">👥 סה"כ אזרחים ותיקים: <strong>${rows.length}</strong></div>
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
       <div class="item">👴 גברים: <strong>${males}</strong></div>
       <div class="item">👵 נשים: <strong>${females}</strong></div>
     `;
-    if (archived > 0) {
-      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
-    }
-  } else {
-    summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
-    const archived = rows.filter((d) => d.isArchived === "כן").length;
-    if (archived > 0) {
-      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
-    }
-
-    if (report.id === "volunteers") {
-      const active = rows.filter((d) => d.status === "פעיל").length;
-      const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
-      summaryItems += `
-        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-        <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
-      `;
-    } else if (report.id === "projects") {
-      const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
-      const active = rows.filter((d) => d.status === "פעיל").length;
-      summaryItems += `
-        <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
-        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-      `;
-    } else if (report.id === "financial") {
-      const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
-      const expenses = rows.filter((d) => d.type === "הוצאה");
-      const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      summaryItems += `
-        <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
-        <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
-        <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
-      `;
-    } else if (report.id === "parliaments") {
-      const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
-      summaryItems += `
-        <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
-      `;
-    }
+  } else if (report.id === "volunteers") {
+    const active = rows.filter((d) => d.status === "פעיל").length;
+    const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
+    summaryItems += `
+      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+      <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
+    `;
+  } else if (report.id === "projects") {
+    const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
+    const active = rows.filter((d) => d.status === "פעיל").length;
+    summaryItems += `
+      <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
+      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+    `;
+  } else if (report.id === "financial") {
+    const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
+    const expenses = rows.filter((d) => d.type === "הוצאה");
+    const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    summaryItems += `
+      <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
+      <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
+      <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
+    `;
+  } else if (report.id === "parliaments") {
+    const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
+    summaryItems += `
+      <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
+    `;
   }
-
-  // Dynamic font size computation based on column count for landscape
-  let computedFont = fontSize;
-  if (columnCount > 6) {
-    const diff = columnCount - 6;
-    computedFont = Math.max(8, fontSize - diff);
-  }
-  const tableFontSize = Math.min(fontSize, computedFont);
 
   const html = `<!doctype html>
 <html dir="rtl" lang="he">
@@ -619,26 +575,21 @@ const exportToPDF = (report, rows, fields, filters, sort, options = {}) => {
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: ${tableFontSize}px;
-      table-layout: fixed;
+      font-size: ${fontSize}px;
     }
     th {
       background: #8B0000;
       color: white;
-      padding: 8px 4px;
+      padding: 8px 6px;
       text-align: right;
       border: 1px solid #6b0000;
       font-weight: 600;
-      word-wrap: break-word;
-      word-break: break-word;
     }
     td {
-      padding: 6px 4px;
+      padding: 6px;
       border: 1px solid #bbb;
       text-align: right;
       vertical-align: middle;
-      word-wrap: break-word;
-      word-break: break-word;
     }
     tbody tr:nth-child(even) td {
       background: #f9f6f4;
@@ -838,7 +789,47 @@ const renderElderlyCharts = (data) => {
 };
 
 const renderVolunteerCharts = (data) => {
-  return <VolunteerCharts data={data} height={300} />;
+  const { barData, pieData } = REPORT_TYPES.volunteers.getChartData(data);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+      <SectionCard title="📊 מתנדבים לפי קבוצה">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={barData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" fill="#D4A574" name="מספר מתנדבים" />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+
+      <SectionCard title="🧩 התפלגות לפי סטטוס">
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {pieData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </SectionCard>
+    </div>
+  );
 };
 
 const renderProjectCharts = (data) => {
@@ -867,7 +858,7 @@ const renderParliamentCharts = (data) => {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
-      <SectionCard title="📊 מספר פגישות בפרלמנטים">
+      <SectionCard title="📊 מספר משתתפים בפרלמנטים">
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={barData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -875,7 +866,7 @@ const renderParliamentCharts = (data) => {
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="meetings" fill="#7b1fa2" name="מספר פגישות שבוצעו" />
+            <Bar dataKey="members" fill="#7b1fa2" name="מספר משתתפים" />
           </BarChart>
         </ResponsiveContainer>
       </SectionCard>
@@ -943,31 +934,6 @@ const ReportBuilder = ({ reportKey, onBack }) => {
   const [filters, setFilters] = useState({});
   const [sort, setSort] = useState("");
   const [showFields, setShowFields] = useState(false);
-  const [pdfFontSize, setPdfFontSize] = useState(14);
-  const [pdfLandscape, setPdfLandscape] = useState(false);
-
-  const handleFilterChange = (key, val) => {
-    const newFilters = { ...filters, [key]: val };
-
-    if (reportKey === "volunteers") {
-      if (key === "volunteerType" && val !== "קבוצה") {
-        delete newFilters.groupType;
-        delete newFilters.group;
-      }
-      if (key === "groupType") {
-        if (newFilters.group) {
-          const isValidGroup = allData.some(
-            (r) => r.group === newFilters.group && r.groupType === val
-          );
-          if (!isValidGroup) {
-            delete newFilters.group;
-          }
-        }
-      }
-    }
-
-    setFilters(newFilters);
-  };
 
   useEffect(() => {
     let alive = true;
@@ -1001,22 +967,15 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           const allGroups = [];
           allData.forEach((r) => {
             if (r.groupList) allGroups.push(...r.groupList);
-            else if (r.groupName) allGroups.push(r.groupName);
           });
           opts[f.key] = [...new Set(allGroups)].filter(Boolean);
         } else {
-          let list = [...new Set(allData.map((r) => r[f.key]).filter(Boolean))];
-          if (f.key === "groupName" && reportKey === "elderly") {
-            if (!list.includes("עצמאיים")) {
-              list.push("עצמאיים");
-            }
-          }
-          opts[f.key] = list;
+          opts[f.key] = [...new Set(allData.map((r) => r[f.key]).filter(Boolean))];
         }
       }
     });
     return opts;
-  }, [allData, report, reportKey]);
+  }, [allData, report]);
 
   const filteredData = useMemo(() => {
     let result = allData.filter((row) => {
@@ -1031,9 +990,6 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           if (k.endsWith("To")) return rowDate <= filterDate;
         }
         if (k === "projectGroup") {
-          if (reportKey === "elderly") {
-            return row.groupName === v;
-          }
           return row.groupList && row.groupList.includes(v);
         }
         return row[k] === v;
@@ -1063,45 +1019,22 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           type="date"
           className="input"
           value={value}
-          onChange={(e) => handleFilterChange(filter.key, e.target.value)}
+          onChange={(e) => setFilters({ ...filters, [filter.key]: e.target.value })}
           style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", minWidth: 160 }}
         />
       );
     }
 
     if (filter.type === "select") {
-      let options = filter.options || filterOptions[filter.key] || [];
-
-      // Cascading logic for volunteers report
-      if (reportKey === "volunteers") {
-        if (filter.key === "groupType") {
-          options = options.filter((o) => o !== "עצמאי");
-        } else if (filter.key === "group") {
-          const filteredGroups = allData
-            .filter((r) => r.volunteerType === "קבוצה" && (!filters.groupType || r.groupType === filters.groupType))
-            .map((r) => r.group)
-            .filter(Boolean);
-          options = [...new Set(filteredGroups)];
-        }
-      }
-
+      const options = filter.options || filterOptions[filter.key] || [];
       return (
         <select
           className="select"
           value={value}
-          onChange={(e) => handleFilterChange(filter.key, e.target.value)}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border: "1px solid #ddd",
-            minWidth: 160,
-            background: "white",
-            color: "#1a1a1a",
-          }}
+          onChange={(e) => setFilters({ ...filters, [filter.key]: e.target.value })}
+          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", minWidth: 160, background: "white" }}
         >
-          <option value="">
-            {`כל ${filter.label}`}
-          </option>
+          <option value="">{`כל ${filter.label}`}</option>
           {options.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -1142,13 +1075,12 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "white",
-            border: "1px solid #8B0000",
-            borderRadius: "6px",
+            background: "#f5f0ed",
+            border: "1px solid #ddd",
+            borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#8B0000",
-            fontWeight: "bold",
+            color: "#333",
           }}
         >
           → חזרה לדוחות
@@ -1165,19 +1097,12 @@ const ReportBuilder = ({ reportKey, onBack }) => {
       {report.filters.length > 0 && (
         <SectionCard title="סינון נתונים">
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {report.filters.map((f) => {
-              if (reportKey === "volunteers" && (f.key === "groupType" || f.key === "group")) {
-                if (filters.volunteerType !== "קבוצה") {
-                  return null;
-                }
-              }
-              return (
-                <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "#666", fontWeight: 500 }}>{f.label}</label>
-                  {renderFilterInput(f)}
-                </div>
-              );
-            })}
+            {report.filters.map((f) => (
+              <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "#666", fontWeight: 500 }}>{f.label}</label>
+                {renderFilterInput(f)}
+              </div>
+            ))}
           </div>
           <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
             {Object.values(filters).some((v) => v && v !== "") && (
@@ -1213,15 +1138,15 @@ const ReportBuilder = ({ reportKey, onBack }) => {
                 border: "1px solid #ddd",
                 minWidth: 200,
                 background: "white",
-                color: "#1a1a1a",
+                color: sort ? "#1a1a1a" : "#666",
                 fontSize: "14px",
               }}
             >
-              <option value="">
+              <option value="" style={{ color: "#666" }}>
                 ללא מיון
               </option>
               {report.sortOptions.map((o) => (
-                <option key={o.value} value={o.value}>
+                <option key={o.value} value={o.value} style={{ color: "#1a1a1a" }}>
                   {o.label}
                 </option>
               ))}
@@ -1344,10 +1269,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           className="btn btn-primary"
           onClick={() => {
             const sortLabel = sort ? report.sortOptions?.find((o) => o.value === sort)?.label || sort : "";
-            exportToPDF(report, filteredData, selectedFields, filters, sortLabel, {
-              fontSize: pdfFontSize,
-              landscape: pdfLandscape,
-            });
+            exportToPDF(report, filteredData, selectedFields, filters, sortLabel);
           }}
           disabled={!filteredData.length || !selectedFields.length}
           style={{
@@ -1359,74 +1281,10 @@ const ReportBuilder = ({ reportKey, onBack }) => {
             cursor: filteredData.length && selectedFields.length ? "pointer" : "not-allowed",
             opacity: filteredData.length && selectedFields.length ? 1 : 0.6,
             fontSize: "14px",
-            fontWeight: "bold",
           }}
         >
           📄 ייצוא ל-PDF
         </button>
-
-        {/* PDF Settings Panel */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            padding: "6px 16px",
-            background: "#fdfbfa",
-            border: "1px solid #e2d6cf",
-            borderRadius: "8px",
-            fontSize: "13px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label htmlFor="pdfFontSizeInput" style={{ fontWeight: 500, color: "#555" }}>PDF:</label>
-            <input
-              id="pdfFontSizeInput"
-              type="number"
-              min="10"
-              max="20"
-              value={pdfFontSize}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                if (!isNaN(val)) {
-                  setPdfFontSize(Math.min(20, Math.max(10, val)));
-                } else {
-                  setPdfFontSize("");
-                }
-              }}
-              onBlur={() => {
-                if (pdfFontSize === "" || isNaN(pdfFontSize)) {
-                  setPdfFontSize(14);
-                }
-              }}
-              style={{
-                width: "55px",
-                padding: "4px 8px",
-                border: "1px solid #ccc",
-                borderRadius: "4px",
-                textAlign: "center",
-              }}
-            />
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 500, color: "#555" }}>כיוון דף:</span>
-            <select
-              value={pdfLandscape ? "landscape" : "portrait"}
-              onChange={(e) => setPdfLandscape(e.target.value === "landscape")}
-              style={{
-                padding: "4px 8px",
-                border: "1px solid #ccc",
-                borderRadius: "4px",
-                background: "white",
-                color: "#1a1a1a",
-              }}
-            >
-              <option value="portrait">לאורך (Portrait)</option>
-              <option value="landscape">לרוחב (Landscape)</option>
-            </select>
-          </div>
-        </div>
         <div style={{ marginInlineStart: "auto", color: "#666", alignSelf: "center" }}>
           {loading ? "טוען…" : `${filteredData.length} רשומות`}
         </div>
@@ -1457,7 +1315,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
               </thead>
               <tbody>
                 {filteredData.slice(0, 50).map((row, i) => (
-                  <tr key={`${row.id || ''}-${row.projectName || ''}-${row.groupName || ''}-${i}`} style={i % 2 === 0 ? { background: "white" } : { background: "#f9f6f4" }}>
+                  <tr key={row.id || i} style={i % 2 === 0 ? { background: "white" } : { background: "#f9f6f4" }}>
                     {selectedFields.map((k) => (
                       <td key={k} style={{ padding: "8px 6px", border: "1px solid #ddd", textAlign: "right" }}>
                         {row[k] == null || row[k] === "" ? "—" : String(row[k])}
@@ -1645,13 +1503,10 @@ const HolidaySummary = ({ onBack }) => {
             onClick={onBack}
             style={{
               padding: "8px 16px",
-              background: "white",
-              border: "1px solid #8B0000",
-              borderRadius: "6px",
+              background: "#f5f0ed",
+              border: "1px solid #ddd",
+              borderRadius: "8px",
               cursor: "pointer",
-              fontSize: "14px",
-              color: "#8B0000",
-              fontWeight: "bold",
             }}
           >
             → חזרה
@@ -1673,13 +1528,12 @@ const HolidaySummary = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "white",
-            border: "1px solid #8B0000",
-            borderRadius: "6px",
+            background: "#f5f0ed",
+            border: "1px solid #ddd",
+            borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#8B0000",
-            fontWeight: "bold",
+            color: "#333",
           }}
         >
           → חזרה
@@ -1700,7 +1554,6 @@ const HolidaySummary = ({ onBack }) => {
                 border: "1px solid #ddd",
                 minWidth: 150,
                 background: "white",
-                color: "#1a1a1a",
               }}
             >
               <option value="">כל השנים</option>
@@ -1723,7 +1576,6 @@ const HolidaySummary = ({ onBack }) => {
                 border: "1px solid #ddd",
                 minWidth: 200,
                 background: "white",
-                color: "#1a1a1a",
               }}
             >
               <option value="">כל הפרויקטים</option>
@@ -1940,13 +1792,12 @@ ${chosen.map(buildGroupTable).join("")}
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "white",
-            border: "1px solid #8B0000",
-            borderRadius: "6px",
+            background: "#f5f0ed",
+            border: "1px solid #ddd",
+            borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#8B0000",
-            fontWeight: "bold",
+            color: "#333",
           }}
         >
           → חזרה
@@ -2001,60 +1852,6 @@ ${chosen.map(buildGroupTable).join("")}
                     >
                       📄 PDF
                     </button>
-                    /*
-                    דוחות:
-    • מצב ארכיב- להוריד
-    • בחירת עמודות- אפשר להוריד תאריך מחיקה
-    • גודל פונט להגדיל ל14 – אם אפשר להגדיר בעת ההוצאה לPDF את גדול הפונט זה יהיה טוב
-    • לבדוק הוצאה לPDF לצורה רוחבית כדי שיהיה אפשר להכניס מספר רב יותר של עמודות 
-    • יציאה לpdf- יש למטה סיכום נתונים אז לשנות מ"זכרית/נקבות" ל"גברים/נשים"
-דוחות מתנדבים:
-גרפים- גם פה אפשר שיופיע בראש העמוד של ניהול מתנדבים 
-    • להוסיף אפשרות לסינון או מיון לפי סוג הקבוצה
-    • יש 2 סוגי מתנדבים: עצמאי או קבוצה
-    • בתוך הקבוצות יש מגוון של קבוצות וצריך את האופציה לראות רשימה של קבוצה מסוימת 
-    • אפשר להוריד בעמודות את תאריך המחיקה וארכיב
-דוח פרויקטים-
-    • גרף- מעולה, שיופיע בציר X את הפרויקטים בסדר כרונולוגי לאורך השנים, ובציר Y  את כמות האזרחים ותיקים שקיבלו חבילה
-    • סינון- חג- לשנות, לשנות ל"פרויקט"
-    • מצב ארכיב- אפשר להוריד
-    • מספר א.ו- אפשר לכתוב אזרחים ותיקים
-פרויקטים
-    • להפעיל כפתור הדפסת רשימה
-דוח פרויקטים-
-    • להוסיף סינון לפי קבוצות (חברת חשמל, בית ספר..)
-שאוכל להוציא רשימה של אזרחים ותיקים בפוריקט ספציפי לפי הקבוצה שמחלקת לו. 
-    • עצמאיים זה גם קבוצה..
-דוח פרלמנטים
-    • גרף פרלמנטים- ציר X  זה שמות הפרלמנטים, ציר Y מספר הפגישות שנעשו בפרלמנט הזה
-אפשר להעביר לחלק ניהול הפרלמנטים
-    • סינונים- להוסיף גם סינון שכונה
-    • מצב ארכיב אפשר להוריד
-    • ליצור כפתורי הדפסה מתאימים לייצוא דוחות פרלמנט:
-להוסיף אופציה לראות מידע על פרלמנט ספציפי (רשימת משתתפים בפרלמנט, או דוח אחר של מספר הפגישות והמידע של פרלמנט ספצפי)
-
-
-
-
-
-
-
-
-כמו המידע שמופיע פה- רשימות משתתפים/רשימות הפגישות
-    • מחיקת משתתף בפרלמנט- שהנתונים שלו יישמרו לדוגמא בפגישות 1 ו-2, אבל מפגישה 3 הוא יימחק ואני אוכל להכניס משתתף חדש 
-דוחות בקשת הצטרפות-
-להוסיף את כל העמודות (שם מלא, טלפון, הערות, סוג פניה, אימייל- להוסיף אימייל בבקשת הצטרפות בלי חובה למלא את המייל בשביל לשלוח את הבקשה)
-דוחות כספיים:
-    • לחבר לחלק ניהול הכספים
-    • סיכום הכנסות והוצאות לפי חג- לא חייב באותו מסמך, 
-    • ליצור כמו דוח כפסי כללי- לכל פרויקט 
-    • להוסיף אופציה של סינון של 2 סוגי קבלות: קבלה רגילה וקבלה 46 (החזר לעסקים מסוימים/מעל סכום מסוים) וגם שיופיע באפשרות הדפסה של זה
-אם אפשר להוסיף הוצאה לדוחות של ארגונים ואנשי קשר-
-כמו הדוחות האחרים שיש אפשרות בחירת עמודות, בד"כ אוציא את כל העמודות 
-אם אפשר לבחור שיופיעו כל אנשי הקשר של הארגון --- השלמה אחרי שאסתכל באתר 
-לעבור על אנשי קשר לאזרחים הותיקים לראות שיש הכל 
-
-                    */
                   }
                 >
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -2141,13 +1938,12 @@ const FinancialChooser = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "white",
-            border: "1px solid #8B0000",
-            borderRadius: "6px",
+            background: "#f5f0ed",
+            border: "1px solid #ddd",
+            borderRadius: "8px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#8B0000",
-            fontWeight: "bold",
+            color: "#333",
           }}
         >
           → חזרה לדוחות

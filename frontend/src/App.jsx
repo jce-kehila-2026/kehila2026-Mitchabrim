@@ -29,6 +29,12 @@ import SiteContent from "./admin/SiteContent.jsx";
 import ProfileUpdateRequests from "./admin/ProfileUpdateRequests.jsx";
 import ElderlyContacts from "./admin/ElderlyContacts.jsx";
 import Organizations from "./admin/Organizations.jsx";
+import AdminProfile from "./pages/AdminProfile.jsx";
+import RequireReauth from "./components/RequireReauth.jsx";
+
+const SITE_CONTENT_DESC = "אזור זה שולט בתוכן האתר הציבורי — טקסטים בדף הבית, שותפים, כותרות גלריה, תוכן יצירת קשר ומידע הפוטר. שינויים כאן עלולים להשפיע על מה שהמבקרים רואים באתר הציבורי.";
+const SETTINGS_DESC = "אזור זה שולט בהגדרות המערכת, משתמשים, הרשאות ונתוני ניהול חשובים. שינויים כאן עלולים להשפיע על גישה ועל התנהגות המערכת.";
+
 
 import VolunteerDashboard from "./volunteer/VolunteerDashboard.jsx";
 import VolunteerReportForm from "./volunteer/VolunteerReportForm.jsx";
@@ -118,9 +124,11 @@ export default function App() {
       <Route path="/admin/financial" element={<Admin><Financial /></Admin>} />
       <Route path="/admin/reports" element={<Admin><Reports /></Admin>} />
       <Route path="/admin/volunteer-reports" element={<Admin><VolunteerReports /></Admin>} />
-      <Route path="/admin/settings" element={<Admin><Settings /></Admin>} />
-      <Route path="/admin/site-content" element={<Admin><SiteContent /></Admin>} />
+      <Route path="/admin/settings" element={<Admin><RequireReauth scope="settings" title="הגדרות" description={SETTINGS_DESC}><Settings /></RequireReauth></Admin>} />
+      <Route path="/admin/site-content" element={<Admin><RequireReauth scope="site-content" title="ניהול אתר ראשי" description={SITE_CONTENT_DESC}><SiteContent /></RequireReauth></Admin>} />
       <Route path="/admin/profile-update-requests" element={<Admin><ProfileUpdateRequests /></Admin>} />
+      <Route path="/admin/profile" element={<Admin><AdminProfile /></Admin>} />
+
 
       <Route path="/volunteer" element={<Vol><VolunteerDashboard /></Vol>} />
       <Route path="/volunteer/report/new" element={<Vol><VolunteerReportForm /></Vol>} />

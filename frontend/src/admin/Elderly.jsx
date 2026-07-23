@@ -34,15 +34,11 @@ import DataTable from "@/components/admin/DataTable.jsx";
 import TablePagination from "@/components/admin/TablePagination.jsx";
 import {
   getElderly,
-  getElderlyPage,
-  getElderlyCount,
-  getElderlyStatusCounts,
   createElderly,
   editElderly,
   deleteElderly,
 } from "@/services/elderlyService.js";
 import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
-import useFirestorePagination from "@/hooks/useFirestorePagination.js";
 import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
@@ -51,7 +47,8 @@ import { sanitizeFormData } from "@/utils/sanitize";
 /* ===== Options (shared with volunteers page) =====
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
    useAreasAndNeighborhoods hook — no hardcoded lists here. */
-const VOLUNTEER_STATUS_OPTIONS = ["כן", "לא מתאים", "לא רוצה"];
+const VOLUNTEER_STATUS_OPTIONS = ["כן", "לא", "קשר טלפוני"];
+const GENDER_OPTIONS = ["זכר", "נקבה"];
 const MARITAL_OPTIONS = ["רווק/ה", "נשוי/אה", "גרוש/ה", "אלמן/ה"];
 const LANGUAGE_OPTIONS = ["עברית", "ערבית", "אנגלית", "ספרדית", "צרפתית", "רוסית", "סינית", "יפנית"];
 const STATUS_OPTIONS = ["פעיל", "נפטר", "לא פעיל"];
@@ -84,7 +81,7 @@ const SEED = [
   { id: 6, firstName: "שלמה", lastName: "דהן", idNum: "067890123", birth: "1930-02-05", area: "צפון", neighborhood: "רוממה", address: "—", mobile: "", homePhone: "", contactName: "", contactPhone: "", lastContact: "", volStatus: "לא רוצה", volName: "", volId: null, assistance: "", marital: "אלמן/ה", country: "ישראל", language: "עברית", bio: "", parliament: "ללא פרלמנט", status: "נפטר", notes: "" },
 ];
 
-const volBadge = (v) => (v === "כן" ? "badge-green" : v === "לא מתאים" || v === "לא רוצה" ? "badge-orange" : "");
+const volBadge = (v) => (v === "כן" ? "badge-green" : v === "קשר טלפוני" ? "badge-orange" : v === "לא" ? "badge-gray" : "");
 const statusBadge = (s) => (s === "פעיל" ? "badge-green" : "badge-gray");
 const fullName = (e) => `${e.firstName || ""} ${e.lastName || ""}`.trim();
 
@@ -95,6 +92,7 @@ export default function Elderly() {
   const [showCharts, setShowCharts] = useState(true);
   const [openId, setOpenId] = useState(null);
   const [openVolunteer, setOpenVolunteer] = useState(null);
+  const [openContact, setOpenContact] = useState(null);
 
   // Area/Neighborhood data — single source of truth from settings/general.
   const {
@@ -110,7 +108,6 @@ export default function Elderly() {
   const [filterNeighborhood, setFilterNeighborhood] = useState("");
   const [filterMarital, setFilterMarital] = useState("");
   const [filterVolStatus, setFilterVolStatus] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
   const [search, setSearch] = useState("");
 
   // If the area changes and the previously-selected neighborhood is no longer
@@ -122,66 +119,16 @@ export default function Elderly() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterArea]);
 
-  // "Search / filter mode" — any filter or free-text search is active. In this
-  // mode Firestore cursor pagination cannot serve the multi-field client-side
-  // search (no external text-search index in the project), so the full
-  // collection is fetched once and filtered/sliced client-side. Users see a
-  // visible notice when this happens (see notice below the filters).
-  const hasFiltersOrSearch = !!(
-    filterArea || filterNeighborhood || filterMarital ||
-    filterVolStatus || filterStatus || search.trim()
-  );
-
   const PAGE_SIZE = 20;
 
-  // ---- Stats via count aggregations (no full collection read) ----
-  const [stats, setStats] = useState({ total: 0, connected: 0, without: 0 });
+  // Cache-invalidation counter (bumped after mutations to force refetch).
   const [statsVersion, setStatsVersion] = useState(0);
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const s = await getElderlyStatusCounts();
-        if (mounted) setStats(s);
-      } catch (err) {
-        console.error("getElderlyStatusCounts failed:", err);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [statsVersion]);
 
-  // ---- Total count (drives totalPages in cursor mode) ----
-  const [totalCount, setTotalCount] = useState(null);
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const c = await getElderlyCount();
-        if (mounted) setTotalCount(c);
-      } catch (err) {
-        console.error("getElderlyCount failed:", err);
-      }
-    })();
-  }, [statsVersion]);
-
-  // ---- Cursor pagination (real Firestore, 20 docs/page) ----
-  const fetchPage = useCallback(
-    ({ cursor }) => getElderlyPage({ pageSize: PAGE_SIZE, cursor }),
-    [],
-  );
-  const paged = useFirestorePagination({
-    fetchPage,
-    totalCount,
-    pageSize: PAGE_SIZE,
-    deps: [statsVersion, totalCount],
-  });
-
-  // ---- Full-collection cache (used ONLY in search/filter mode and for
-  // add/edit duplicate-id validation + print). Loaded lazily. ----
+  // ---- Full-collection cache. Loaded on mount so we can filter to מצב=פעיל
+  // and compute stats + charts client-side. ----
   const [fullData, setFullData] = useState(null);
   const [fullLoading, setFullLoading] = useState(false);
   const ensureFullData = useCallback(async () => {
-    if (fullData) return fullData;
     setFullLoading(true);
     try {
       const items = await getElderly();
@@ -196,19 +143,22 @@ export default function Elderly() {
     } finally {
       setFullLoading(false);
     }
-  }, [fullData]);
+  }, []);
 
-  // Load full collection on mount to feed the charts and allow client-side operations.
   useEffect(() => {
     ensureFullData();
-  }, [ensureFullData]);
+  }, [ensureFullData, statsVersion]);
+
+  // Only active seniors are shown in the table + stats + charts.
+  const activeData = useMemo(
+    () => (fullData || []).filter((e) => e.status === "פעיל"),
+    [fullData],
+  );
 
   const chartData = useMemo(() => {
-    if (!fullData) return { barData: [], pieData: [] };
-    
-    // Bar: Elderly by Neighborhood
+    // Bar: Elderly by Neighborhood (active only)
     const neighborhoodCount = {};
-    fullData.forEach((item) => {
+    activeData.forEach((item) => {
       const key = item.neighborhood || "ללא שכונה";
       neighborhoodCount[key] = (neighborhoodCount[key] || 0) + 1;
     });
@@ -216,22 +166,20 @@ export default function Elderly() {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
-    // Pie: Elderly by Status
-    const statusCount = {};
-    fullData.forEach((item) => {
-      const key = item.status || "ללא סטטוס";
-      statusCount[key] = (statusCount[key] || 0) + 1;
-    });
-    const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
+    // Pie: כן vs לא (volunteer status ratio)
+    const yes = activeData.filter((e) => e.volStatus === "כן").length;
+    const no = activeData.filter((e) => e.volStatus === "לא").length;
+    const pieData = [];
+    if (yes) pieData.push({ name: "כן", value: yes });
+    if (no) pieData.push({ name: "לא", value: no });
 
     return { barData, pieData };
-  }, [fullData]);
+  }, [activeData]);
 
-  // Filtered + sorted view (only meaningful in filter/search mode).
+  // Filtered + sorted view of the active seniors.
   const filteredFull = useMemo(() => {
-    if (!hasFiltersOrSearch || !fullData) return [];
     const q = search.trim().toLowerCase();
-    const sorted = [...fullData].sort((a, b) =>
+    const sorted = [...activeData].sort((a, b) =>
       fullName(a).localeCompare(fullName(b), "he"),
     );
     return sorted.filter((e) => {
@@ -239,32 +187,29 @@ export default function Elderly() {
       if (filterNeighborhood && e.neighborhood !== filterNeighborhood) return false;
       if (filterMarital && e.marital !== filterMarital) return false;
       if (filterVolStatus && e.volStatus !== filterVolStatus) return false;
-      if (filterStatus && e.status !== filterStatus) return false;
       if (q) {
         const hay = [
           fullName(e), e.idNum, e.mobile, e.homePhone, e.neighborhood,
-          e.area, e.address, e.notes, e.volName,
+          e.area, e.address, e.notes, e.volName, e.contactPersonName,
         ].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [hasFiltersOrSearch, fullData, filterArea, filterNeighborhood, filterMarital, filterVolStatus, filterStatus, search]);
+  }, [activeData, filterArea, filterNeighborhood, filterMarital, filterVolStatus, search]);
 
-  // Client-side pagination for filter/search mode.
   const [filterPage, setFilterPage] = useState(1);
   const filterTotalPages = Math.max(1, Math.ceil(filteredFull.length / PAGE_SIZE));
-  useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterMarital, filterVolStatus, filterStatus, search]);
+  useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterMarital, filterVolStatus, search]);
   useEffect(() => { if (filterPage > filterTotalPages) setFilterPage(filterTotalPages); }, [filterPage, filterTotalPages]);
   const filterPageStart = (filterPage - 1) * PAGE_SIZE;
-  const filterPageItems = filteredFull.slice(filterPageStart, filterPageStart + PAGE_SIZE);
+  const pageItems = filteredFull.slice(filterPageStart, filterPageStart + PAGE_SIZE);
+  const currentPage = filterPage;
+  const totalPages = filterTotalPages;
+  const paginationTotal = filteredFull.length;
+  const loading = fullLoading;
 
-  // Unified view used by the table + pagination bar.
-  const pageItems = hasFiltersOrSearch ? filterPageItems : paged.items;
-  const currentPage = hasFiltersOrSearch ? filterPage : paged.page;
-  const totalPages = hasFiltersOrSearch ? filterTotalPages : paged.totalPages;
-  const paginationTotal = hasFiltersOrSearch ? filteredFull.length : (totalCount ?? 0);
-  const loading = hasFiltersOrSearch ? fullLoading : paged.loading;
+
 
   // Resolve the open elderly record from whichever list is currently visible.
   const openElderly =
@@ -297,15 +242,12 @@ export default function Elderly() {
       console.error("editElderly failed:", err);
       alert("שמירה ל-Firebase נכשלה. השינוי נשמר מקומית בלבד.");
     }
-    // Patch caches locally so the UI reflects the edit without a full reload.
-    paged.patchItem(id, updated);
     if (fullData) {
       const next = fullData.map((e) => (e.id === id ? { ...e, ...updated, id } : e));
       setFullData(next);
       const affected = new Set([prevVolId, updated.volId].filter(Boolean));
       for (const vid of affected) await syncVolunteerStatus(vid, next);
     } else if (prevVolId || updated.volId) {
-      // Best-effort: load full to keep volunteer statuses correct.
       const next = await ensureFullData();
       const affected = new Set([prevVolId, updated.volId].filter(Boolean));
       for (const vid of affected) await syncVolunteerStatus(vid, next);
@@ -323,7 +265,6 @@ export default function Elderly() {
       alert("הוספה ל-Firebase נכשלה.");
     }
     setShowAdd(false);
-    setFullData(null); // invalidate cache
     invalidate();
     if (entry.volId) {
       const next = await ensureFullData();
@@ -340,7 +281,6 @@ export default function Elderly() {
       console.error("deleteElderly failed:", err);
       alert("מחיקה מ-Firebase נכשלה.");
     }
-    paged.removeItem(elderly.id);
     if (fullData) setFullData(fullData.filter((e) => e.id !== elderly.id));
     setOpenId(null);
     invalidate();
@@ -355,14 +295,16 @@ export default function Elderly() {
     setShowPrint(true);
   };
   const handleOpenAdd = async () => {
-    // Load full for duplicate-idNum validation inside the form.
     ensureFullData();
     setShowAdd(true);
   };
 
-  const connectedCount = stats.connected;
-  const withoutCount = stats.without;
-  const totalStat = stats.total;
+  const totalStat = activeData.length;
+  const connectedCount = activeData.filter((e) => e.volStatus === "כן").length;
+  const phoneContactCount = activeData.filter((e) => e.volStatus === "קשר טלפוני").length;
+  const withoutCount = activeData.filter((e) => e.volStatus === "לא" || !e.volStatus).length;
+
+
 
 
 
@@ -395,6 +337,7 @@ export default function Elderly() {
         <StatsCard icon="👵" title="סה״כ אזרחים ותיקים" value={String(totalStat)} />
         <StatsCard icon="🤝" title="מחוברים למתנדב" value={String(connectedCount)} />
         <StatsCard icon="🚫" title="ללא מתנדב" value={String(withoutCount)} />
+        <StatsCard icon="📞" title="קשר טלפוני" value={String(phoneContactCount)} />
       </div>
 
       {showCharts && fullData && (
@@ -412,7 +355,7 @@ export default function Elderly() {
             </ResponsiveContainer>
           </SectionCard>
 
-          <SectionCard title="🧩 התפלגות לפי סטטוס">
+          <SectionCard title="🧩 התפלגות לפי סטטוס מתנדב">
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -476,25 +419,15 @@ export default function Elderly() {
               onChange: (e) => setFilterVolStatus(e.target.value),
               options: ["", ...VOLUNTEER_STATUS_OPTIONS],
             },
-            {
-              label: "סטטוס",
-              value: filterStatus,
-              onChange: (e) => setFilterStatus(e.target.value),
-              options: ["", ...STATUS_OPTIONS],
-            },
           ]}
         />
-        {hasFiltersOrSearch && (
-          <div style={{
-            background: "#eef4ff", border: "1px solid #c7d7ff", color: "#1e3a8a",
-            borderRadius: 10, padding: "8px 12px", margin: "10px 0", fontSize: 13,
-          }}>
-            מצב חיפוש/סינון פעיל — כדי לתמוך בחיפוש חופשי רב-שדות, האוסף המלא נטען פעם אחת ומסונן בצד הלקוח.
-            נקו את החיפוש והמסננים כדי לחזור לטעינה מדפדפת (20 רשומות בכל פעם) מ-Firebase.
-          </div>
-        )}
         <DataTable
           columns={[
+            {
+              key: "_idx",
+              label: "#",
+              render: (r) => r._idx,
+            },
             {
               key: "name",
               label: "שם",
@@ -520,15 +453,19 @@ export default function Elderly() {
                   "—"
                 ),
             },
-
             {
-              key: "status",
-              label: "מצב",
-              render: (r) => <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>,
+              key: "contactPerson",
+              label: "איש קשר",
+              render: (r) =>
+                r.contactPersonName ? (
+                  <button className="link-btn" onClick={() => setOpenContact(r)}>{r.contactPersonName}</button>
+                ) : (
+                  "—"
+                ),
             },
             { key: "notes", label: "הערות" },
           ]}
-          data={pageItems}
+          data={pageItems.map((r, i) => ({ ...r, _idx: filterPageStart + i + 1 }))}
         />
         <TablePagination
           currentPage={currentPage}
@@ -536,9 +473,9 @@ export default function Elderly() {
           totalCount={paginationTotal}
           pageSize={PAGE_SIZE}
           loading={loading}
-          onNext={() => hasFiltersOrSearch ? setFilterPage((p) => Math.min(filterTotalPages, p + 1)) : paged.next()}
-          onPrevious={() => hasFiltersOrSearch ? setFilterPage((p) => Math.max(1, p - 1)) : paged.prev()}
-          onPageChange={(p) => hasFiltersOrSearch ? setFilterPage(p) : paged.goToPage(p)}
+          onNext={() => setFilterPage((p) => Math.min(filterTotalPages, p + 1))}
+          onPrevious={() => setFilterPage((p) => Math.max(1, p - 1))}
+          onPageChange={(p) => setFilterPage(p)}
         />
 
 
@@ -564,6 +501,9 @@ export default function Elderly() {
       )}
       {openVolunteer && (
         <VolunteerQuickModal entry={openVolunteer} onClose={() => setOpenVolunteer(null)} />
+      )}
+      {openContact && (
+        <ContactQuickModal entry={openContact} onClose={() => setOpenContact(null)} />
       )}
       {showPrint && fullData && (
         <PrintReportModal
@@ -615,6 +555,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
             <D label="שם משפחה" value={entry.lastName} />
             <D label="ת.ז" value={entry.idNum} />
             <D label="תאריך לידה" value={entry.birth} />
+            <D label="מגדר" value={entry.gender} />
             <D label="מצב משפחתי" value={entry.marital} />
           </div>
         </div>
@@ -670,7 +611,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
           <h4>התנדבות</h4>
           <div className="detail-grid">
             <D label="סטטוס מתנדב" value={<span className={`badge ${volBadge(entry.volStatus)}`}>{entry.volStatus}</span>} />
-            {(entry.volStatus === "כן" || entry.volStatus === "לא מתאים") && (
+            {entry.volStatus === "כן" && (
               <D label="שם מתנדב" value={entry.volName} />
             )}
             <D label="סיוע" value={entry.assistance} />
@@ -723,14 +664,14 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
 
   const [f, setF] = useState(
     initial || {
-      firstName: "", lastName: "", idNum: "", birth: "",
+      firstName: "", lastName: "", idNum: "", birth: "", gender: "",
       mobile: "", homePhone: "",
       area: "", neighborhood: "", address: "",
       lastContact: "",
       contactPersonId: null, contactPersonName: "", contactPersonPhone: "",
       contactPersonRelationType: "", contactPersonEmail: "",
       contactPersonStatus: "", contactPersonNotes: "",
-      volStatus: "לא רוצה", volName: "",
+      volStatus: "לא", volName: "",
       assistance: "", marital: MARITAL_OPTIONS[0],
       country: "ישראל", language: "עברית",
       bio: "",
@@ -796,7 +737,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   };
 
 
-  const showVolName = f.volStatus === "כן" || f.volStatus === "לא מתאים";
+  const showVolName = f.volStatus === "כן";
 
   const [fieldErrors, setFieldErrors] = useState({});
 
@@ -861,6 +802,13 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               {fieldErrors.idNum && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.idNum}</div>}
             </div>
             <div className="field"><label>תאריך לידה</label><input className="input" type="date" value={f.birth} onChange={set("birth")} />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
+            <div className="field">
+              <label>מגדר</label>
+              <select className="select" value={f.gender || ""} onChange={set("gender")}>
+                <option value="">בחר מגדר</option>
+                {GENDER_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
             <div className="field">
               <label>מצב משפחתי</label>
               <select className="select" value={f.marital} onChange={set("marital")}>
@@ -1028,6 +976,39 @@ function VolunteerQuickModal({ entry, onClose }) {
             <div className="item"><label>שכונה</label><div>{entry.neighborhood}</div></div>
             <div className="item"><label>סטטוס שיוך</label><div>{entry.volStatus}</div></div>
           </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>סגירה</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===== Contact person quick info modal ===== */
+function ContactQuickModal({ entry, onClose }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <h2>איש קשר — {entry.contactPersonName || "—"}</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="form-section">
+          <div className="detail-grid">
+            <div className="item"><label>שם איש קשר</label><div>{entry.contactPersonName || "—"}</div></div>
+            <div className="item"><label>סוג קשר</label><div>{entry.contactPersonRelationType || "—"}</div></div>
+            <div className="item"><label>טלפון</label><div>{entry.contactPersonPhone || "—"}</div></div>
+            <div className="item"><label>מייל</label><div>{entry.contactPersonEmail || "—"}</div></div>
+            <div className="item"><label>סטטוס</label><div>{entry.contactPersonStatus || "—"}</div></div>
+            <div className="item"><label>שייך ל</label><div>{fullName(entry)}</div></div>
+          </div>
+          {entry.contactPersonNotes && (
+            <div className="field" style={{ marginTop: 10 }}>
+              <label>הערות</label>
+              <div>{entry.contactPersonNotes}</div>
+            </div>
+          )}
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>סגירה</button>
