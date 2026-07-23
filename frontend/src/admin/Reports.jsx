@@ -99,85 +99,15 @@ const REPORT_TYPES = {
     id: "elderly",
     icon: "👵",
     label: "דוח אזרחים ותיקים",
-    description: "פילוח לפי שכונה, אזור, סטטוס ופרויקטים",
+    description: "פילוח לפי שכונה, אזור, סטטוס ופרלמנטים",
     collection: "elderly",
     loadData: async () => {
       try {
-        const [elderly, projs, volGroups] = await Promise.all([
-          getElderly(),
-          getProjects(),
-          getVolunteerGroups(),
-        ]);
-
-        const groupMap = {
-          "עצמאי": "עצמאיים",
-          "עצמאיים": "עצמאיים",
-          "": "עצמאיים",
-          "undefined": "עצמאיים",
-          "null": "עצמאיים",
-        };
-        volGroups.forEach((g) => {
-          groupMap[g.id] = g.name;
-        });
-
-        // For each project, fetch its elderly participants
-        const elderlyProjMap = {}; // elderlyId -> Array of project participations
-        await Promise.all(
-          projs.map(async (p) => {
-            try {
-              const participants = await getElderlyParticipants(p.id);
-              participants.forEach((ep) => {
-                const elderlyId = ep.id;
-                if (!elderlyProjMap[elderlyId]) {
-                  elderlyProjMap[elderlyId] = [];
-                }
-                elderlyProjMap[elderlyId].push({
-                  projectName: p.name,
-                  projectYear: p.year,
-                  groupName: groupMap[ep.assignedGroupId] || "עצמאיים",
-                  receives: ep.receives || "כן",
-                  delivery: ep.delivery || "ממתין למסירה",
-                  notes: ep.notes || "",
-                });
-              });
-            } catch (err) {
-              console.warn("Failed to load participants for project", p.id, err);
-            }
-          })
-        );
-
-        const allRows = [];
-        elderly.forEach((e) => {
-          const participations = elderlyProjMap[e.id] || [];
-          const baseName = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "";
-          if (participations.length === 0) {
-            allRows.push({
-              ...e,
-              name: baseName,
-              projectName: "—",
-              projectYear: "—",
-              groupName: "—",
-              receives: "—",
-              delivery: "—",
-              projectNotes: "",
-            });
-          } else {
-            participations.forEach((part) => {
-              allRows.push({
-                ...e,
-                name: baseName,
-                projectName: part.projectName,
-                projectYear: part.projectYear,
-                groupName: part.groupName,
-                receives: part.receives,
-                delivery: part.delivery,
-                projectNotes: part.notes,
-              });
-            });
-          }
-        });
-
-        return allRows;
+        const elderly = await getElderly();
+        return (elderly || []).map((e) => ({
+          ...e,
+          name: `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "",
+        }));
       } catch (error) {
         console.error("Failed to load elderly report data:", error);
         return [];
@@ -205,15 +135,10 @@ const REPORT_TYPES = {
       { key: "marital", label: "מצב משפחתי" },
       { key: "country", label: "ארץ לידה" },
       { key: "language", label: "שפת דיבור" },
-      { key: "projectName", label: "שם הפרויקט" },
-      { key: "projectYear", label: "שנת פרויקט" },
-      { key: "groupName", label: "קבוצה מחלקת בפרויקט" },
-      { key: "receives", label: "מקבל חבילה בפרויקט" },
-      { key: "delivery", label: "סטטוס מסירה בפרויקט" },
       { key: "isArchived", label: "מצב ארכיב" },
       { key: "deletedAt", label: "תאריך מחיקה" },
     ],
-    defaults: ["name", "gender", "address", "mobile", "projectName", "groupName", "delivery"],
+    defaults: ["name", "gender", "address", "mobile", "neighborhood", "status"],
     filters: [
       { key: "gender", label: "מגדר", type: "select", options: ["זכר", "נקבה"] },
       { key: "neighborhood", label: "שכונה", type: "select" },
@@ -221,16 +146,12 @@ const REPORT_TYPES = {
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "נפטר", "לא פעיל"] },
       { key: "volStatus", label: "סטטוס מתנדב", type: "select", options: ["כן", "לא מתאים", "לא רוצה"] },
       { key: "parliament", label: "פרלמנט", type: "select" },
-      { key: "projectName", label: "פרויקט", type: "select" },
-      { key: "groupName", label: "קבוצה מחלקת בפרויקט", type: "select" },
-      { key: "delivery", label: "סטטוס מסירה בפרויקט", type: "select", options: ["נמסר", "ממתין למסירה", "לא נמסר"] },
     ],
     sortOptions: [
       { value: "name", label: "שם (א-ב)" },
       { value: "-name", label: "שם (ב-א)" },
       { value: "neighborhood", label: "שכונה" },
       { value: "lastContact", label: "תאריך יצירת קשר אחרון" },
-      { value: "projectName", label: "שם הפרויקט" },
     ],
     transform: (item) => ({
       ...item,
@@ -649,17 +570,13 @@ const exportToPDF = (report, rows, fields, filters, sort, options = {}) => {
 
   let summaryItems = "";
   if (report.id === "elderly") {
-    const uniqueElderly = Array.from(
-      new Map(rows.map((r) => [r.idNum || r.id, r])).values()
-    );
-    const active = uniqueElderly.filter((d) => d.status === "פעיל").length;
-    const males = uniqueElderly.filter((d) => d.gender === "זכר").length;
-    const females = uniqueElderly.filter((d) => d.gender === "נקבה").length;
-    const archived = uniqueElderly.filter((d) => d.isArchived === "כן").length;
+    const active = rows.filter((d) => d.status === "פעיל").length;
+    const males = rows.filter((d) => d.gender === "זכר").length;
+    const females = rows.filter((d) => d.gender === "נקבה").length;
+    const archived = rows.filter((d) => d.isArchived === "כן" || d.isArchived === "כן").length;
 
     summaryItems += `
-      <div class="item">📊 סה"כ שורות (שיבוצים): <strong>${rows.length}</strong></div>
-      <div class="item">👥 סה"כ אזרחים ייחודיים: <strong>${uniqueElderly.length}</strong></div>
+      <div class="item">👥 סה"כ אזרחים ותיקים: <strong>${rows.length}</strong></div>
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
       <div class="item">👴 גברים: <strong>${males}</strong></div>
       <div class="item">👵 נשים: <strong>${females}</strong></div>
