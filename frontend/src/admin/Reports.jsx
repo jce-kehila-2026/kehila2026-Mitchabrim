@@ -8,9 +8,6 @@ import { getParliaments } from "@/services/parliamentsService.js";
 import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
 import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
 import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
-
-import { getJoinRequests } from "@/services/joinRequestsService.js";
-import { getFinancialRecords } from "@/services/financialService.js";
 import { 
   HeartHandshake, 
   Handshake, 
@@ -485,52 +482,54 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
     const active = rows.filter((d) => d.status === "פעיל").length;
     const males = rows.filter((d) => d.gender === "זכר").length;
     const females = rows.filter((d) => d.gender === "נקבה").length;
-    const archived = rows.filter((d) => d.isArchived === "כן" || d.isArchived === "כן").length;
-  let summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
-  const archived = rows.filter((d) => d.isArchived === "כן").length;
-  if (archived > 0) {
-    summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
-  }
+    const archived = rows.filter((d) => d.isArchived === "כן").length;
 
-  if (report.id === "elderly") {
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    const males = rows.filter((d) => d.gender === "זכר").length;
-    const females = rows.filter((d) => d.gender === "נקבה").length;
     summaryItems += `
       <div class="item">👥 סה"כ אזרחים ותיקים: <strong>${rows.length}</strong></div>
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
       <div class="item">👴 גברים: <strong>${males}</strong></div>
       <div class="item">👵 נשים: <strong>${females}</strong></div>
     `;
-  } else if (report.id === "volunteers") {
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
-    summaryItems += `
-      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-      <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
-    `;
-  } else if (report.id === "projects") {
-    const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    summaryItems += `
-      <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
-      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-    `;
-  } else if (report.id === "financial") {
-    const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
-    const expenses = rows.filter((d) => d.type === "הוצאה");
-    const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    summaryItems += `
-      <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
-      <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
-      <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
-    `;
-  } else if (report.id === "parliaments") {
-    const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
-    summaryItems += `
-      <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
-    `;
+    if (archived > 0) {
+      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
+    }
+  } else {
+    summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
+    const archived = rows.filter((d) => d.isArchived === "כן").length;
+    if (archived > 0) {
+      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
+    }
+
+    if (report.id === "volunteers") {
+      const active = rows.filter((d) => d.status === "פעיל").length;
+      const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
+      summaryItems += `
+        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+        <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
+      `;
+    } else if (report.id === "projects") {
+      const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
+      const active = rows.filter((d) => d.status === "פעיל").length;
+      summaryItems += `
+        <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
+        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+      `;
+    } else if (report.id === "financial") {
+      const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
+      const expenses = rows.filter((d) => d.type === "הוצאה");
+      const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      summaryItems += `
+        <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
+        <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
+        <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
+      `;
+    } else if (report.id === "parliaments") {
+      const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
+      summaryItems += `
+        <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
+      `;
+    }
   }
 
   const html = `<!doctype html>
@@ -1075,12 +1074,13 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה לדוחות
@@ -1503,10 +1503,13 @@ const HolidaySummary = ({ onBack }) => {
             onClick={onBack}
             style={{
               padding: "8px 16px",
-              background: "#f5f0ed",
-              border: "1px solid #ddd",
-              borderRadius: "8px",
+              background: "white",
+              border: "1px solid #8B0000",
+              borderRadius: "6px",
               cursor: "pointer",
+              fontSize: "14px",
+              color: "#8B0000",
+              fontWeight: "bold",
             }}
           >
             → חזרה
@@ -1528,12 +1531,13 @@ const HolidaySummary = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה
@@ -1792,12 +1796,13 @@ ${chosen.map(buildGroupTable).join("")}
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה
@@ -1938,12 +1943,13 @@ const FinancialChooser = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה לדוחות
