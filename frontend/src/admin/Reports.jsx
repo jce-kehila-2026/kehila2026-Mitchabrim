@@ -6,7 +6,6 @@ import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
 import { getParliaments, getParticipants, getMeetings } from "@/services/parliamentsService.js";
 import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
-import { getJoinRequests } from "@/services/joinRequestsService.js";
 import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
 import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
 
@@ -410,59 +409,6 @@ const REPORT_TYPES = {
       isArchived: item.isArchived ? "כן" : "לא",
       deletedAt: formatDeletedAt(item.deletedAt),
     }),
-  },
-  joinRequests: {
-    id: "joinRequests",
-    icon: "✉️",
-    label: "דוח בקשות הצטרפות",
-    description: "בקשות וטיפול",
-    collection: "joinRequests",
-    loadData: async () => {
-      try {
-        const data = await getJoinRequests();
-        return (data || []).map((r) => ({
-          ...r,
-          name: r.fullName || r.name || "—",
-          email: r.email || "—",
-          phone: r.phone || "—",
-          type: r.type || "—",
-          note: r.note || "—",
-        }));
-      } catch (error) {
-        console.error("Failed to load join requests from Firestore:", error);
-        return [];
-      }
-    },
-    fields: [
-      { key: "name", label: "שם מלא" },
-      { key: "phone", label: "טלפון" },
-      { key: "email", label: "אימייל" },
-      { key: "type", label: "סוג פנייה" },
-      { key: "note", label: "הערות" },
-      { key: "status", label: "סטטוס" },
-    ],
-    defaults: ["name", "phone", "email", "type", "note", "status"],
-    filters: [
-      { key: "status", label: "סטטוס", type: "select", options: ["חדש", "בטיפול", "טופל"] },
-      { key: "type", label: "סוג פנייה", type: "select" },
-    ],
-    sortOptions: [
-      { value: "name", label: "שם" },
-      { value: "status", label: "סטטוס" },
-    ],
-    // ===== CHART DATA =====
-    getChartData: (data) => {
-      // Pie: Requests by Status
-      const statusCount = {};
-      data.forEach((item) => {
-        const key = item.status || "ללא סטטוס";
-        statusCount[key] = (statusCount[key] || 0) + 1;
-      });
-      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
-
-      return { pieData };
-    },
-    transform: (item) => item,
   },
   financial: {
     id: "financial",
@@ -937,36 +883,7 @@ const renderParliamentCharts = (data) => {
   );
 };
 
-const renderJoinRequestCharts = (data) => {
-  const { pieData } = REPORT_TYPES.joinRequests.getChartData(data);
 
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
-      <SectionCard title="🧩 התפלגות בקשות הצטרפות לפי סטטוס">
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {pieData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </SectionCard>
-    </div>
-  );
-};
 
 const renderFinancialCharts = (data) => {
   const { barData, pieData } = REPORT_TYPES.financial.getChartData(data);
@@ -1210,8 +1127,6 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         return renderProjectCharts(filteredData);
       case "parliaments":
         return renderParliamentCharts(filteredData);
-      case "joinRequests":
-        return renderJoinRequestCharts(filteredData);
       case "financial":
         return renderFinancialCharts(filteredData);
       default:
