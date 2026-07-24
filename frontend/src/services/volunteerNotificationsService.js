@@ -9,6 +9,7 @@ import {
   query,
   where,
   orderBy,
+  limit as fbLimit,
   onSnapshot,
   doc,
   updateDoc,
@@ -23,24 +24,61 @@ import { db } from "../firebase";
  * @param {(err: Error) => void} [onError] - optional error callback.
  * @returns {() => void} unsubscribe
  */
-export function subscribeVolunteerNotifications(volunteerAuthUid, onChange, onError) {
+export function subscribeVolunteerNotifications(
+  volunteerAuthUid,
+  onChange,
+  onError,
+  { maxRecent = 30 } = {}
+) {
   if (!volunteerAuthUid) {
     // Return a no-op unsubscribe so callers can always call it.
     return () => {};
   }
-  const q = query(
+  const recentQuery = query(
     collection(db, "volunteerNotifications"),
     where("volunteerAuthUid", "==", volunteerAuthUid),
-    orderBy("createdAt", "desc")
+    orderBy("createdAt", "desc"),
+    fbLimit(maxRecent)
   );
-  return onSnapshot(
-    q,
-    (snap) => onChange(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    (err) => {
-      if (onError) onError(err);
-      else console.warn("volunteerNotifications subscribe:", err.message);
-    }
+  const unreadQuery = query(
+    collection(db, "volunteerNotifications"),
+    where("volunteerAuthUid", "==", volunteerAuthUid),
+    where("read", "==", false)
   );
+
+  let recent = [];
+  let unreadCount = 0;
+  let stopped = false;
+  const emit = () => {
+    if (!stopped) onChange(recent, { unreadCount });
+  };
+  const reportError = (err) => {
+    if (onError) onError(err);
+    else console.warn("volunteerNotifications subscribe:", err.message);
+  };
+
+  const unsubscribeRecent = onSnapshot(
+    recentQuery,
+    (snap) => {
+      recent = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      emit();
+    },
+    reportError
+  );
+  const unsubscribeUnread = onSnapshot(
+    unreadQuery,
+    (snap) => {
+      unreadCount = snap.size;
+      emit();
+    },
+    reportError
+  );
+
+  return () => {
+    stopped = true;
+    unsubscribeRecent();
+    unsubscribeUnread();
+  };
 }
 
 /**

@@ -25,7 +25,7 @@ export default function PublicGallery() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const fetchedImages = await getPublicImages({ max: 500 });
+        const fetchedImages = await getPublicImages({ max: 200 });
         setImages(fetchedImages);
 
         const uniqueCategories = [...new Set(fetchedImages.map(img => img.category).filter(Boolean))];
@@ -137,12 +137,18 @@ export default function PublicGallery() {
                 <div
                   style={{
                     aspectRatio: "4/3",
-                    backgroundImage: `url(${img.url})`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
                     backgroundColor: "#f5f0ed",
+                    overflow: "hidden",
                   }}
-                />
+                >
+                  <img
+                    src={img.url}
+                    alt={img.title || ""}
+                    loading="lazy"
+                    decoding="async"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                </div>
                 <div style={{ padding: "12px 16px" }}>
                   <div style={{ fontWeight: "600", color: "#333" }}>{img.title}</div>
                   <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>

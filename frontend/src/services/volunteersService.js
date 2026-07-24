@@ -125,15 +125,10 @@ export async function getVolunteers() {
   const q = query(volunteersCollection, orderBy("createdAt", "desc"));
   const snapshot = await getDocs(q);
 
-  return snapshot.docs.map((docItem) => {
-    const data = docItem.data();
-    return {
-      id: docItem.id,
-      ...data,
-      isArchived: data.isArchived !== undefined ? data.isArchived : false,
-      deletedAt: data.deletedAt || null,
-    };
-  });
+  return snapshot.docs.map((docItem) => ({
+    id: docItem.id,
+    ...docItem.data(),
+  }));
 }
 
 export async function createVolunteer(volunteerData) {

@@ -77,7 +77,7 @@ export default function NewPassword() {
       <div className="login-page">
         <div className="login-container">
           <div className="login-box">
-            <img src="/logo.png" className="logo" alt="מתחברים" />
+            <img src="/logo.webp" className="logo" alt="מתחברים" width="840" height="507" fetchPriority="high" />
             <div className="header-text">
               <h1>איפוס סיסמה</h1>
               <p>מאמת...</p>
@@ -92,7 +92,7 @@ export default function NewPassword() {
     <div className="login-page">
       <div className="login-container">
         <div className="login-box">
-          <img src="/logo.png" className="logo" alt="מתחברים" />
+          <img src="/logo.webp" className="logo" alt="מתחברים" width="840" height="507" fetchPriority="high" />
           <div className="header-text">
             <h1>סיסמה חדשה</h1>
             <p>הזן סיסמה חדשה לחשבונך</p>

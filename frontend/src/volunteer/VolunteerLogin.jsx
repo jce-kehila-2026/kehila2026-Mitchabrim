@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import logo from "@/assets/logo.png";
 
 export default function VolunteerLogin() {
   const navigate = useNavigate();
@@ -10,7 +9,7 @@ export default function VolunteerLogin() {
     <div className="login-page">
       <form className="login-card" onSubmit={(e) => { e.preventDefault(); navigate("/volunteer"); }}>
         <div className="login-card-header">
-          <img src={logo} alt="מתחברים" />
+          <img src="/logo.webp" alt="מתחברים" width="840" height="507" fetchPriority="high" />
           <h1>אזור מתנדבים</h1>
           <p>התחברות למערכת דיווחי מתנדבים</p>
         </div>

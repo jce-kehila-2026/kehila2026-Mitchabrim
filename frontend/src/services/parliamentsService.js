@@ -23,15 +23,7 @@ const parliamentsCollection = collection(db, "parliaments");
 export async function getParliaments() {
   const q = query(parliamentsCollection, orderBy("createdAt", "desc"));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      ...data,
-      isArchived: data.isArchived !== undefined ? data.isArchived : false,
-      deletedAt: data.deletedAt || null,
-    };
-  });
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 export async function createParliament(parliamentData) {

@@ -2,17 +2,14 @@
 // Role/permission lookup + admin-side invite flow.
 //
 // Invite flow notes:
-//  - We create the Firebase Auth user from a SECONDARY Firebase app instance
-//    so the admin's own session is NOT replaced.
-//  - The new user receives a standard Firebase password-reset email, which
-//    they use to set their own password. No password is ever stored in
-//    Firestore, and the admin never types a password for them.
-//  - If the email already exists in Auth, we simply (re)send the reset email
-//    and upsert the Firestore document.
+//  - An App-Check-protected callable verifies the active Admin, creates the
+//    Auth account, and writes the canonical users/{uid} document.
+//  - The client sends the standard password-reset email only after the
+//    backend operation succeeds. No password is stored in Firestore.
 
-import { db } from "../firebase";
-import { initializeApp, deleteApp, getApps, getApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "firebase/auth";
+import { auth, db, getJoinRequestFunctions } from "../firebase";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
 import {
   collection,
   doc,
@@ -29,7 +26,6 @@ import {
 const COLLECTION = "users";
 
 const normalizeEmail = (email) => (email || "").trim().toLowerCase();
-const emailToId = (email) => normalizeEmail(email).replace(/[^a-z0-9]/g, "_");
 
 // `status` is authoritative. `active` is retained only as a compatibility
 // mirror for older UI/data consumers and must not grant access by itself.
@@ -62,24 +58,24 @@ const withCanonicalAccountStatus = (data) => {
 
 const devLog = (...args) => console.info("[auth-debug]", ...args);
 
-// --- Secondary Firebase app helper (so creating a user doesn't sign the admin out) ---
-const SECONDARY_NAME = "Secondary";
-const getSecondaryAuth = () => {
-  const primary = getApp();
-  const existing = getApps().find((a) => a.name === SECONDARY_NAME);
-  const app = existing || initializeApp(primary.options, SECONDARY_NAME);
-  return { app, auth: getAuth(app) };
+const bootstrapFields = (source, email) => {
+  const data = {
+    email,
+    fullName: source?.fullName || "",
+    displayName: source?.displayName || "",
+    phoneNumber: source?.phoneNumber || "",
+    role: source?.role,
+    status: source?.status,
+    active: source?.status === "active",
+  };
+  if (source?.role === "volunteer" && source?.linkedVolunteerId) {
+    data.linkedVolunteerId = source.linkedVolunteerId;
+  } else if (source?.role === "admin") {
+    data.linkedVolunteerId = null;
+  }
+  if (source?.createdAt) data.createdAt = source.createdAt;
+  return data;
 };
-const teardownSecondary = async ({ app, auth }) => {
-  try {
-    await signOut(auth);
-  } catch {}
-  try {
-    await deleteApp(app);
-  } catch {}
-};
-
-const randomPassword = () => `Tmp!${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}A1`;
 
 /**
  * Main login lookup. Order:
@@ -110,15 +106,19 @@ export const resolveUserAccess = async ({ uid, email }) => {
         const user = normalizeUser(d.id, canonicalData);
         // Migrate: if the doc id is not the auth UID, mirror it to users/{uid}
         if (uid && d.id !== uid) {
+          if (auth.currentUser?.uid !== uid || auth.currentUser.emailVerified !== true) {
+            return { success: false, error: "Verified invitation claim required" };
+          }
           try {
             await setDoc(
               doc(db, COLLECTION, uid),
-              { ...canonicalData, email: normalized },
+              bootstrapFields(canonicalData, normalized),
               { merge: true },
             );
             devLog("mirrored legacy doc to users/{uid}", { from: d.id, to: uid });
           } catch (e) {
             devLog("mirror failed", e.message);
+            return { success: false, error: "Invitation claim failed" };
           }
         }
         return { success: true, user };
@@ -172,14 +172,8 @@ export const listAllowedUsers = async () => {
 };
 
 /**
- * Invite a new user:
- *  - Create the Firebase Auth account (via a secondary app, so the admin
- *    session is preserved).
- *  - Write users/{uid} in Firestore with role/status.
- *  - Send a password-reset email so the user picks their own password.
- *
- * If the email already exists in Auth, we upsert Firestore (by email) and
- * resend the password-reset email instead of failing.
+ * Invite a new user through the Admin-authorized callable, then send the
+ * password-setup email after Auth and Firestore creation both succeed.
  */
 export const inviteUser = async ({ email, displayName, role, active = true, linkedVolunteerId = null }) => {
   const normalized = normalizeEmail(email);
@@ -219,84 +213,32 @@ export const inviteUser = async ({ email, displayName, role, active = true, link
     }
   }
 
-  const secondary = getSecondaryAuth();
   try {
-    let uid;
-    let createdNewAuth = false;
-    try {
-      const cred = await createUserWithEmailAndPassword(secondary.auth, normalized, randomPassword());
-      uid = cred.user.uid;
-      createdNewAuth = true;
-    } catch (err) {
-      if (err?.code !== "auth/email-already-in-use") {
-        throw err;
-      }
-      devLog("auth account already exists, will upsert + resend reset", { email: normalized });
-    }
-
-    // Send password-setup email (works for both new and existing auth accounts)
-    try {
-      await sendPasswordResetEmail(secondary.auth, normalized);
-    } catch (e) {
-      console.warn("sendPasswordResetEmail failed:", e.message);
-    }
-
-    // Upsert Firestore document. When the Auth account already existed we
-    // don't know the uid — fall back to a deterministic emailToId doc, which
-    // the user will mirror into users/{uid} on their first login (allowed by
-    // the self-bootstrap rule).
-    const docId = uid || emailToId(normalized);
-    const data = {
+    const functions = await getJoinRequestFunctions();
+    if (!functions) throw new Error("Application verification is not configured.");
+    const createInvitation = httpsCallable(functions, "inviteUser");
+    const response = await createInvitation({
       email: normalized,
-      fullName: displayName || "",
       displayName: displayName || "",
       role,
-      status: active ? "active" : "inactive",
       active,
-      updatedAt: serverTimestamp(),
-    };
-    if (role === "volunteer" && linkedVolunteerId) {
-      data.linkedVolunteerId = linkedVolunteerId;
-    } else if (role === "admin") {
-      // Never leave a stale volunteer link on an admin account.
-      data.linkedVolunteerId = null;
-    }
-    const existing = await getDoc(doc(db, COLLECTION, docId));
-    if (!existing.exists()) data.createdAt = serverTimestamp();
-    await setDoc(doc(db, COLLECTION, docId), data, { merge: true });
+      linkedVolunteerId: role === "volunteer" ? linkedVolunteerId : null,
+    });
 
-    // Link the Firebase Auth uid back onto the volunteer profile so that
-    // volunteers/{volunteerDocId}.authUid == auth.uid (used by the volunteer
-    // site's rules fallback). When the Auth account pre-existed we don't
-    // know the uid here — the rules also accept the linkedVolunteerId path
-    // via users/{uid}.linkedVolunteerId, so login still works.
-    if (role === "volunteer" && linkedVolunteerId) {
-      try {
-        await updateDoc(doc(db, "volunteers", linkedVolunteerId), {
-          authUid: uid || null,
-          // Sync the volunteer's email to the login email so that the
-          // users/{uid} self-bootstrap rule (which requires
-          // volunteers.email == auth.token.email) succeeds on first login
-          // when the Firebase Auth account already existed.
-          email: normalized,
-          updatedAt: serverTimestamp(),
-        });
-      } catch (e) {
-        console.warn("linkVolunteerAuthUid failed:", e.message);
-      }
-    }
+    // Do not report success until the password-setup email call also succeeds.
+    await sendPasswordResetEmail(auth, normalized);
 
     return {
       success: true,
-      createdNewAuth,
-      user: { id: docId, ...data },
+      createdNewAuth: response.data?.createdAuthUser === true,
       message: "המשתמש נוסף ונשלחה אליו הודעה להגדרת סיסמה",
     };
   } catch (error) {
     console.error("inviteUser error:", error);
-    return { success: false, error: error.message };
-  } finally {
-    await teardownSecondary(secondary);
+    const safeMessage = error?.code === "functions/already-exists"
+      ? "Email is already invited."
+      : "The invitation could not be completed. Please try again or review the account.";
+    return { success: false, error: safeMessage };
   }
 };
 
@@ -307,15 +249,12 @@ export const createAllowedUser = inviteUser;
 export const sendPasswordSetupEmail = async (email) => {
   const normalized = normalizeEmail(email);
   if (!normalized) return { success: false, error: "Email required" };
-  const secondary = getSecondaryAuth();
   try {
-    await sendPasswordResetEmail(secondary.auth, normalized);
+    await sendPasswordResetEmail(auth, normalized);
     return { success: true, message: "נשלח קישור להגדרת סיסמה מחדש" };
   } catch (error) {
     console.error("sendPasswordSetupEmail error:", error);
     return { success: false, error: error.message };
-  } finally {
-    await teardownSecondary(secondary);
   }
 };
 

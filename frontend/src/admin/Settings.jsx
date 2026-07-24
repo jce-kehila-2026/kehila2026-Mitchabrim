@@ -554,7 +554,7 @@ export default function Settings() {
   const safePhones = Array.isArray(phones) ? phones : [""];
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/setting_hero.png" title="הגדרות" subtitle="ניהול הגדרות מערכת, אזורים, שכונות והרשאות">
+    <AdminPageLayout heroImage="/admin-heroes/setting_hero.webp" title="הגדרות" subtitle="ניהול הגדרות מערכת, אזורים, שכונות והרשאות">
       
       {toastMessage && (
         <div className="admin-toast">

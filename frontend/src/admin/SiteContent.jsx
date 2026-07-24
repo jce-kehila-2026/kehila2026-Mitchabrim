@@ -104,7 +104,7 @@ export default function SiteContent() {
 
   if (loading) {
     return (
-      <AdminPageLayout heroImage="/admin-heroes/main_website_hero.png" title="ניהול אתר ראשי" subtitle="טוען...">
+      <AdminPageLayout heroImage="/admin-heroes/main_website_hero.webp" title="ניהול אתר ראשי" subtitle="טוען...">
         <div className="sc-loading">טוען תוכן...</div>
       </AdminPageLayout>
     );
@@ -114,7 +114,7 @@ export default function SiteContent() {
   if (!activeCard) {
     return (
       <AdminPageLayout
-        heroImage="/admin-heroes/main_website_hero.png"
+        heroImage="/admin-heroes/main_website_hero.webp"
         title="ניהול אתר ראשי"
         subtitle="ניהול תוכן האתר הראשי של ארגון מתחברים"
         actions={overviewActions}
@@ -141,7 +141,7 @@ export default function SiteContent() {
 
   return (
     <AdminPageLayout
-      heroImage="/admin-heroes/main_website_hero.png"
+      heroImage="/admin-heroes/main_website_hero.webp"
       title={activeMeta?.title || "עריכת סקציה"}
       subtitle={activeMeta?.description}
       actions={editorActions}

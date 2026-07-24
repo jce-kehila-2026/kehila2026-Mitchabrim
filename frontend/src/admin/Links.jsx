@@ -175,7 +175,7 @@ export default function Links() {
   };
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/links_hero.png"
+    <AdminPageLayout heroImage="/admin-heroes/links_hero.webp"
       title="מאגר קישורים"
       subtitle="קישורים חשובים ונגישים לצוות"
       actions={

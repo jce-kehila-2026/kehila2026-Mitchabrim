@@ -41,7 +41,7 @@ export default function ForgotPassword() {
     <div className="login-page">
       <div className="login-container">
         <div className="login-box">
-          <img src="/logo.png" className="logo" alt="מתחברים" />
+          <img src="/logo.webp" className="logo" alt="מתחברים" width="840" height="507" fetchPriority="high" />
           <div className="header-text">
             <h1>שכחתי את הסיסמה</h1>
             <p>נישלח לך קישור לאימייל לאיפוס הסיסמה</p>
