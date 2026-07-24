@@ -6,11 +6,12 @@ import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { useAuth } from "../context/AuthContext";
 
-import { getElderly } from "../services/elderlyService";
-import { getVolunteers } from "../services/volunteersService";
+import { getElderlyCount } from "../services/elderlyService";
+import { getVolunteersCount } from "../services/volunteersService";
 import { getProjects } from "../services/projectsService";
 import {
-  getJoinRequests,
+  getJoinRequestsCount,
+  getRecentJoinRequests,
   deleteJoinRequest,
 } from "../services/joinRequestsService";
 import {
@@ -52,18 +53,19 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [elderlyList, volunteersList, allProjects, joinReqList] =
+        const [elderlyCount, volunteersCount, allProjects, requestsCount, joinReqList] =
           await Promise.all([
-            getElderly(),
-            getVolunteers(),
+            getElderlyCount(),
+            getVolunteersCount(),
             getProjects(),
-            getJoinRequests(),
+            getJoinRequestsCount(),
+            getRecentJoinRequests(50),
           ]);
 
         setStats({
-          elderly: elderlyList.length,
-          volunteers: volunteersList.length,
-          requests: joinReqList.length,
+          elderly: elderlyCount,
+          volunteers: volunteersCount,
+          requests: requestsCount,
         });
 
         // Nearest upcoming/active project
@@ -285,6 +287,10 @@ export default function Dashboard() {
     try {
       await deleteJoinRequest(requestId);
       setRequests(requests.filter((r) => r.id !== requestId));
+      setStats((current) => ({
+        ...current,
+        requests: Math.max(0, Number(current.requests) - 1),
+      }));
       setSelectedRequest(null);
       setDeleteId(null);
       showToast("הפנייה נמחקה בהצלחה");
@@ -315,7 +321,7 @@ export default function Dashboard() {
   };
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/dashboard_hero.png"
+    <AdminPageLayout heroImage="/admin-heroes/dashboard_hero.webp"
       title={getGreeting()} 
       subtitle="ניהול ענייני המערכת והקהילה מכאן"
       actions={

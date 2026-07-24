@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import LoadingLine from "@/components/common/LoadingLine.jsx";
-import EmptyState from "@/components/common/EmptyState.jsx";
-import StatusBadge from "@/components/common/StatusBadge.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer.js";
 import { useAuth } from "@/context/AuthContext.jsx";
-import { getReportsForAuthUid } from "@/services/reportsService.js";
 import {
-  Calendar, Tag, User, Search, Plus, ChevronLeft,
-} from "lucide-react";
+  getReportsForAuthUidCount,
+  getReportsForAuthUidPage,
+} from "@/services/reportsService.js";
+import { Calendar, Tag, User, Search, Plus, ChevronLeft } from "lucide-react";
 
 const fmtDate = (val) => {
   if (!val) return "—";
@@ -18,37 +17,41 @@ const fmtDate = (val) => {
   try { return new Date(val).toLocaleDateString("he-IL"); } catch { return "—"; }
 };
 
-const statusLabel = (s) =>
-  s === "reviewed" ? "אושר" : s === "rejected" ? "נדחה" : "ממתין";
-const statusBadgeClass = (s) =>
-  s === "reviewed" ? "badge-green" : s === "rejected" ? "badge-orange" : "badge-gray";
-
-const FILTERS = [
-  { key: "all", label: "הכל" },
-  { key: "reviewed", label: "אושר" },
-  { key: "pending", label: "ממתין" },
-  { key: "rejected", label: "נדחה" },
-];
-
 export default function VolunteerReportsHistory() {
   const { volunteer, loading: volLoading, linked } = useCurrentVolunteer();
   const { user } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [cursor, setCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!user?.uid) { setReports([]); setLoading(false); return; }
       setLoading(true);
+      setError("");
       try {
-        const list = await getReportsForAuthUid(user.uid);
-        if (!cancelled) setReports(list);
+        const [pageResult, count] = await Promise.all([
+          getReportsForAuthUidPage({ authUid: user.uid, pageSize: 20 }),
+          getReportsForAuthUidCount(user.uid),
+        ]);
+        if (!cancelled) {
+          setReports(pageResult.items);
+          setCursor(pageResult.lastVisible);
+          setHasMore(pageResult.hasNextPage);
+          setTotalCount(count);
+        }
       } catch (err) {
         console.error("getReportsForAuthUid error:", err);
-        if (!cancelled) setReports([]);
+        if (!cancelled) {
+          setReports([]);
+          setError("שגיאה בטעינת הדוחות.");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -57,13 +60,33 @@ export default function VolunteerReportsHistory() {
     return () => { cancelled = true; };
   }, [user?.uid]);
 
+  const loadMore = async () => {
+    if (!user?.uid || !hasMore || loadingMore) return;
+    setLoadingMore(true);
+    setError("");
+    try {
+      const next = await getReportsForAuthUidPage({
+        authUid: user.uid,
+        pageSize: 20,
+        cursor,
+      });
+      setReports((current) => {
+        const byId = new Map(current.map((item) => [item.id, item]));
+        next.items.forEach((item) => byId.set(item.id, item));
+        return [...byId.values()];
+      });
+      setCursor(next.lastVisible);
+      setHasMore(next.hasNextPage);
+    } catch (err) {
+      console.error("load more reports error:", err);
+      setError("שגיאה בטעינת דוחות נוספים.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const filtered = useMemo(() => {
     return reports.filter((r) => {
-      if (filter !== "all") {
-        const s = r.status || "pending";
-        if (filter === "pending" && s !== "pending" && s) return false;
-        if (filter !== "pending" && s !== filter) return false;
-      }
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         const hay = [r.elderlyName, r.reportType, r.notes].filter(Boolean).join(" ").toLowerCase();
@@ -71,10 +94,8 @@ export default function VolunteerReportsHistory() {
       }
       return true;
     });
-  }, [reports, filter, search]);
+  }, [reports, search]);
 
-  const approvedCount = reports.filter((r) => r.status === "reviewed").length;
-  const pendingCount = reports.filter((r) => !r.status || r.status === "pending").length;
   const monthCount = reports.filter((r) => {
     const d = r.reportDate || r.createdAt;
     try {
@@ -117,24 +138,16 @@ export default function VolunteerReportsHistory() {
         <div className="vol-search-input">
           <Search size={16} color="var(--color-text-muted)" />
           <input
-            placeholder="חיפוש לפי שם, סוג מפגש או הערות..."
+            placeholder="חיפוש לפי שם, סוג מפגש או תיאור..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="vol-filter-pills">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              className={`vol-pill ${filter === f.key ? "active" : ""}`}
-              onClick={() => setFilter(f.key)}
-              type="button"
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
       </div>
+
+      {error && (
+        <div className="vol-alert-error">{error}</div>
+      )}
 
       {loading ? (
         <div className="vol-card vol-card-pad"><LoadingLine text="טוען דוחות..." /></div>
@@ -159,12 +172,8 @@ export default function VolunteerReportsHistory() {
                 <User size={14} /> {r.elderlyName || "—"}
               </span>
             </div>
-            <div className="cell">
-              <label>סטטוס</label>
-              <StatusBadge label={statusLabel(r.status)} variant={statusBadgeClass(r.status)} />
-            </div>
             <div className="cell" style={{ color: "var(--color-text-muted)" }}>
-              <label>סיכום</label>
+              <label>תיאור</label>
               <span style={{ display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                 {r.notes || "—"}
               </span>
@@ -174,14 +183,23 @@ export default function VolunteerReportsHistory() {
         ))
       )}
 
+      {!loading && hasMore && (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+          <button
+            type="button"
+            className="vol-btn vol-btn-outline"
+            onClick={loadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "טוען..." : "טען דוחות נוספים"}
+          </button>
+        </div>
+      )}
+
       <div className="vol-bottom-stats">
         <div className="vol-bottom-stat approved">
-          <div className="label">דוחות שאושרו</div>
-          <div className="value">{approvedCount}</div>
-        </div>
-        <div className="vol-bottom-stat pending">
-          <div className="label">ממתינים לאישור</div>
-          <div className="value">{pendingCount}</div>
+          <div className="label">סה״כ דוחות</div>
+          <div className="value">{totalCount}</div>
         </div>
         <div className="vol-bottom-stat month">
           <div className="label">החודש</div>

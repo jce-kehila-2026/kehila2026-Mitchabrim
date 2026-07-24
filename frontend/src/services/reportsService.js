@@ -9,6 +9,9 @@ import {
   query,
   where,
   orderBy,
+  limit,
+  startAfter,
+  getCountFromServer,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
@@ -68,6 +71,36 @@ export async function getReportsForAuthUid(authUid) {
       .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
   }
+}
+
+export async function getReportsForAuthUidPage({
+  authUid,
+  pageSize = 20,
+  cursor = null,
+} = {}) {
+  if (!authUid) return { items: [], lastVisible: null, hasNextPage: false };
+  const snap = await getDocs(query(
+    reportsCollection,
+    where("volunteerAuthUid", "==", authUid),
+    orderBy("createdAt", "desc"),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize + 1),
+  ));
+  const hasNextPage = snap.docs.length > pageSize;
+  const pageDocs = hasNextPage ? snap.docs.slice(0, pageSize) : snap.docs;
+  return {
+    items: pageDocs.map((d) => ({ id: d.id, ...d.data() })),
+    lastVisible: pageDocs.at(-1) || null,
+    hasNextPage,
+  };
+}
+
+export async function getReportsForAuthUidCount(authUid) {
+  if (!authUid) return 0;
+  const snap = await getCountFromServer(
+    query(reportsCollection, where("volunteerAuthUid", "==", authUid)),
+  );
+  return snap.data().count;
 }
 
 export async function getAllVolunteerReports() {

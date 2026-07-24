@@ -1,47 +1,47 @@
-import { useEffect } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import "./App.css";
 import "./styles/public.css";
 import "./styles/admin.css";
 import "./styles/volunteer.css";
 import "./styles/Login.css";
 
-import Home from "./pages/Home.jsx";
-import ActivityDetail from "./pages/ActivityDetail.jsx";
-import Login from "./pages/Login.jsx";
-import ForgotPassword from "./pages/ForgotPassword.jsx";
-import PublicGallery from "./pages/PublicGallery.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
-
-import Dashboard from "./admin/Dashboard.jsx";
-import Elderly from "./admin/Elderly.jsx";
-import ElderlyProfile from "./admin/ElderlyProfile.jsx";
-import Volunteers from "./admin/Volunteers.jsx";
-import Projects from "./admin/Projects.jsx";
-import Parliaments from "./admin/Parliaments.jsx";
-import Media from "./admin/Media.jsx";
-import Links from "./admin/Links.jsx";
-import Financial from "./admin/Financial.jsx";
-import Reports from "./admin/Reports.jsx";
-import VolunteerReports from "./admin/VolunteerReports.jsx";
-import Settings from "./admin/Settings.jsx";
-import SiteContent from "./admin/SiteContent.jsx";
-import ProfileUpdateRequests from "./admin/ProfileUpdateRequests.jsx";
-import ElderlyContacts from "./admin/ElderlyContacts.jsx";
-import Organizations from "./admin/Organizations.jsx";
-import AdminProfile from "./pages/AdminProfile.jsx";
 import RequireReauth from "./components/RequireReauth.jsx";
+import PublicAutoLogout from "./components/PublicAutoLogout.jsx";
 
 const SITE_CONTENT_DESC = "אזור זה שולט בתוכן האתר הציבורי — טקסטים בדף הבית, שותפים, כותרות גלריה, תוכן יצירת קשר ומידע הפוטר. שינויים כאן עלולים להשפיע על מה שהמבקרים רואים באתר הציבורי.";
 const SETTINGS_DESC = "אזור זה שולט בהגדרות המערכת, משתמשים, הרשאות ונתוני ניהול חשובים. שינויים כאן עלולים להשפיע על גישה ועל התנהגות המערכת.";
 
+const Home = lazy(() => import("./pages/Home.jsx"));
+const ActivityDetail = lazy(() => import("./pages/ActivityDetail.jsx"));
+const Login = lazy(() => import("./pages/Login.jsx"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword.jsx"));
+const PublicGallery = lazy(() => import("./pages/PublicGallery.jsx"));
+const AdminProfile = lazy(() => import("./pages/AdminProfile.jsx"));
 
-import VolunteerDashboard from "./volunteer/VolunteerDashboard.jsx";
-import VolunteerReportForm from "./volunteer/VolunteerReportForm.jsx";
-import VolunteerReportsHistory from "./volunteer/VolunteerReportsHistory.jsx";
-import VolunteerTasks from "./volunteer/VolunteerTasks.jsx";
-import VolunteerProfile from "./volunteer/VolunteerProfile.jsx";
-import PublicAutoLogout from "./components/PublicAutoLogout.jsx";
+const Dashboard = lazy(() => import("./admin/Dashboard.jsx"));
+const Elderly = lazy(() => import("./admin/Elderly.jsx"));
+const ElderlyProfile = lazy(() => import("./admin/ElderlyProfile.jsx"));
+const Volunteers = lazy(() => import("./admin/Volunteers.jsx"));
+const Projects = lazy(() => import("./admin/Projects.jsx"));
+const Parliaments = lazy(() => import("./admin/Parliaments.jsx"));
+const Media = lazy(() => import("./admin/Media.jsx"));
+const Links = lazy(() => import("./admin/Links.jsx"));
+const Financial = lazy(() => import("./admin/Financial.jsx"));
+const Reports = lazy(() => import("./admin/Reports.jsx"));
+const VolunteerReports = lazy(() => import("./admin/VolunteerReports.jsx"));
+const Settings = lazy(() => import("./admin/Settings.jsx"));
+const SiteContent = lazy(() => import("./admin/SiteContent.jsx"));
+const ProfileUpdateRequests = lazy(() => import("./admin/ProfileUpdateRequests.jsx"));
+const ElderlyContacts = lazy(() => import("./admin/ElderlyContacts.jsx"));
+const Organizations = lazy(() => import("./admin/Organizations.jsx"));
+
+const VolunteerDashboard = lazy(() => import("./volunteer/VolunteerDashboard.jsx"));
+const VolunteerReportForm = lazy(() => import("./volunteer/VolunteerReportForm.jsx"));
+const VolunteerReportsHistory = lazy(() => import("./volunteer/VolunteerReportsHistory.jsx"));
+const VolunteerTasks = lazy(() => import("./volunteer/VolunteerTasks.jsx"));
+const VolunteerProfile = lazy(() => import("./volunteer/VolunteerProfile.jsx"));
 
 const Admin = ({ children }) => (
   <ProtectedRoute allow={["admin"]}>{children}</ProtectedRoute>
@@ -50,57 +50,27 @@ const Vol = ({ children }) => (
   <ProtectedRoute allow={["volunteer", "admin"]}>{children}</ProtectedRoute>
 );
 
+const RouteFallback = () => (
+  <div
+    role="status"
+    aria-live="polite"
+    style={{
+      minHeight: "60vh",
+      display: "grid",
+      placeItems: "center",
+      color: "var(--color-text-muted)",
+    }}
+  >
+    טוען...
+  </div>
+);
+
 export default function App() {
-  const location = useLocation();
-
-  useEffect(() => {
-    const getPageTitle = (pathname) => {
-      const base = "פרויקט מתחברים";
-      
-      // Exact matches
-      if (pathname === "/") return `${base} — חיבור אזרחים בודדים לקהילה`;
-      if (pathname === "/login") return `התחברות | ${base}`;
-      if (pathname === "/forgot-password") return `איפוס סיסמה | ${base}`;
-      if (pathname === "/public-gallery") return `גלריית תמונות | ${base}`;
-      
-      // Dynamic matches
-      if (pathname.startsWith("/our-work/")) return `פרטי פעילות | ${base}`;
-      
-      // Admin section
-      if (pathname === "/admin") return `לוח בקרה מנהל | ${base}`;
-      if (pathname === "/admin/elderly") return `ניהול אזרחים ותיקים | ${base}`;
-      if (pathname === "/admin/elderly-contacts") return `אנשי קשר אזרחים ותיקים | ${base}`;
-      if (pathname.startsWith("/admin/elderly/")) return `פרופיל אזרח ותיק | ${base}`;
-      if (pathname === "/admin/volunteers") return `ניהול מתנדבים | ${base}`;
-      if (pathname === "/admin/organizations-contacts") return `אנשי קשר ארגונים | ${base}`;
-      if (pathname === "/admin/projects") return `ניהול פרויקטים | ${base}`;
-      if (pathname === "/admin/parliaments") return `ניהול פרלמנטים | ${base}`;
-      if (pathname === "/admin/media") return `ניהול מדיה | ${base}`;
-      if (pathname === "/admin/links") return `ניהול קישורים | ${base}`;
-      if (pathname === "/admin/financial") return `ניהול פיננסי | ${base}`;
-      if (pathname === "/admin/reports") return `דוחות מנהל | ${base}`;
-      if (pathname === "/admin/volunteer-reports") return `דוחות פעילות מתנדבים | ${base}`;
-      if (pathname === "/admin/settings") return `הגדרות מערכת | ${base}`;
-      if (pathname === "/admin/site-content") return `ניהול תוכן האתר | ${base}`;
-      if (pathname === "/admin/profile-update-requests") return `בקשות לעדכון פרופיל | ${base}`;
-      
-      // Volunteer section
-      if (pathname === "/volunteer") return `אזור מתנדב | ${base}`;
-      if (pathname === "/volunteer/report/new") return `דיווח על מפגש | ${base}`;
-      if (pathname === "/volunteer/reports") return `היסטוריית דיווחים | ${base}`;
-      if (pathname === "/volunteer/tasks") return `משימות מתנדב | ${base}`;
-      if (pathname === "/volunteer/profile") return `פרופיל אישי | ${base}`;
-      
-      return base;
-    };
-
-    document.title = getPageTitle(location.pathname);
-  }, [location.pathname]);
-
   return (
     <>
     <PublicAutoLogout />
-    <Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/our-work/:slug" element={<ActivityDetail />} />
       <Route path="/login" element={<Login />} />
@@ -135,7 +105,8 @@ export default function App() {
       <Route path="/volunteer/reports" element={<Vol><VolunteerReportsHistory /></Vol>} />
       <Route path="/volunteer/tasks" element={<Vol><VolunteerTasks /></Vol>} />
       <Route path="/volunteer/profile" element={<Vol><VolunteerProfile /></Vol>} />
-    </Routes>
+      </Routes>
+    </Suspense>
     </>
   );
 }

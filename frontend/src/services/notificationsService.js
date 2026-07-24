@@ -10,13 +10,12 @@ import { db } from "../firebase";
 import {
   collection,
   query,
+  where,
   orderBy,
   limit as fbLimit,
   onSnapshot,
   doc,
   updateDoc,
-  deleteDoc,
-  getDocs,
 } from "firebase/firestore";
 
 const COLLECTION = "notifications";
@@ -30,19 +29,52 @@ const COLLECTION = "notifications";
  * @returns {() => void} unsubscribe
  */
 export function subscribeAdminNotifications(onData, onError, { max = 10 } = {}) {
-  const q = query(
+  const recentQuery = query(
     collection(db, COLLECTION),
     orderBy("createdAt", "desc"),
     fbLimit(max)
   );
-  return onSnapshot(
-    q,
-    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    (err) => {
-      if (onError) onError(err);
-      else console.warn("admin notifications listen error:", err.message);
-    }
+  // Keep the badge exact without listening to the entire read history.
+  // This query follows only actionable (unread) documents and is deliberately
+  // unordered so it does not require a new composite index.
+  const unreadQuery = query(
+    collection(db, COLLECTION),
+    where("read", "==", false)
   );
+
+  let recent = [];
+  let unreadCount = 0;
+  let stopped = false;
+  const emit = () => {
+    if (!stopped) onData(recent, { unreadCount });
+  };
+  const reportError = (err) => {
+    if (onError) onError(err);
+    else console.warn("admin notifications listen error:", err.message);
+  };
+
+  const unsubscribeRecent = onSnapshot(
+    recentQuery,
+    (snap) => {
+      recent = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      emit();
+    },
+    reportError
+  );
+  const unsubscribeUnread = onSnapshot(
+    unreadQuery,
+    (snap) => {
+      unreadCount = snap.size;
+      emit();
+    },
+    reportError
+  );
+
+  return () => {
+    stopped = true;
+    unsubscribeRecent();
+    unsubscribeUnread();
+  };
 }
 
 /**
@@ -51,23 +83,4 @@ export function subscribeAdminNotifications(onData, onError, { max = 10 } = {}) 
 export async function markAdminNotificationRead(notificationId) {
   if (!notificationId) return;
   await updateDoc(doc(db, COLLECTION, notificationId), { read: true });
-}
-
-/**
- * Keep only the latest `maxKeep` admin notifications. Older ones are
- * deleted (fire-and-forget). Requires isAdmin() per Firestore rules.
- * Returns the number of deleted docs.
- */
-export async function pruneAdminNotifications(maxKeep = 10) {
-  try {
-    const q = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
-    const snap = await getDocs(q);
-    const extras = snap.docs.slice(maxKeep);
-    if (!extras.length) return 0;
-    await Promise.all(extras.map((d) => deleteDoc(d.ref).catch(() => {})));
-    return extras.length;
-  } catch (e) {
-    console.warn("pruneAdminNotifications:", e.message);
-    return 0;
-  }
 }

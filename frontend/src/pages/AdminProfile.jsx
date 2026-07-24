@@ -73,7 +73,7 @@ export default function AdminProfile() {
   const label = { display: "block", fontSize: 12, fontWeight: 700, color: "#7a5a4a", marginBottom: 6 };
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/setting_hero.png" title="פרופיל אישי" subtitle="פרטי חשבון המנהל המחובר">
+    <AdminPageLayout heroImage="/admin-heroes/setting_hero.webp" title="פרופיל אישי" subtitle="פרטי חשבון המנהל המחובר">
       {toast && (<div className="admin-toast"><span className="admin-toast-check">✓</span>{toast}</div>)}
 
       <SectionCard>

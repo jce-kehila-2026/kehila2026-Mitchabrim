@@ -11,6 +11,7 @@ import {
   orderBy,
   limit as fbLimit,
   onSnapshot,
+  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -35,6 +36,17 @@ export function subscribeAllProfileUpdateRequests(onData, onError, { max } = {})
     (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
     (err) => onError && onError(err)
   );
+}
+
+/**
+ * Fetch the complete admin request history once.
+ * The management page does not need a continuously re-delivered historical
+ * collection; the dashboard keeps the bounded live operational window.
+ */
+export async function getAllProfileUpdateRequests() {
+  const q = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 /**

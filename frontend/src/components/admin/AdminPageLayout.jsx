@@ -16,14 +16,24 @@ export default function AdminPageLayout({
   title,
   subtitle,
   actions,
-  heroImage = "/admin-heroes/default-hero.png",
+  heroImage = "/admin-heroes/dashboard_hero.webp",
+  heroImageMobile,
   children,
 }) {
+  const mobileImage =
+    heroImageMobile ||
+    (heroImage.startsWith("/admin-heroes/")
+      ? heroImage.replace(/\.webp$/, "-mobile.webp")
+      : heroImage);
+
   return (
     <AdminLayout hideTopbar>
       <section
         className="admin-hero"
-        style={{ backgroundImage: `url('${heroImage}')` }}
+        style={{
+          "--admin-hero-image": `url('${heroImage}')`,
+          "--admin-hero-mobile-image": `url('${mobileImage}')`,
+        }}
       >
         <HeroTopbar />
         <div className="admin-hero-body">

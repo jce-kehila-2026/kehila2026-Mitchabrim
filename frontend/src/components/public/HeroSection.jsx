@@ -1,6 +1,31 @@
-import React from "react";
+import React, { useState } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
-import logo from "@/assets/logo.png";
+
+function HeroCircleImage({ src, alt, className, priority }) {
+  const [loaded, setLoaded] = useState(false);
+  if (!src) {
+    return <div className={`hero-circle-placeholder ${className || ""}`.trim()} aria-hidden />;
+  }
+  return (
+    <>
+      {!loaded && (
+        <div className={`hero-circle-placeholder ${className || ""}`.trim()} aria-hidden />
+      )}
+      <img
+        src={src}
+        alt={alt || ""}
+        onLoad={() => setLoaded(true)}
+        loading={priority ? "eager" : "lazy"}
+        {...(priority ? { fetchpriority: "high" } : {})}
+        decoding="async"
+        style={{
+          opacity: loaded ? 1 : 0,
+          transition: "opacity 400ms ease",
+        }}
+      />
+    </>
+  );
+}
 
 export default function HeroSection() {
   const { content } = useSiteContent();
@@ -14,7 +39,15 @@ export default function HeroSection() {
         <div className="hero-grid">
           <div className="hero-text">
             <div className="hero-logo-wrapper">
-              <img src={logo} alt="מתחברים" className="hero-logo" />
+              <img
+                src="/logo.webp"
+                alt="מתחברים"
+                className="hero-logo"
+                width="840"
+                height="507"
+                fetchpriority="high"
+                decoding="async"
+              />
             </div>
 
             <p className="hero-lead">{h.lead}</p>
@@ -58,13 +91,13 @@ export default function HeroSection() {
             </svg>
 
             <div className="circle-img circle-img-lg">
-              {h.imageMain && <img src={h.imageMain} alt="" />}
+              <HeroCircleImage src={h.imageMain} priority />
             </div>
             <div className="circle-img circle-img-sm circle-img-sm-tl">
-              {h.imageTopLeft && <img src={h.imageTopLeft} alt="" />}
+              <HeroCircleImage src={h.imageTopLeft} priority />
             </div>
             <div className="circle-img circle-img-md circle-img-md-br">
-              {h.imageBottom && <img src={h.imageBottom} alt="" />}
+              <HeroCircleImage src={h.imageBottom} priority />
             </div>
           </div>
         </div>

@@ -4,7 +4,7 @@ import AdminLayout from "@/components/admin/AdminLayout.jsx";
 import LoadingLine from "@/components/common/LoadingLine.jsx";
 import EmptyState from "@/components/common/EmptyState.jsx";
 import {
-  subscribeAllProfileUpdateRequests,
+  getAllProfileUpdateRequests,
   decideProfileUpdateRequest,
 } from "@/services/profileUpdateRequestsService";
 
@@ -18,17 +18,21 @@ export default function ProfileUpdateRequests() {
   const [params] = useSearchParams();
 
   useEffect(() => {
-    const unsub = subscribeAllProfileUpdateRequests(
-      (list) => {
+    let active = true;
+    getAllProfileUpdateRequests()
+      .then((list) => {
+        if (!active) return;
         setRequests(list);
         setLoading(false);
-      },
-      (err) => {
-        console.warn("requests listen:", err.message);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.warn("requests load:", err.message);
         setLoading(false);
-      }
-    );
-    return () => unsub();
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
 
@@ -80,6 +84,12 @@ export default function ProfileUpdateRequests() {
         <RequestDetailModal
           request={active}
           onClose={() => setActive(null)}
+          onDecided={(updated) => {
+            setRequests((current) =>
+              current.map((request) => request.id === updated.id ? updated : request)
+            );
+            setActive(updated);
+          }}
         />
       )}
     </AdminLayout>
@@ -130,7 +140,7 @@ function RequestCard({ request, onOpen }) {
   );
 }
 
-function RequestDetailModal({ request, onClose }) {
+function RequestDetailModal({ request, onClose, onDecided }) {
   const [response, setResponse] = useState(request.adminResponse || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -148,6 +158,12 @@ function RequestDetailModal({ request, onClose }) {
         volunteerAuthUid: request.volunteerAuthUid,
         decision,
         response,
+      });
+      onDecided({
+        ...request,
+        status: decision,
+        adminResponse: response,
+        reviewedAt: new Date(),
       });
       onClose();
     } catch (e) {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
-import parliamentsHero from "@/assets/parliaments-hero.png";
+import parliamentsHero from "@/assets/parliaments-hero.webp";
+import parliamentsHeroMobile from "@/assets/parliaments-hero-mobile.webp";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
@@ -298,7 +299,7 @@ export default function Parliaments() {
   const filterLabelStyle = { fontSize: 12, color: "var(--color-text-muted, #6b7280)", marginBottom: 4, display: "block" };
 
   return (
-    <AdminPageLayout heroImage={parliamentsHero}
+    <AdminPageLayout heroImage={parliamentsHero} heroImageMobile={parliamentsHeroMobile}
       title="פרלמנטים"
       subtitle="ניהול מפגשי פרלמנט, משתתפים ונוכחות"
       actions={
@@ -786,7 +787,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
   const nextDateLabel = upcomingMeeting ? upcomingMeeting.date : "—";
 
   return (
-    <AdminPageLayout heroImage={parliamentsHero}
+    <AdminPageLayout heroImage={parliamentsHero} heroImageMobile={parliamentsHeroMobile}
       title={parl.name}
       subtitle={`${parl.location} • מפגש הבא: ${nextDateLabel}`}
       actions={<button className="btn btn-primary" onClick={() => setShowEdit(true)}>עריכת פרטים</button>}
@@ -1053,7 +1054,7 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
   };
 
   return (
-    <AdminPageLayout heroImage={parliamentsHero}
+    <AdminPageLayout heroImage={parliamentsHero} heroImageMobile={parliamentsHeroMobile}
       title={`${parl.name} — פגישה מס׳ ${meetingNumber}`}
       subtitle={`${meeting.date || ""} ${meeting.startTime ? "• " + meeting.startTime : ""} ${meeting.location ? "• " + meeting.location : ""}`}
     >

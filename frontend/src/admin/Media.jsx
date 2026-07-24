@@ -368,7 +368,7 @@ export default function Media() {
   };
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/gallery_hero.png"
+    <AdminPageLayout heroImage="/admin-heroes/gallery_hero.webp"
       title="ניהול תמונות"
       subtitle="ניהול תמונות האתר, גלריות ותמונות מוצגות"
       actions={
@@ -677,13 +677,19 @@ export default function Media() {
               <div
                 style={{
                   aspectRatio: "4/3",
-                  backgroundImage: `url(${img.url})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
                   backgroundColor: "#f8f9fa",
                   borderBottom: "1px solid #e2e8f0",
+                  overflow: "hidden",
                 }}
-              ></div>
+              >
+                <img
+                  src={img.url}
+                  alt={img.title || ""}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              </div>
 
               <div style={{ padding: "12px" }}>
                 <div

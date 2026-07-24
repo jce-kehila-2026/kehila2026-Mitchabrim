@@ -1,12 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { logout } from "../../services/authService";
-import { auth } from "../../firebase";
-import { getUserByEmail } from "../../services/usersService";
+import { useAuth } from "../../context/AuthContext";
 import {
   subscribeAdminNotifications,
   markAdminNotificationRead,
-  pruneAdminNotifications,
 } from "../../services/notificationsService";
 
 const MAX_NOTIFICATIONS = 10;
@@ -31,9 +28,11 @@ function formatNotifDate(ts) {
 
 export default function HeroTopbar() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const [userData, setUserData] = useState({ name: "מנהל", initial: "מ", role: "מנהל מערכת" });
   const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifPos, setNotifPos] = useState({ top: 0, right: 0 });
@@ -47,39 +46,29 @@ export default function HeroTopbar() {
   const menuDropdownRef = useRef(null);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (!user) return;
+    if (!user) return;
+    {
       let finalName = user.displayName;
-      try {
-        const data = await getUserByEmail(user.email);
-        if (data) finalName = finalName || data.displayName || data.fullName || "";
-      } catch (e) {
-        console.error("hero topbar user fetch:", e);
-      }
       if (!finalName && user.email) finalName = user.email.split("@")[0];
       setUserData({
         name: finalName || "מנהל",
         initial: (finalName || "מ").charAt(0).toUpperCase(),
         role: "מנהל מערכת",
       });
-    });
-    return () => unsubscribe();
-  }, []);
+    }
+  }, [user]);
 
   useEffect(() => {
     const unsub = subscribeAdminNotifications(
-      (items) => {
-        setNotifications(items.slice(0, MAX_NOTIFICATIONS));
-        // Fire-and-forget: keep only latest 10 stored.
-        if (items.length >= MAX_NOTIFICATIONS) {
-          pruneAdminNotifications(MAX_NOTIFICATIONS);
-        }
+      (items, meta) => {
+        setNotifications(items);
+        setUnreadCount(meta?.unreadCount || 0);
       },
       (err) => {
         console.warn("hero notifications listen error:", err.message);
         setNotifications([]);
       },
-      { max: MAX_NOTIFICATIONS + 5 }
+      { max: MAX_NOTIFICATIONS }
     );
     return () => unsub();
   }, []);
@@ -112,8 +101,6 @@ export default function HeroTopbar() {
     const r = menuBtnRef.current.getBoundingClientRect();
     setMenuPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
   }, [menuOpen]);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handleLogout = async () => {
     try {

@@ -1,8 +1,10 @@
 // src/services/settingsService.js
-// Reads/writes for the singleton "settings/general" document.
+// Admin-only reads/writes for the singleton "settings/general" document.
 //
 // The document holds site-wide configuration (orgName, address, emails,
 // phones, areas, categories) and is edited only from /admin/settings.
+// Public website content is stored separately in siteContent/home; public
+// components must not depend on this administrative document.
 // Firestore rules gate writes to isAdmin() via the admin fallback.
 //
 // Auth / invite / relink logic lives elsewhere (allowedUsersService) and

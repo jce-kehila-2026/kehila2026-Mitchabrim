@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login, getCurrentUser } from "../services/authService";
 import { resolveUserAccess } from "../services/allowedUsersService";
-import openEye from "../assets/openEyes.png";
-import closeEye from "../assets/closeEyes.png";
+import openEye from "../assets/openEyes.webp";
+import closeEye from "../assets/closeEyes.webp";
 import "../styles/Login.css";
 
 export default function Login() {
@@ -72,7 +72,7 @@ export default function Login() {
       </Link>
       <div className="login-container">
         <div className="login-box">
-          <img src="/logo.png" className="logo" alt="מתחברים" />
+          <img src="/logo.webp" className="logo" alt="מתחברים" width="840" height="507" fetchPriority="high" />
           <div className="header-text">
           </div>
           <hr />

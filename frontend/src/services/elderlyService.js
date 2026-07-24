@@ -112,9 +112,9 @@ export async function deleteElderly(elderlyId) {
  * @returns {Promise<{ items: object[], firstVisible: any, lastVisible: any, hasNextPage: boolean }>}
  */
 export async function getElderlyPage({ pageSize = 20, cursor = null } = {}) {
-  const base = [orderBy("createdAt", "desc"), limit(pageSize + 1)];
+  const base = [where("status", "==", "פעיל"), limit(pageSize + 1)];
   const q = cursor
-    ? query(elderlyCollection, orderBy("createdAt", "desc"), startAfter(cursor), limit(pageSize + 1))
+    ? query(elderlyCollection, where("status", "==", "פעיל"), startAfter(cursor), limit(pageSize + 1))
     : query(elderlyCollection, ...base);
 
   const snap = await getDocs(q);
@@ -144,14 +144,21 @@ export async function getElderlyCount() {
  * volStatus === "כן" or "לא מתאים" → considered "connected" (matches previous UI logic).
  */
 export async function getElderlyStatusCounts() {
-  const [totalSnap, connectedYesSnap, connectedNotFitSnap] = await Promise.all([
-    getCountFromServer(elderlyCollection),
-    getCountFromServer(query(elderlyCollection, where("volStatus", "==", "כן"))),
-    getCountFromServer(query(elderlyCollection, where("volStatus", "==", "לא מתאים"))),
+  const active = where("status", "==", "פעיל");
+  const [totalSnap, connectedSnap, phoneSnap] = await Promise.all([
+    getCountFromServer(query(elderlyCollection, active)),
+    getCountFromServer(query(elderlyCollection, active, where("volStatus", "==", "כן"))),
+    getCountFromServer(query(elderlyCollection, active, where("volStatus", "==", "קשר טלפוני"))),
   ]);
   const total = totalSnap.data().count;
-  const connected = connectedYesSnap.data().count + connectedNotFitSnap.data().count;
-  return { total, connected, without: Math.max(0, total - connected) };
+  const connected = connectedSnap.data().count;
+  const phoneContact = phoneSnap.data().count;
+  return {
+    total,
+    connected,
+    phoneContact,
+    without: Math.max(0, total - connected - phoneContact),
+  };
 }
 
 /**

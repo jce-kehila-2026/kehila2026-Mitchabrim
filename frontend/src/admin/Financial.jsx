@@ -3,7 +3,7 @@ import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { Coins, Heart } from "lucide-react";
 import {
-  subscribeFinancialTransactions,
+  getFinancialTransactions,
   createFinancialTransaction,
   updateFinancialTransaction,
   deleteFinancialTransaction,
@@ -92,12 +92,45 @@ export default function Financial() {
   // ==========================================
   // FIREBASE DATA FETCHING
   // ==========================================
-  useEffect(() => {
-    const unsubscribe = subscribeFinancialTransactions(
-      (dataList) => setTransactions(dataList),
-      (error) => console.error("Error fetching financial data:", error)
+  const sortTransactions = (items) =>
+    [...items].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
+  const createAndStoreTransaction = async (payload) => {
+    const ref = await createFinancialTransaction(payload);
+    setTransactions((current) =>
+      sortTransactions([{ id: ref.id, ...payload }, ...current])
     );
-    return () => unsubscribe();
+    return ref;
+  };
+
+  const updateAndStoreTransaction = async (id, patch) => {
+    await updateFinancialTransaction(id, patch);
+    setTransactions((current) =>
+      sortTransactions(
+        current.map((transaction) =>
+          transaction.id === id ? { ...transaction, ...patch } : transaction
+        )
+      )
+    );
+  };
+
+  const deleteAndStoreTransaction = async (id) => {
+    await deleteFinancialTransaction(id);
+    setTransactions((current) =>
+      current.filter((transaction) => transaction.id !== id)
+    );
+  };
+
+  useEffect(() => {
+    let active = true;
+    getFinancialTransactions()
+      .then((dataList) => {
+        if (active) setTransactions(dataList);
+      })
+      .catch((error) => console.error("Error fetching financial data:", error));
+    return () => {
+      active = false;
+    };
   }, []);
 
   // ==========================================
@@ -334,7 +367,7 @@ export default function Financial() {
         }
       }
 
-      await createFinancialTransaction(newTransaction);
+      await createAndStoreTransaction(newTransaction);
       setIsAddModalOpen(false);
       setFormData({
         type: "תרומה",
@@ -432,7 +465,7 @@ export default function Financial() {
 
   const handleDeleteTransaction = async (id) => {
     try {
-      await deleteFinancialTransaction(id);
+      await deleteAndStoreTransaction(id);
       setDeleteId(null);
       showToast("הפעולה נמחקה מהמערכת!");
     } catch (error) {
@@ -462,11 +495,11 @@ export default function Financial() {
           number: finalReceiptNum,
           id: Date.now().toString(),
         };
-        await updateFinancialTransaction(uploadData.transactionId, {
+        await updateAndStoreTransaction(uploadData.transactionId, {
           attachments: [...currentAttachments, newAttachment],
         });
       } else {
-        await createFinancialTransaction({
+        await createAndStoreTransaction({
           type: "קבלה_בלבד",
           amount: 0,
           source: "—",
@@ -506,15 +539,15 @@ export default function Financial() {
 
       if (isStandalone) {
         if (newTxId) {
-          await updateFinancialTransaction(newTxId, { receiptUrl, receiptName, receipt });
-          await deleteFinancialTransaction(oldTxId);
+          await updateAndStoreTransaction(newTxId, { receiptUrl, receiptName, receipt });
+          await deleteAndStoreTransaction(oldTxId);
         }
       } else {
         if (newTxId) {
-          await updateFinancialTransaction(newTxId, { receiptUrl, receiptName, receipt });
-          await updateFinancialTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
+          await updateAndStoreTransaction(newTxId, { receiptUrl, receiptName, receipt });
+          await updateAndStoreTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
         } else {
-          await createFinancialTransaction({
+          await createAndStoreTransaction({
             type: "קבלה_בלבד",
             amount: 0,
             source: "—",
@@ -525,7 +558,7 @@ export default function Financial() {
             receipt,
             notes: "קבלה עצמאית במאגר",
           });
-          await updateFinancialTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
+          await updateAndStoreTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
         }
       }
       setIsEditReceiptModalOpen(false);
@@ -541,13 +574,13 @@ export default function Financial() {
     if (!deleteReceiptData) return;
     try {
       if (deleteReceiptData.isStandalone) {
-        await deleteFinancialTransaction(deleteReceiptData.id);
+        await deleteAndStoreTransaction(deleteReceiptData.id);
       } else if (deleteReceiptData.isAttachment) {
         const tx = transactions.find((t) => t.id === deleteReceiptData.id);
         const updatedAttachments = tx.attachments.filter((a) => a.id !== deleteReceiptData.attachmentId);
-        await updateFinancialTransaction(deleteReceiptData.id, { attachments: updatedAttachments });
+        await updateAndStoreTransaction(deleteReceiptData.id, { attachments: updatedAttachments });
       } else {
-        await updateFinancialTransaction(deleteReceiptData.id, { receiptUrl: "", receiptName: "" });
+        await updateAndStoreTransaction(deleteReceiptData.id, { receiptUrl: "", receiptName: "" });
       }
       setDeleteReceiptData(null);
       showToast("הקבלה הוסרה בהצלחה!");
@@ -590,7 +623,7 @@ export default function Financial() {
   };
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/finance_hero.png"
+    <AdminPageLayout heroImage="/admin-heroes/finance_hero.webp"
       title="ניהול כספי"
       subtitle="מעקב אחר הכנסות, הוצאות ודוחות כספיים"
       actions={

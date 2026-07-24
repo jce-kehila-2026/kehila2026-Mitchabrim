@@ -12,7 +12,6 @@ import TablePagination from "@/components/admin/TablePagination.jsx";
 import {
   getVolunteers,
   getVolunteersPage,
-  getVolunteersCount,
   getVolunteersStatusCounts,
   createVolunteer,
   editVolunteer,
@@ -103,7 +102,7 @@ const CHART_COLORS = ["#8B0000", "#D4A574", "#5F9EA0", "#4682B4", "#9ACD32", "#F
 export default function Volunteers() {
   const [tab, setTab] = useState("volunteers");
 
-  const [showCharts, setShowCharts] = useState(true);
+  const [showCharts, setShowCharts] = useState(false);
 
   const [showAdd, setShowAdd] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -160,7 +159,10 @@ export default function Volunteers() {
     (async () => {
       try {
         const s = await getVolunteersStatusCounts();
-        if (mounted) setStats(s);
+        if (mounted) {
+          setStats(s);
+          setTotalCount(s.total);
+        }
       } catch (err) {
         console.error("getVolunteersStatusCounts failed:", err);
       }
@@ -172,16 +174,6 @@ export default function Volunteers() {
      Volunteers cursor pagination
   ========================= */
   const [totalCount, setTotalCount] = useState(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const c = await getVolunteersCount();
-        setTotalCount(c);
-      } catch (err) {
-        console.error("getVolunteersCount failed:", err);
-      }
-    })();
-  }, [statsVersion]);
 
   const fetchVolunteersPage = useCallback(
     ({ cursor }) => getVolunteersPage({ pageSize: PAGE_SIZE, cursor }),
@@ -191,7 +183,7 @@ export default function Volunteers() {
     fetchPage: fetchVolunteersPage,
     totalCount,
     pageSize: PAGE_SIZE,
-    deps: [statsVersion, totalCount],
+    deps: [statsVersion],
   });
 
   /* =========================
@@ -251,10 +243,6 @@ export default function Volunteers() {
       setFullLoading(false);
     }
   }, [fullVolunteers, fullElderly]);
-
-  useEffect(() => {
-    ensureFull();
-  }, [ensureFull]);
 
   const volunteerChartData = useMemo(() => {
     if (!fullVolunteers) return { barData: [], pieData: [] };
@@ -564,7 +552,7 @@ export default function Volunteers() {
   ========================= */
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/volunteers_hero.png"
+    <AdminPageLayout heroImage="/admin-heroes/volunteers_hero.webp"
       title="ניהול מתנדבים"
       subtitle="ניהול מתנדבים, קבוצות התנדבות, שיוך לאזרחים ותיקים, סטטוס פעילות וביטוח."
       actions={
@@ -580,9 +568,9 @@ export default function Volunteers() {
         ) : null
       }
     >
-      {error && (
+      {(error || paged.error) && (
         <SectionCard>
-          <p style={{ color: "red", fontWeight: 600 }}>{error}</p>
+          <p style={{ color: "red", fontWeight: 600 }}>{error || paged.error}</p>
         </SectionCard>
       )}
 
@@ -603,7 +591,14 @@ export default function Volunteers() {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 15, marginBottom: 10 }}>
-        <button className="btn btn-outline" style={{ fontSize: 13, padding: '6px 16px' }} onClick={() => setShowCharts(!showCharts)}>
+        <button
+          className="btn btn-outline"
+          style={{ fontSize: 13, padding: '6px 16px' }}
+          onClick={async () => {
+            if (!showCharts) await ensureFull();
+            setShowCharts(!showCharts);
+          }}
+        >
           {showCharts ? "📊 הסתר גרפים" : "📊 הצג גרפים"}
         </button>
       </div>

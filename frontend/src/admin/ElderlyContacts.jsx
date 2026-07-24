@@ -179,7 +179,7 @@ export default function ElderlyContacts() {
   /* ========== Render ========== */
 
   return (
-    <AdminPageLayout heroImage="/admin-heroes/elderly_contacts_hero.png"
+    <AdminPageLayout heroImage="/admin-heroes/elderly_contacts_hero.webp"
       title="ניהול אנשי קשר לקשישים"
       subtitle="ניהול אנשי קשר המקושרים לאזרחים ותיקים, כגון עו״סים, בני משפחה, שכנים ואנשי קשר נוספים."
       actions={

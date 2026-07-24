@@ -9,6 +9,9 @@ import {
   query,
   where,
   orderBy,
+  limit,
+  startAfter,
+  getCountFromServer,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
@@ -65,6 +68,48 @@ export async function getTasksForAuthUid(authUid) {
       .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
   }
+}
+
+async function getTasksPageBy(field, value, { pageSize = 20, cursor = null } = {}) {
+  if (!value) return { items: [], lastVisible: null, hasNextPage: false };
+  const snap = await getDocs(query(
+    tasksCollection,
+    where(field, "==", value),
+    orderBy("createdAt", "desc"),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize + 1),
+  ));
+  const hasNextPage = snap.docs.length > pageSize;
+  const pageDocs = hasNextPage ? snap.docs.slice(0, pageSize) : snap.docs;
+  return {
+    items: pageDocs.map((d) => ({ id: d.id, ...d.data() })),
+    lastVisible: pageDocs.at(-1) || null,
+    hasNextPage,
+  };
+}
+
+export function getTasksForVolunteerPage({ volunteerId, ...options } = {}) {
+  return getTasksPageBy("volunteerId", volunteerId, options);
+}
+
+export function getTasksForAuthUidPage({ authUid, ...options } = {}) {
+  return getTasksPageBy("volunteerAuthUid", authUid, options);
+}
+
+async function getTasksCountBy(field, value) {
+  if (!value) return 0;
+  const snap = await getCountFromServer(
+    query(tasksCollection, where(field, "==", value)),
+  );
+  return snap.data().count;
+}
+
+export function getTasksForVolunteerCount(volunteerId) {
+  return getTasksCountBy("volunteerId", volunteerId);
+}
+
+export function getTasksForAuthUidCount(authUid) {
+  return getTasksCountBy("volunteerAuthUid", authUid);
 }
 
 export async function createTask(data, createdBy = null) {

@@ -8,7 +8,7 @@ export default function AboutSection() {
       <div className="container about-grid-clean">
         <div className="about-visual">
           <div className="about-main-img">
-            {a.image && <img src={a.image} alt={a.headlineLine1 || "אודות"} />}
+            {a.image && <img src={a.image} alt={a.headlineLine1 || "אודות"} loading="lazy" decoding="async" />}
           </div>
           <div className="about-img-badge">
             <span className="badge-num">{a.badgeNum}</span>

@@ -54,9 +54,3 @@
 @media (max-width: 900px) {
   .row-2, .row-3, .row-4 { grid-template-columns: 1fr; }
 }
-
-/* Force options to use their browser-initial backgrounds and text colors in dark/light mode */
-select option {
-  color: revert !important;
-  background-color: revert !important;
-}

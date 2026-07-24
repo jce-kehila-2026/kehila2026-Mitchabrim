@@ -34,6 +34,8 @@ import DataTable from "@/components/admin/DataTable.jsx";
 import TablePagination from "@/components/admin/TablePagination.jsx";
 import {
   getElderly,
+  getElderlyPage,
+  getElderlyStatusCounts,
   createElderly,
   editElderly,
   deleteElderly,
@@ -41,6 +43,7 @@ import {
 import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
 import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
+import useFirestorePagination from "@/hooks/useFirestorePagination.js";
 import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
 import { sanitizeFormData } from "@/utils/sanitize";
 
@@ -89,7 +92,7 @@ export default function Elderly() {
   const [loadError, setLoadError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
-  const [showCharts, setShowCharts] = useState(true);
+  const [showCharts, setShowCharts] = useState(false);
   const [openId, setOpenId] = useState(null);
   const [openVolunteer, setOpenVolunteer] = useState(null);
   const [openContact, setOpenContact] = useState(null);
@@ -120,9 +123,50 @@ export default function Elderly() {
   }, [filterArea]);
 
   const PAGE_SIZE = 20;
+  const hasFiltersOrSearch = !!(
+    filterArea ||
+    filterNeighborhood ||
+    filterMarital ||
+    filterVolStatus ||
+    search.trim()
+  );
 
   // Cache-invalidation counter (bumped after mutations to force refetch).
   const [statsVersion, setStatsVersion] = useState(0);
+
+  const [stats, setStats] = useState({
+    total: 0,
+    connected: 0,
+    without: 0,
+    phoneContact: 0,
+  });
+  const [totalCount, setTotalCount] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getElderlyStatusCounts()
+      .then((nextStats) => {
+        if (cancelled) return;
+        setStats(nextStats);
+        setTotalCount(nextStats.total);
+      })
+      .catch((err) => {
+        console.error("Failed to load elderly counts:", err);
+        if (!cancelled) setLoadError("טעינת נתוני הסיכום נכשלה.");
+      });
+    return () => { cancelled = true; };
+  }, [statsVersion]);
+
+  const fetchElderlyPage = useCallback(
+    ({ cursor }) => getElderlyPage({ pageSize: PAGE_SIZE, cursor }),
+    [],
+  );
+  const paged = useFirestorePagination({
+    fetchPage: fetchElderlyPage,
+    totalCount,
+    pageSize: PAGE_SIZE,
+    deps: [statsVersion],
+  });
 
   // ---- Full-collection cache. Loaded on mount so we can filter to מצב=פעיל
   // and compute stats + charts client-side. ----
@@ -146,8 +190,8 @@ export default function Elderly() {
   }, []);
 
   useEffect(() => {
-    ensureFullData();
-  }, [ensureFullData, statsVersion]);
+    if (hasFiltersOrSearch && !fullData) ensureFullData();
+  }, [hasFiltersOrSearch, fullData, ensureFullData]);
 
   // Only active seniors are shown in the table + stats + charts.
   const activeData = useMemo(
@@ -203,11 +247,12 @@ export default function Elderly() {
   useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterMarital, filterVolStatus, search]);
   useEffect(() => { if (filterPage > filterTotalPages) setFilterPage(filterTotalPages); }, [filterPage, filterTotalPages]);
   const filterPageStart = (filterPage - 1) * PAGE_SIZE;
-  const pageItems = filteredFull.slice(filterPageStart, filterPageStart + PAGE_SIZE);
-  const currentPage = filterPage;
-  const totalPages = filterTotalPages;
-  const paginationTotal = filteredFull.length;
-  const loading = fullLoading;
+  const filteredPageItems = filteredFull.slice(filterPageStart, filterPageStart + PAGE_SIZE);
+  const pageItems = hasFiltersOrSearch ? filteredPageItems : paged.items;
+  const currentPage = hasFiltersOrSearch ? filterPage : paged.page;
+  const totalPages = hasFiltersOrSearch ? filterTotalPages : paged.totalPages;
+  const paginationTotal = hasFiltersOrSearch ? filteredFull.length : (totalCount ?? 0);
+  const loading = hasFiltersOrSearch ? fullLoading : paged.loading;
 
 
 
@@ -230,7 +275,10 @@ export default function Elderly() {
   };
 
   // Invalidate paginated + count caches after any mutation.
-  const invalidate = () => setStatsVersion((v) => v + 1);
+  const invalidate = () => {
+    setFullData(null);
+    setStatsVersion((v) => v + 1);
+  };
 
   const handleEditElderly = async (id, updated) => {
     const prevVolId = openElderly?.volId || null;
@@ -299,10 +347,10 @@ export default function Elderly() {
     setShowAdd(true);
   };
 
-  const totalStat = activeData.length;
-  const connectedCount = activeData.filter((e) => e.volStatus === "כן").length;
-  const phoneContactCount = activeData.filter((e) => e.volStatus === "קשר טלפוני").length;
-  const withoutCount = activeData.filter((e) => e.volStatus === "לא" || !e.volStatus).length;
+  const totalStat = stats.total;
+  const connectedCount = stats.connected;
+  const phoneContactCount = stats.phoneContact;
+  const withoutCount = stats.without;
 
 
 
@@ -312,23 +360,29 @@ export default function Elderly() {
     <AdminPageLayout
       title="ניהול אזרחים ותיקים"
       subtitle="ניהול רשימת האזרחים הוותיקים, שיוך לאזורים ושכונות, סטטוס התנדבות ופרטים אישיים."
-      heroImage="/admin-heroes/elderly-hero-bg.png"
+      heroImage="/admin-heroes/elderly-hero-bg.webp"
       actions={
         <>
           <button className="btn btn-primary" onClick={handleOpenAdd}>+ הוספת אזרח ותיק</button>
           <button className="btn" onClick={handleOpenPrint}>הדפסת רשימה</button>
-          <button className="btn btn-outline" onClick={() => setShowCharts(!showCharts)}>
+          <button
+            className="btn btn-outline"
+            onClick={async () => {
+              if (!showCharts) await ensureFullData();
+              setShowCharts(!showCharts);
+            }}
+          >
             {showCharts ? "📊 הסתר גרפים" : "📊 הצג גרפים"}
           </button>
         </>
       }
     >
 
-      {loadError && (
+      {(loadError || paged.error) && (
         <div style={{
           background: "#fef3c7", border: "1px solid #fde68a", color: "#92400e",
           borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 14,
-        }}>{loadError}</div>
+        }}>{loadError || paged.error}</div>
       )}
       {loading && (
         <div style={{ padding: "10px 0", color: "#6b7280", fontSize: 14 }}>טוען נתונים…</div>
@@ -465,7 +519,7 @@ export default function Elderly() {
             },
             { key: "notes", label: "הערות" },
           ]}
-          data={pageItems.map((r, i) => ({ ...r, _idx: filterPageStart + i + 1 }))}
+          data={pageItems.map((r, i) => ({ ...r, _idx: ((currentPage - 1) * PAGE_SIZE) + i + 1 }))}
         />
         <TablePagination
           currentPage={currentPage}
@@ -473,9 +527,13 @@ export default function Elderly() {
           totalCount={paginationTotal}
           pageSize={PAGE_SIZE}
           loading={loading}
-          onNext={() => setFilterPage((p) => Math.min(filterTotalPages, p + 1))}
-          onPrevious={() => setFilterPage((p) => Math.max(1, p - 1))}
-          onPageChange={(p) => setFilterPage(p)}
+          onNext={() => hasFiltersOrSearch
+            ? setFilterPage((p) => Math.min(filterTotalPages, p + 1))
+            : paged.next()}
+          onPrevious={() => hasFiltersOrSearch
+            ? setFilterPage((p) => Math.max(1, p - 1))
+            : paged.prev()}
+          onPageChange={(p) => hasFiltersOrSearch ? setFilterPage(p) : paged.goToPage(p)}
         />
 
 
