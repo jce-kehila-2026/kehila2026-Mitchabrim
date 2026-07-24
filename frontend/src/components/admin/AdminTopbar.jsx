@@ -32,6 +32,7 @@ export default function AdminTopbar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [notifLoading, setNotifLoading] = useState(true);
 
   const menuRef = useRef(null);
@@ -86,8 +87,9 @@ export default function AdminTopbar() {
   // Notifications subscription
   useEffect(() => {
     const unsub = subscribeAdminNotifications(
-      (items) => {
+      (items, meta) => {
         setNotifications(items);
+        setUnreadCount(meta?.unreadCount || 0);
         setNotifLoading(false);
       },
       (err) => {
@@ -108,8 +110,6 @@ export default function AdminTopbar() {
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handleLogout = async () => {
     try {

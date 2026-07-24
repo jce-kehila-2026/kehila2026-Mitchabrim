@@ -1,4 +1,3 @@
-import logo from "@/assets/logo.png";
 import useSiteContent from "@/hooks/useSiteContent";
 import { Phone, Mail, MapPin } from "lucide-react";
 
@@ -15,7 +14,7 @@ export default function PublicFooter() {
         <div className="footer-grid-4">
           <div className="footer-col">
             <div className="footer-brand">
-              <img src={logo} alt={f.orgName} />
+              <img src="/logo.webp" alt={f.orgName} width="840" height="507" loading="lazy" decoding="async" />
               <div>
                 <div className="footer-brand-name">{f.orgName}</div>
                 <div className="footer-brand-sub">{f.tagline}</div>

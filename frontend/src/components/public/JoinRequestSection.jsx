@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createJoinRequest } from "../../services/joinRequestsService";
 import { validatePhone, validateName, filterDigits, filterName } from "../../utils/validation";
 import useSiteContent from "@/hooks/useSiteContent";
 
+const newIdempotencyKey = () => globalThis.crypto?.randomUUID?.()
+  || `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
 
 export default function JoinRequestSection() {
   const { content } = useSiteContent();
@@ -11,8 +13,9 @@ export default function JoinRequestSection() {
   const [form, setForm] = useState({ fullName: "", phone: "", type: "", message: "", email: "" });
   const [errors, setErrors] = useState({});
   // حالة لمعرفة هل تم إرסال הטופס בהצלחה
-  const [sent, setSent] = useState(false);
+  const [resultStatus, setResultStatus] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const idempotencyKey = useRef(newIdempotencyKey());
 
   const update = (k) => (e) => {
     let v = e.target.value;
@@ -35,30 +38,36 @@ export default function JoinRequestSection() {
     e.preventDefault();
     if (!validateAll()) return;
     setIsSubmitting(true);
+    setResultStatus(null);
 
     try {
-      const { notificationError } = await createJoinRequest({
+      const result = await createJoinRequest({
         fullName: form.fullName,
         phone: form.phone,
         type: form.type,
         message: form.message,
         email: form.email,
+        idempotencyKey: idempotencyKey.current,
       });
 
-      if (notificationError) {
-        console.warn("create admin notification failed:", notificationError?.message);
-      }
-
       // إذا نجحت العملية، نغير حالة sent إلى true لتظهر الكبسولة الخضراء للمستخدم
-      setSent(true);
+      setResultStatus(result.status === "duplicate" ? "duplicate" : "success");
       // تفريغ الحقول بالكامل وإعادتها لنصوص فارغة لتهيئتها لطلب جديد
       setForm({ fullName: "", phone: "", type: "", message: "", email: "" });
+      idempotencyKey.current = newIdempotencyKey();
 
       // مؤقت زمني (Timer) يقوم بإخفاء الرسالة الخضراء تلقائياً بعد 5 ثوانٍ
-      setTimeout(() => setSent(false), 5000);
+      setTimeout(() => setResultStatus(null), 5000);
     } catch (error) {
-      console.error("שגיאה בשליחת הפנייה:", error);
-      alert("אירעה שגיאה בשליחת הפנייה. אנא נסו שוב.");
+      const developmentSetupError = import.meta.env.DEV && [
+        "join-request/app-check-debug-unsupported",
+        "join-request/app-check-debug-token-rejected",
+        "appCheck/fetch-status-error",
+        "appCheck/initial-throttle",
+        "appCheck/throttled",
+      ].includes(error?.code);
+      const rejected = ["app-check-not-configured", "app-check-unavailable", "functions/unauthenticated", "functions/resource-exhausted", "functions/failed-precondition", "functions/permission-denied", "functions/invalid-argument"].includes(error?.code);
+      setResultStatus(developmentSetupError ? "development-setup" : rejected ? "rejected" : "failed");
     } finally {
       setIsSubmitting(false); // إلغاء وضع التحميل وإعادة تفعيل زر الإرسال
     }
@@ -99,7 +108,11 @@ export default function JoinRequestSection() {
         </div>
 
         <form className="join-card" onSubmit={submit}>
-          {sent && <div className="join-success">{j.successText}</div>}
+          {resultStatus === "success" && <div className="join-success" role="status">{j.successText}</div>}
+          {resultStatus === "duplicate" && <div className="join-success" role="status">הפנייה כבר התקבלה. אין צורך לשלוח שוב.</div>}
+          {resultStatus === "development-setup" && <div className="join-success" role="alert">אימות סביבת הפיתוח אינו מוגדר בדפדפן הזה. יש לרשום ב-Firebase את App Check Debug Token שמופיע במסוף הדפדפן ולנסות שוב. בחיבור דרך הרשת מומלץ להשתמש ב-HTTPS.</div>}
+          {resultStatus === "rejected" && <div className="join-success" role="alert">לא ניתן לשלוח את הפנייה כרגע. אנא בדקו את הפרטים ונסו שוב מאוחר יותר.</div>}
+          {resultStatus === "failed" && <div className="join-success" role="alert">שליחת הפנייה נכשלה. אנא נסו שוב.</div>}
           <div className="field">
             <label>שם מלא</label>
             <input

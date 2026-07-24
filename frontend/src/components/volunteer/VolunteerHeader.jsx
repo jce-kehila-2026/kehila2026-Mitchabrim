@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
-import logo from "@/assets/logo.png";
 import { useAuth } from "@/context/AuthContext";
 import {
   subscribeVolunteerNotifications,
@@ -22,6 +21,7 @@ export default function VolunteerHeader() {
   const initial = (displayName || "מ").trim().charAt(0);
 
   const [notifications, setNotifications] = useState([]);
+  const [unread, setUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
 
@@ -29,7 +29,10 @@ export default function VolunteerHeader() {
     if (!user?.uid) return;
     const unsub = subscribeVolunteerNotifications(
       user.uid,
-      (items) => setNotifications(items),
+      (items, meta) => {
+        setNotifications(items);
+        setUnread(meta?.unreadCount || 0);
+      },
       (err) => console.warn("vol notif:", err.message)
     );
     return () => unsub();
@@ -42,8 +45,6 @@ export default function VolunteerHeader() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
-
-  const unread = notifications.filter((n) => !n.read).length;
 
   const markRead = async (n) => {
     if (n.read) return;
@@ -63,7 +64,7 @@ export default function VolunteerHeader() {
     <header className="vol-header">
       <div className="container vol-header-inner">
         <Link to="/volunteer" className="vol-brand">
-          <img src={logo} alt="מתחברים" />
+          <img src="/logo.webp" alt="מתחברים" width="840" height="507" decoding="async" />
           <strong>מתחברים</strong>
         </Link>
         <nav className="vol-nav">

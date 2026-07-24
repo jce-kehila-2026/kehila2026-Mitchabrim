@@ -1,5 +1,4 @@
 import { NavLink } from "react-router-dom";
-import logo from "@/assets/logo.png";
 import { 
   LayoutDashboard, 
   HeartHandshake, 
@@ -39,7 +38,7 @@ export default function AdminSidebar({ collapsed = false, onToggle }) {
     <aside className={`admin-sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="admin-sidebar-head">
         <div className="admin-sidebar-brand">
-          <img src={logo} alt="מתחברים" />
+          <img src="/logo.webp" alt="מתחברים" width="840" height="507" decoding="async" />
         </div>
         <button
           type="button"

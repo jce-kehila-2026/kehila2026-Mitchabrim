@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
 import { Link } from "react-router-dom";
 import { auth } from "../../firebase";
 import { getPublicImages } from "../../services/imagesService";
 import { Camera, Image } from "lucide-react";
+
+// Small cap for the homepage carousel. /public-gallery uses its own larger cap.
+const HOME_GALLERY_MAX = 8;
 
 export default function GallerySection() {
   const { content } = useSiteContent();
@@ -14,25 +17,57 @@ export default function GallerySection() {
   const [selectedCategory, setSelectedCategory] = useState("הכל");
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [shouldFetch, setShouldFetch] = useState(false);
+  const sectionRef = useRef(null);
+
+  // Defer gallery fetching until the section is near the viewport so the hero
+  // and above-the-fold content aren't competing for network on first paint.
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setShouldFetch(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setShouldFetch(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+    io.observe(el);
+    // Safety fallback: fetch after hero settles even if observer never fires.
+    const t = setTimeout(() => setShouldFetch(true), 2500);
+    return () => {
+      io.disconnect();
+      clearTimeout(t);
+    };
+  }, []);
 
   useEffect(() => {
+    if (!shouldFetch) return;
+    let cancelled = false;
     const fetchImages = async () => {
       try {
-        const fetched = await getPublicImages({ max: 500 });
-        setImages(fetched);
+        const fetched = await getPublicImages({ max: HOME_GALLERY_MAX });
+        if (!cancelled) setImages(fetched);
       } catch (error) {
-
         const authState = auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous";
         console.error(
           `[GallerySection] Failed to fetch Firestore collection 'images' with where("isPublic","==",true). Auth: ${authState}. Code: ${error?.code}`,
           error
         );
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchImages();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldFetch]);
 
   // Reset index to 0 when category changes
   useEffect(() => {
@@ -69,7 +104,7 @@ export default function GallerySection() {
   const CATEGORIES = ["הכל", "פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"];
 
   return (
-    <section id="gallery" className="pub-section gallery3d-section">
+    <section id="gallery" ref={sectionRef} className="pub-section gallery3d-section">
       <div className="container">
         <div className="gallery-header">
           <span className="section-eyebrow">{g.eyebrow}</span>

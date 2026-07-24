@@ -17,7 +17,7 @@ export default function QuoteSection() {
         <div className="qv-card">
           <div className="qv-portrait-wrap">
             <div className="qv-portrait">
-              {q.image && <img src={q.image} alt={q.author || "ציטוט"} />}
+              {q.image && <img src={q.image} alt={q.author || "ציטוט"} loading="lazy" decoding="async" />}
             </div>
             <div className="qv-logo-badge" aria-hidden>
               <svg viewBox="0 0 32 32" width="22" height="22">

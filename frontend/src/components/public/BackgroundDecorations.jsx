@@ -7,7 +7,15 @@ import brushDots from "@/assets/decorations/decoration-brush-dots.png.asset.json
 import dots from "@/assets/decorations/decoration-dots.png.asset.json";
 
 const D = ({ src, className, style, alt = "" }) => (
-  <img src={src} alt={alt} aria-hidden="true" className={`decor ${className}`} style={style} />
+  <img
+    src={src}
+    alt={alt}
+    aria-hidden="true"
+    className={`decor ${className}`}
+    style={style}
+    loading="lazy"
+    decoding="async"
+  />
 );
 
 export default function BackgroundDecorations() {
