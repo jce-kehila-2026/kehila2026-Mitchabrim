@@ -13,7 +13,14 @@
     "test:sec03": "node scripts/run-sec-03-tests.mjs",
     "migrate:sec03:dry-run": "node scripts/sec-03-migrate-images.mjs",
     "test:sec04": "node scripts/run-sec-04-tests.mjs",
-    "reconcile:sec04:dry-run": "node scripts/sec-04-reconcile-reports.mjs"
+    "reconcile:sec04:dry-run": "node scripts/sec-04-reconcile-reports.mjs",
+    "test:sec06": "node scripts/run-sec-06-tests.mjs",
+    "test:sec07": "node scripts/run-sec-07-tests.mjs",
+    "test:sec08": "node scripts/run-sec-08-tests.mjs",
+    "test:sec09": "node scripts/run-sec-09-tests.mjs",
+    "test:perf03": "node scripts/run-perf-03-tests.mjs",
+    "test:perf04": "node scripts/run-perf-04-tests.mjs",
+    "test:perf06": "node scripts/run-perf-06-tests.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",

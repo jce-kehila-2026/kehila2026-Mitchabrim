@@ -110,6 +110,47 @@ service cloud.firestore {
     // Admin can read all users.
 
     match /users/{userId} {
+      function invitationDoc() {
+        return get(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_')));
+      }
+
+      function hasVerifiedInvitation() {
+        return request.auth.token.email_verified == true
+          && exists(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_')))
+          && invitationDoc().data.email is string
+          && invitationDoc().data.email.lower() == request.auth.token.email.lower()
+          && invitationDoc().data.role in ['admin', 'volunteer']
+          && invitationDoc().data.status in ['active', 'inactive'];
+      }
+
+      function validSelfBootstrapDocument() {
+        return request.resource.data.keys().hasOnly([
+            'email', 'fullName', 'displayName', 'phoneNumber', 'role',
+            'status', 'active', 'linkedVolunteerId', 'createdAt', 'updatedAt',
+            'lastLogin'
+          ])
+          && request.resource.data.keys().hasAll(['email', 'role', 'status', 'active'])
+          && request.resource.data.email is string
+          && request.resource.data.email.lower() == request.auth.token.email.lower()
+          && request.resource.data.role == invitationDoc().data.role
+          && request.resource.data.status == invitationDoc().data.status
+          && request.resource.data.active == (invitationDoc().data.status == 'active')
+          && (
+            request.resource.data.role != 'volunteer'
+            || (
+              request.resource.data.linkedVolunteerId is string
+              && invitationDoc().data.linkedVolunteerId == request.resource.data.linkedVolunteerId
+              && exists(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId))
+              && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email is string
+              && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email.lower() == request.auth.token.email.lower()
+            )
+          )
+          && (
+            request.resource.data.role != 'admin'
+            || !('linkedVolunteerId' in request.resource.data)
+            || request.resource.data.linkedVolunteerId == null
+          );
+      }
       allow get: if isSignedIn()
         && (
           request.auth.uid == userId
@@ -129,69 +170,28 @@ service cloud.firestore {
 
       allow delete: if isAdmin();
 
-      // Admin can freely create/update. A signed-in user may also bootstrap
-      // (create) or refresh (update) their OWN users/{uid} document on first
-      // login, so long as the doc is safely scoped to them:
-      //   * doc id == their auth uid
-      //   * email matches their auth token (case-insensitive)
-      //   * role is "volunteer" (never self-promote to admin)
-      //   * a matching volunteers/{linkedVolunteerId} exists whose email
-      //     equals their auth email (proves an admin has actually linked
-      //     them to that volunteer profile)
-      // This makes the admin invite flow work even when the Firebase Auth
-      // account already exists (the admin can't know the uid in that case),
-      // without letting an arbitrary signed-in user self-grant volunteer
-      // access to an unrelated volunteer profile.
+      // The active invite flow writes users/{uid} through an Admin-authorized
+      // callable. This client-side branch exists only for legacy email-keyed
+      // invitations, and requires verified email plus an exact safe schema.
       allow create: if isAdmin()
         || (
           isSignedIn()
           && request.auth.uid == userId
-          && request.resource.data.role == 'volunteer'
-          && request.resource.data.email is string
-          && request.resource.data.email.lower() == request.auth.token.email.lower()
-          && request.resource.data.linkedVolunteerId is string
-          && exists(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId))
-          && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email is string
-          && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email.lower() == request.auth.token.email.lower()
-        )
-        // Admin self-bootstrap on first login when the admin invite could not
-        // know the auth uid (auth/email-already-in-use). The invite writes an
-        // email-keyed users/{emailToId(email)} doc with role='admin'; on
-        // first login the client mirrors it into users/{auth.uid}. This is
-        // ONLY allowed when such an admin-created email-keyed doc already
-        // exists with role='admin' for the same email — a regular signed-in
-        // user cannot self-promote because they cannot create the email-keyed
-        // source doc (users create requires isAdmin above).
-        || (
-          isSignedIn()
-          && request.auth.uid == userId
-          && request.resource.data.role == 'admin'
-          && request.resource.data.email is string
-          && request.resource.data.email.lower() == request.auth.token.email.lower()
-          && exists(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_')))
-          && get(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_'))).data.role == 'admin'
-          && get(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_'))).data.email.lower() == request.auth.token.email.lower()
+          && hasVerifiedInvitation()
+          && validSelfBootstrapDocument()
         );
 
       allow update: if isAdmin()
         || (
           isSignedIn()
           && request.auth.uid == userId
-          // Self-updates cannot escalate role or activation.
-          && request.resource.data.role == resource.data.role
+          && request.resource.data.email is string
           && request.resource.data.email.lower() == request.auth.token.email.lower()
-          && (
-            !('active' in request.resource.data)
-            || request.resource.data.active == resource.data.active
-          )
-          && (
-            !('status' in request.resource.data)
-            || request.resource.data.status == resource.data.status
-          )
-          && (
-            !('linkedVolunteerId' in request.resource.data)
-            || request.resource.data.linkedVolunteerId == resource.data.linkedVolunteerId
-          )
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['fullName', 'displayName', 'phoneNumber', 'updatedAt'])
+          && (!('fullName' in request.resource.data) || (request.resource.data.fullName is string && request.resource.data.fullName.size() <= 200))
+          && (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 200))
+          && (!('phoneNumber' in request.resource.data) || (request.resource.data.phoneNumber is string && request.resource.data.phoneNumber.size() <= 50))
         );
     }
 
@@ -371,7 +371,7 @@ service cloud.firestore {
           'requestId', 'read', 'createdAt'
         ])
         && request.resource.data.audience == 'admin'
-        && request.resource.data.type in ['join_request', 'profile_update_request']
+        && request.resource.data.type == 'profile_update_request'
         && request.resource.data.title is string
         && request.resource.data.title.size() > 0
         && request.resource.data.title.size() <= 200
@@ -382,15 +382,8 @@ service cloud.firestore {
         && request.resource.data.requestId.size() <= 200
         && request.resource.data.read == false
         && request.resource.data.createdAt == request.time
-        && (
-          // Public join_request notifications: no auth required.
-          request.resource.data.type == 'join_request'
-          || (
-            // profile_update_request must come from an active volunteer.
-            request.resource.data.type == 'profile_update_request'
-            && isVolunteer()
-          )
-        );
+        // Join-request notifications are created atomically by the Admin SDK.
+        && isVolunteer();
     }
 
 
@@ -400,32 +393,8 @@ service cloud.firestore {
     match /joinRequests/{reqId} {
   allow read, update, delete: if isAdmin();
 
-  allow create: if request.resource.data.keys().hasOnly([
-      'fullName',
-      'phone',
-      'note',
-      'type',
-      'status',
-      'createdAt'
-    ])
-    && request.resource.data.fullName is string
-    && request.resource.data.phone is string
-    && request.resource.data.note is string
-    && request.resource.data.type is string
-    && request.resource.data.status == 'new'
-    && request.resource.data.createdAt == request.time
-    && request.resource.data.fullName.size() >= 2
-    && request.resource.data.fullName.size() <= 200
-    && request.resource.data.phone.size() >= 5
-    && request.resource.data.phone.size() <= 40
-    && request.resource.data.note.size() <= 2200
-    && request.resource.data.type in [
-      'אזרח ותיק',
-      'פונה עבור אזרח ותיק אחר',
-      'מתעניין בהתנדבות',
-      'איש מקצוע',
-      'אחר'
-    ];
+  // Only the App-Check-protected callable function creates public requests.
+  allow create: if false;
 }
 
     // =========================
@@ -471,12 +440,11 @@ service cloud.firestore {
     // =========================
     // Settings
     // =========================
-    // Public read is acceptable only if settings contains public data
-    // such as areas/neighborhoods and general public site settings.
-    // Admin only can edit.
+    // Administrative configuration. Public website content belongs in the
+    // separately protected siteContent collection, not under settings.
 
     match /settings/{docId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
