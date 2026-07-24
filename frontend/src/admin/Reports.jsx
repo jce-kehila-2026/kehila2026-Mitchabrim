@@ -6,8 +6,8 @@ import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
 import { getParliaments } from "@/services/parliamentsService.js";
 import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
-import { getJoinRequests } from "@/services/joinRequestsService.js";
-import { getFinancialRecords } from "@/services/financialService.js";
+import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
+import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
 import { 
   HeartHandshake, 
   Handshake, 
@@ -86,85 +86,15 @@ const REPORT_TYPES = {
     id: "elderly",
     icon: "👵",
     label: "דוח אזרחים ותיקים",
-    description: "פילוח לפי שכונה, אזור, סטטוס ופרויקטים",
+    description: "פילוח לפי שכונה, אזור, סטטוס ופרלמנטים",
     collection: "elderly",
     loadData: async () => {
       try {
-        const [elderly, projs, volGroups] = await Promise.all([
-          getElderly(),
-          getProjects(),
-          getVolunteerGroups(),
-        ]);
-
-        const groupMap = {
-          "עצמאי": "עצמאיים",
-          "עצמאיים": "עצמאיים",
-          "": "עצמאיים",
-          "undefined": "עצמאיים",
-          "null": "עצמאיים",
-        };
-        volGroups.forEach((g) => {
-          groupMap[g.id] = g.name;
-        });
-
-        // For each project, fetch its elderly participants
-        const elderlyProjMap = {}; // elderlyId -> Array of project participations
-        await Promise.all(
-          projs.map(async (p) => {
-            try {
-              const participants = await getElderlyParticipants(p.id);
-              participants.forEach((ep) => {
-                const elderlyId = ep.id;
-                if (!elderlyProjMap[elderlyId]) {
-                  elderlyProjMap[elderlyId] = [];
-                }
-                elderlyProjMap[elderlyId].push({
-                  projectName: p.name,
-                  projectYear: p.year,
-                  groupName: groupMap[ep.assignedGroupId] || "עצמאיים",
-                  receives: ep.receives || "כן",
-                  delivery: ep.delivery || "ממתין למסירה",
-                  notes: ep.notes || "",
-                });
-              });
-            } catch (err) {
-              console.warn("Failed to load participants for project", p.id, err);
-            }
-          })
-        );
-
-        const allRows = [];
-        elderly.forEach((e) => {
-          const participations = elderlyProjMap[e.id] || [];
-          const baseName = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "";
-          if (participations.length === 0) {
-            allRows.push({
-              ...e,
-              name: baseName,
-              projectName: "—",
-              projectYear: "—",
-              groupName: "—",
-              receives: "—",
-              delivery: "—",
-              projectNotes: "",
-            });
-          } else {
-            participations.forEach((part) => {
-              allRows.push({
-                ...e,
-                name: baseName,
-                projectName: part.projectName,
-                projectYear: part.projectYear,
-                groupName: part.groupName,
-                receives: part.receives,
-                delivery: part.delivery,
-                projectNotes: part.notes,
-              });
-            });
-          }
-        });
-
-        return allRows;
+        const elderly = await getElderly();
+        return (elderly || []).map((e) => ({
+          ...e,
+          name: `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "",
+        }));
       } catch (error) {
         console.error("Failed to load elderly report data:", error);
         return [];
@@ -192,13 +122,15 @@ const REPORT_TYPES = {
       { key: "marital", label: "מצב משפחתי" },
       { key: "country", label: "ארץ לידה" },
       { key: "language", label: "שפת דיבור" },
+      { key: "isArchived", label: "מצב ארכיב" },
+      { key: "deletedAt", label: "תאריך מחיקה" },
       { key: "projectName", label: "שם הפרויקט" },
       { key: "projectYear", label: "שנת פרויקט" },
       { key: "groupName", label: "קבוצה מחלקת בפרויקט" },
       { key: "receives", label: "מקבל חבילה בפרויקט" },
       { key: "delivery", label: "סטטוס מסירה בפרויקט" },
     ],
-    defaults: ["name", "gender", "address", "mobile", "projectName", "groupName", "delivery"],
+    defaults: ["name", "gender", "address", "mobile", "neighborhood", "status"],
     filters: [
       { key: "gender", label: "מגדר", type: "select", options: ["זכר", "נקבה"] },
       { key: "neighborhood", label: "שכונה", type: "select" },
@@ -206,16 +138,12 @@ const REPORT_TYPES = {
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "נפטר", "לא פעיל"] },
       { key: "volStatus", label: "סטטוס מתנדב", type: "select", options: ["כן", "לא מתאים", "לא רוצה"] },
       { key: "parliament", label: "פרלמנט", type: "select" },
-      { key: "projectName", label: "פרויקט", type: "select" },
-      { key: "groupName", label: "קבוצה מחלקת בפרויקט", type: "select" },
-      { key: "delivery", label: "סטטוס מסירה בפרויקט", type: "select", options: ["נמסר", "ממתין למסירה", "לא נמסר"] },
     ],
     sortOptions: [
       { value: "name", label: "שם (א-ב)" },
       { value: "-name", label: "שם (ב-א)" },
       { value: "neighborhood", label: "שכונה" },
       { value: "lastContact", label: "תאריך יצירת קשר אחרון" },
-      { value: "projectName", label: "שם הפרויקט" },
     ],
     transform: (item) => ({
       ...item,
@@ -444,59 +372,6 @@ const REPORT_TYPES = {
       coordinators: (item.coordinators || []).join(", "),
     }),
   },
-  joinRequests: {
-    id: "joinRequests",
-    icon: "✉️",
-    label: "דוח בקשות הצטרפות",
-    description: "בקשות וטיפול",
-    collection: "joinRequests",
-    loadData: async () => {
-      try {
-        const data = await getJoinRequests();
-        return (data || []).map((r) => ({
-          ...r,
-          name: r.fullName || r.name || "—",
-          email: r.email || "—",
-          phone: r.phone || "—",
-          type: r.type || "—",
-          note: r.note || "—",
-        }));
-      } catch (error) {
-        console.error("Failed to load join requests from Firestore:", error);
-        return [];
-      }
-    },
-    fields: [
-      { key: "name", label: "שם מלא" },
-      { key: "phone", label: "טלפון" },
-      { key: "email", label: "אימייל" },
-      { key: "type", label: "סוג פנייה" },
-      { key: "note", label: "הערות" },
-      { key: "status", label: "סטטוס" },
-    ],
-    defaults: ["name", "phone", "email", "type", "note", "status"],
-    filters: [
-      { key: "status", label: "סטטוס", type: "select", options: ["חדש", "בטיפול", "טופל"] },
-      { key: "type", label: "סוג פנייה", type: "select" },
-    ],
-    sortOptions: [
-      { value: "name", label: "שם" },
-      { value: "status", label: "סטטוס" },
-    ],
-    // ===== CHART DATA =====
-    getChartData: (data) => {
-      // Pie: Requests by Status
-      const statusCount = {};
-      data.forEach((item) => {
-        const key = item.status || "ללא סטטוס";
-        statusCount[key] = (statusCount[key] || 0) + 1;
-      });
-      const pieData = Object.entries(statusCount).map(([name, value]) => ({ name, value }));
-
-      return { pieData };
-    },
-    transform: (item) => item,
-  },
   financial: {
     id: "financial",
     icon: "💰",
@@ -602,50 +477,59 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
     })
     .join("");
 
-  let summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
-  const archived = rows.filter((d) => d.isArchived === "כן").length;
-  if (archived > 0) {
-    summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
-  }
-
+  let summaryItems = "";
   if (report.id === "elderly") {
     const active = rows.filter((d) => d.status === "פעיל").length;
     const males = rows.filter((d) => d.gender === "זכר").length;
     const females = rows.filter((d) => d.gender === "נקבה").length;
+    const archived = rows.filter((d) => d.isArchived === "כן").length;
+
     summaryItems += `
+      <div class="item">👥 סה"כ אזרחים ותיקים: <strong>${rows.length}</strong></div>
       <div class="item">🟢 פעילים: <strong>${active}</strong></div>
       <div class="item">👴 גברים: <strong>${males}</strong></div>
       <div class="item">👵 נשים: <strong>${females}</strong></div>
     `;
-  } else if (report.id === "volunteers") {
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
-    summaryItems += `
-      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-      <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
-    `;
-  } else if (report.id === "projects") {
-    const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
-    const active = rows.filter((d) => d.status === "פעיל").length;
-    summaryItems += `
-      <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
-      <div class="item">🟢 פעילים: <strong>${active}</strong></div>
-    `;
-  } else if (report.id === "financial") {
-    const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
-    const expenses = rows.filter((d) => d.type === "הוצאה");
-    const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    summaryItems += `
-      <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
-      <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
-      <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
-    `;
-  } else if (report.id === "parliaments") {
-    const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
-    summaryItems += `
-      <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
-    `;
+    if (archived > 0) {
+      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
+    }
+  } else {
+    summaryItems = `<div class="item">📊 סה"כ רשומות: <strong>${rows.length}</strong></div>`;
+    const archived = rows.filter((d) => d.isArchived === "כן").length;
+    if (archived > 0) {
+      summaryItems += `<div class="item">📦 בארכיב: <strong>${archived}</strong></div>`;
+    }
+
+    if (report.id === "volunteers") {
+      const active = rows.filter((d) => d.status === "פעיל").length;
+      const pending = rows.filter((d) => d.status === "ממתין לשיבוץ").length;
+      summaryItems += `
+        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+        <div class="item">⏳ ממתינים: <strong>${pending}</strong></div>
+      `;
+    } else if (report.id === "projects") {
+      const completed = rows.filter((d) => d.status === "הסתיים" || d.status === "סיים").length;
+      const active = rows.filter((d) => d.status === "פעיל").length;
+      summaryItems += `
+        <div class="item">✅ הסתיימו: <strong>${completed}</strong></div>
+        <div class="item">🟢 פעילים: <strong>${active}</strong></div>
+      `;
+    } else if (report.id === "financial") {
+      const incomes = rows.filter((d) => d.type === "תרומה" || d.type === "הכנסה");
+      const expenses = rows.filter((d) => d.type === "הוצאה");
+      const totalIn = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const totalOut = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      summaryItems += `
+        <div class="item">💰 הכנסות: <strong>₪${totalIn.toLocaleString()}</strong></div>
+        <div class="item">💸 הוצאות: <strong>₪${totalOut.toLocaleString()}</strong></div>
+        <div class="item">📊 יתרה: <strong>₪${(totalIn - totalOut).toLocaleString()}</strong></div>
+      `;
+    } else if (report.id === "parliaments") {
+      const totalMembers = rows.reduce((s, r) => s + (Number(r.members) || 0), 0);
+      summaryItems += `
+        <div class="item">👥 סה"כ משתתפים: <strong>${totalMembers}</strong></div>
+      `;
+    }
   }
 
   const html = `<!doctype html>
@@ -989,36 +873,7 @@ const renderParliamentCharts = (data) => {
   );
 };
 
-const renderJoinRequestCharts = (data) => {
-  const { pieData } = REPORT_TYPES.joinRequests.getChartData(data);
 
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 20 }}>
-      <SectionCard title="🧩 התפלגות בקשות הצטרפות לפי סטטוס">
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {pieData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </SectionCard>
-    </div>
-  );
-};
 
 const renderFinancialCharts = (data) => {
   const { barData, pieData } = REPORT_TYPES.financial.getChartData(data);
@@ -1204,8 +1059,6 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         return renderProjectCharts(filteredData);
       case "parliaments":
         return renderParliamentCharts(filteredData);
-      case "joinRequests":
-        return renderJoinRequestCharts(filteredData);
       case "financial":
         return renderFinancialCharts(filteredData);
       default:
@@ -1221,12 +1074,13 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה לדוחות
@@ -1649,10 +1503,13 @@ const HolidaySummary = ({ onBack }) => {
             onClick={onBack}
             style={{
               padding: "8px 16px",
-              background: "#f5f0ed",
-              border: "1px solid #ddd",
-              borderRadius: "8px",
+              background: "white",
+              border: "1px solid #8B0000",
+              borderRadius: "6px",
               cursor: "pointer",
+              fontSize: "14px",
+              color: "#8B0000",
+              fontWeight: "bold",
             }}
           >
             → חזרה
@@ -1674,12 +1531,13 @@ const HolidaySummary = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה
@@ -1938,12 +1796,13 @@ ${chosen.map(buildGroupTable).join("")}
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה
@@ -2084,12 +1943,13 @@ const FinancialChooser = ({ onBack }) => {
           onClick={onBack}
           style={{
             padding: "8px 16px",
-            background: "#f5f0ed",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
+            background: "white",
+            border: "1px solid #8B0000",
+            borderRadius: "6px",
             cursor: "pointer",
             fontSize: "14px",
-            color: "#333",
+            color: "#8B0000",
+            fontWeight: "bold",
           }}
         >
           → חזרה לדוחות
