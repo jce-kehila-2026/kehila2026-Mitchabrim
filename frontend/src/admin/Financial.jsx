@@ -627,7 +627,7 @@ export default function Financial() {
       title="ניהול כספי"
       subtitle="מעקב אחר הכנסות, הוצאות ודוחות כספיים"
       actions={
-        <div style={{ display: "flex", gap: "14px", direction: "rtl", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "10px", direction: "rtl", alignItems: "center", flexWrap: "wrap" }}>
           
           {/* --- القائمة المنسدلة لاختيار السنة --- */}
           <select 

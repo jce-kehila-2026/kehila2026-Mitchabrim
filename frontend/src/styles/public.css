@@ -74,7 +74,7 @@
   border: none;
   padding: 0;
   cursor: pointer;
-  margin-inline-start: auto;
+  margin-inline-end: auto;
 }
 .pub-nav-toggle span {
   display: block;

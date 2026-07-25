@@ -325,7 +325,7 @@ export default function Dashboard() {
       title={getGreeting()} 
       subtitle="ניהול ענייני המערכת והקהילה מכאן"
       actions={
-        <div style={{ display: "flex", alignItems: "center", gap: "16px", backgroundColor: "#fff", padding: "8px 18px", borderRadius: "30px", border: "1px solid #edf0f2", boxShadow: "0 2px 5px rgba(0,0,0,0.03)", direction: "rtl" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", backgroundColor: "#fff", padding: "8px 14px", borderRadius: "30px", border: "1px solid #edf0f2", boxShadow: "0 2px 5px rgba(0,0,0,0.03)", direction: "rtl", flexWrap: "wrap", maxWidth: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#495057", fontSize: "13.5px", fontWeight: "600" }}>
             <Calendar size={15} style={{ color: "#8b2c2c" }} />
             <span style={{ color: "#343a40" }}>{formatDateHebrew(currentDateTime)}</span>

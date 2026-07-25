@@ -205,7 +205,7 @@ export default function ElderlyContacts() {
         </div>
       )}
 
-      <div className="stats-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+      <div className="stats-grid stats-grid-3">
         <StatsCard icon="📇" title="סה״כ אנשי קשר" value={String(stats.total)} />
         <StatsCard icon="🔗" title="מקושרים לאזרח ותיק" value={String(stats.linked)} />
         <StatsCard icon="🚫" title="לא מקושרים" value={String(stats.unlinked)} />
