@@ -116,12 +116,12 @@
   .pub-nav-mobile-inner {
     position: absolute;
     top: 0;
-    right: 0;
+    left: 0;
+    right: auto;
     width: min(280px, 80vw);
     height: 100%;
-    background: var(--color-surface, #fbf5ec);
-    background-color: #fbf5ec;
-    border-inline-start: 1px solid var(--color-border);
+    background: #fbf5ec;
+    border-inline-end: 1px solid var(--color-border);
     padding: 96px 24px 32px;
     display: flex;
     flex-direction: column;
@@ -131,7 +131,7 @@
   }
   @keyframes slideInMobile {
     from {
-      transform: translateX(40px);
+      transform: translateX(-40px);
       opacity: 0;
     }
     to {

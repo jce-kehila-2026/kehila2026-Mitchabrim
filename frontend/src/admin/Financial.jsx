@@ -740,6 +740,14 @@ export default function Financial() {
           .segmented-tabs-container { padding: 12px 8px; }
           .segmented-control { width: 100%; flex-direction: column; gap: 4px; border-radius: 12px; }
           .segment-btn { padding: 10px 12px; font-size: 13.5px; width: 100%; text-align: center; }
+          .receipts-grid { grid-template-columns: 1fr !important; padding: 14px; gap: 12px; }
+          .receipt-card { flex-wrap: wrap; padding: 14px; gap: 12px; }
+          .receipt-info { flex-basis: 100%; min-width: 0; }
+          .receipt-actions { flex-direction: row; }
+          .reports-charts-grid { grid-template-columns: 1fr !important; gap: 14px !important; }
+          .filter-section { padding: 14px; }
+          .search-input-wrapper { max-width: 100% !important; }
+          .fin-table th, .fin-table td { padding: 10px 12px; font-size: 12.5px; }
         }
 
         .filter-section { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; flex-direction: column; gap: 16px; }
@@ -1405,7 +1413,7 @@ export default function Financial() {
               </button>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 20, marginBottom: 20 }}>
+            <div className="reports-charts-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 20, marginBottom: 20 }}>
               <SectionCard title="📊 הכנסות מול הוצאות לפי פרויקט">
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={projectFinancialStats}>
