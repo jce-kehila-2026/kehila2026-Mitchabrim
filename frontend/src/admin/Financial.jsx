@@ -731,11 +731,16 @@ export default function Financial() {
         .fin-icon-box { width: 48px; height: 48px; border-radius: 50%; background-color: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 22px; }
         
         .fin-combined-wrapper { background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.03); direction: rtl; overflow: hidden; margin-bottom: 40px; min-height: 400px; }
-        .segmented-tabs-container { display: flex; justify-content: center; padding: 20px 0; background: #fafbfc; border-bottom: 1px solid #e2e8f0; }
-        .segmented-control { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: #f1f5f9; padding: 4px; gap: 4px;}
-        .segment-btn { padding: 10px 36px; font-size: 14.5px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; background: transparent; color: #64748b; outline: none; }
+        .segmented-tabs-container { display: flex; justify-content: center; padding: 20px 12px; background: #fafbfc; border-bottom: 1px solid #e2e8f0; }
+        .segmented-control { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 10px; background: #f1f5f9; padding: 4px; gap: 4px; max-width: 100%; flex-wrap: wrap; justify-content: center; }
+        .segment-btn { padding: 10px 36px; font-size: 14.5px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; background: transparent; color: #64748b; outline: none; white-space: nowrap; }
         .segment-btn.active { background: #fff; color: #8b2c2c; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
         .segment-btn:hover:not(.active) { color: #334155; }
+        @media (max-width: 640px) {
+          .segmented-tabs-container { padding: 12px 8px; }
+          .segmented-control { width: 100%; flex-direction: column; gap: 4px; border-radius: 12px; }
+          .segment-btn { padding: 10px 12px; font-size: 13.5px; width: 100%; text-align: center; }
+        }
 
         .filter-section { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; flex-direction: column; gap: 16px; }
         .filter-row-1 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
