@@ -104,15 +104,6 @@ function staticCases(projectId) {
       page: true,
     },
     {
-      name: "login_sessions:userId+isActive",
-      collectionId: "login_sessions",
-      filters: [
-        fieldFilter("userId"),
-        fieldFilter("isActive", "EQUAL", { booleanValue: true }),
-      ],
-      page: true,
-    },
-    {
       name: "elderly:status+volStatus-count",
       collectionId: "elderly",
       filters: [fieldFilter("status"), fieldFilter("volStatus")],

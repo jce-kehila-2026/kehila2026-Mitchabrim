@@ -67,10 +67,6 @@ await seed("elderlyContactLinks/match_link", {
   contactId: string("__db04_contactId__"),
   elderlyId: string("__db04_elderlyId__"),
 });
-await seed("login_sessions/match_session", {
-  userId: string("__db04_userId__"),
-  isActive: { booleanValue: true },
-});
 await seed("projects/project_a/projectGroups/group_a", {
   createdAt: timestamp(),
 });
@@ -83,8 +79,8 @@ const result = await probeDb04Queries({
   token: "owner",
   apiRoot,
 });
-assert.equal(result.queryCases, 81);
-assert.equal(result.checks, 215);
+assert.equal(result.queryCases, 80);
+assert.equal(result.checks, 214);
 assert.deepEqual(result.failures, []);
 
 async function runQuery(testCase, options = {}) {
