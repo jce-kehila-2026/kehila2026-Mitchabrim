@@ -2110,6 +2110,15 @@ section.pub-section {
   max-width: none;
   height: auto;
 }
+.page-decorations .decor-leaf,
+.page-decorations .decor-heart {
+  color: #b88952;
+}
+.page-decorations .decor-dots,
+.page-decorations .decor-arc,
+.page-decorations .decor-brush {
+  color: #d97a4a;
+}
 .homepage-background > section,
 .homepage-background > footer,
 .homepage-background > nav {

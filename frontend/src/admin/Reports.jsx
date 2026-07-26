@@ -5,20 +5,19 @@ import SectionCard from "@/components/admin/SectionCard.jsx";
 import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
 import { getParliaments } from "@/services/parliamentsService.js";
-import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
-import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
-import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
-import { 
-  HeartHandshake, 
-  Handshake, 
-  Gift, 
-  Landmark, 
-  Coins, 
-  FileText, 
-  Printer, 
-  Search, 
-  BarChart3, 
-  Puzzle 
+import { getProjects, getProjectGroupsByProject } from "@/services/projectsService.js";
+import { getFinancialRecords } from "@/services/financialService.js";
+import {
+  HeartHandshake,
+  Handshake,
+  Gift,
+  Landmark,
+  Coins,
+  FileText,
+  Printer,
+  Search,
+  BarChart3,
+  Puzzle,
 } from "lucide-react";
 
 const ICON_MAP = {
@@ -169,7 +168,7 @@ const REPORT_TYPES = {
           return {
             ...v,
             volunteerType: isGroup ? "קבוצה" : "עצמאי",
-            groupType: isGroup ? (groupTypeMap[v.group] || "אחר") : "עצמאי",
+            groupType: isGroup ? groupTypeMap[v.group] || "אחר" : "עצמאי",
           };
         });
       } catch (error) {
@@ -199,7 +198,12 @@ const REPORT_TYPES = {
       { key: "gender", label: "מגדר", type: "select", options: ["זכר", "נקבה"] },
       { key: "volunteerType", label: "סוג מתנדב", type: "select", options: ["עצמאי", "קבוצה"] },
       { key: "group", label: "קבוצה", type: "select" },
-      { key: "groupType", label: "סוג קבוצה", type: "select", options: ["סטודנטים", "בית ספר", "חברה", "עמותה", "עצמאי", "אחר"] },
+      {
+        key: "groupType",
+        label: "סוג קבוצה",
+        type: "select",
+        options: ["סטודנטים", "בית ספר", "חברה", "עמותה", "עצמאי", "אחר"],
+      },
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "ממתין לשיבוץ", "לא פעיל"] },
       { key: "area", label: "אזור", type: "select" },
       { key: "neighborhood", label: "שכונה", type: "select" },
@@ -248,23 +252,25 @@ const REPORT_TYPES = {
     collection: "projects",
     loadData: async () => {
       try {
-        const [projs, volGroups] = await Promise.all([getProjects(), getVolunteerGroups()]);
+        const [projs, volGroups, groupsByProject] = await Promise.all([
+          getProjects(),
+          getVolunteerGroups(),
+          getProjectGroupsByProject(),
+        ]);
         const groupMap = {};
         volGroups.forEach((g) => {
           groupMap[g.id] = g.name;
         });
 
-        const resolved = await Promise.all(
-          projs.map(async (p) => {
-            const grps = await getProjectGroups(p.id);
+        const resolved = projs.map((p) => {
+            const grps = groupsByProject[p.id] || [];
             const groupNames = grps.map((g) => groupMap[g.id]).filter(Boolean);
             return {
               ...p,
               groupNames: groupNames.join(", "),
               groupList: groupNames,
             };
-          })
-        );
+          });
         return resolved || [];
       } catch (error) {
         console.error("Failed to load projects from Firestore:", error);
@@ -439,7 +445,6 @@ const REPORT_TYPES = {
     },
     transform: (item) => item,
   },
-
 };
 
 /* ============================================================
@@ -454,7 +459,9 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
   const fsInput = prompt("נא להזין גודל גופן לטבלה ב-PDF (ברירת מחדל 14):", "14") || "14";
   const fontSize = parseInt(fsInput) && !isNaN(fsInput) ? Number(fsInput) : 14;
 
-  const isLandscape = confirm("האם ברצונך להפיק את ה-PDF לרוחב (Landscape)?\nלחץ על 'אישור' עבור לרוחב, או 'ביטול' עבור לאורך (Portrait).");
+  const isLandscape = confirm(
+    "האם ברצונך להפיק את ה-PDF לרוחב (Landscape)?\nלחץ על 'אישור' עבור לרוחב, או 'ביטול' עבור לאורך (Portrait).",
+  );
   const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
 
   const cols = fields.map((k) => report.fields.find((f) => f.key === k)).filter(Boolean);
@@ -873,8 +880,6 @@ const renderParliamentCharts = (data) => {
   );
 };
 
-
-
 const renderFinancialCharts = (data) => {
   const { barData, pieData } = REPORT_TYPES.financial.getChartData(data);
 
@@ -919,8 +924,6 @@ const renderFinancialCharts = (data) => {
     </div>
   );
 };
-
-
 
 /* ============================================================
    Report Builder Component with Enhanced Filters + CHARTS
@@ -1085,7 +1088,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         >
           → חזרה לדוחות
         </button>
-        <h2 style={{ margin: 0, color: "#8B0000", fontSize: "22px", display: "flex", alignItems: "center", gap: "8px" }}>
+        <h2
+          style={{ margin: 0, color: "#8B0000", fontSize: "22px", display: "flex", alignItems: "center", gap: "8px" }}
+        >
           {getReportIcon(report.icon, 24)} {report.label}
         </h2>
       </div>

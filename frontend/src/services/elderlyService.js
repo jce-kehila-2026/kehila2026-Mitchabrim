@@ -1,12 +1,8 @@
 import {
   collection,
-  addDoc,
   getDoc,
   getDocs,
-  updateDoc,
-  deleteDoc,
   doc,
-  serverTimestamp,
   query,
   where,
   orderBy,
@@ -14,10 +10,14 @@ import {
   startAfter,
   getCountFromServer,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 
 
-import { db } from "../firebase";
+import { db, getSecureFunctions } from "../firebase";
 import { sanitizeFormData } from "../utils/sanitize";
+import { buildElderlyQueryCriteria } from "../utils/firestoreSearch";
+import { mapWithConcurrency } from "../utils/bulkOperations";
+import { requireOperationId } from "../utils/operationId";
 
 
 const elderlyCollection = collection(db, "elderly");
@@ -62,27 +62,39 @@ export async function getElderlyForVolunteer(volunteerId) {
 }
 
 
-export async function createElderly(elderlyData) {
+async function mutateElderly(payload) {
+  const functions = await getSecureFunctions();
+  if (!functions) {
+    const error = new Error("App Check is required for protected elderly mutations.");
+    error.code = "db01/app-check-required";
+    throw error;
+  }
+  const callable = httpsCallable(functions, "mutateElderly");
+  const result = await callable(payload);
+  return result.data;
+}
+
+export async function createElderly(elderlyData, operationId) {
   const clean = sanitizeFormData(elderlyData);
-  const docRef = await addDoc(elderlyCollection, {
-    ...clean,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const result = await mutateElderly({
+    action: "create",
+    data: clean,
+    operationId: requireOperationId(operationId),
   });
 
   return {
-    id: docRef.id,
+    id: result.id,
     ...clean,
   };
 }
 
-export async function editElderly(elderlyId, elderlyData) {
-  const elderlyRef = doc(db, "elderly", elderlyId);
+export async function editElderly(elderlyId, elderlyData, operationId) {
   elderlyData = sanitizeFormData(elderlyData);
-
-  await updateDoc(elderlyRef, {
-    ...elderlyData,
-    updatedAt: serverTimestamp(),
+  await mutateElderly({
+    action: "update",
+    elderlyId,
+    data: elderlyData,
+    operationId: requireOperationId(operationId),
   });
 
   return {
@@ -91,31 +103,45 @@ export async function editElderly(elderlyId, elderlyData) {
   };
 }
 
-export async function deleteElderly(elderlyId) {
-  const elderlyRef = doc(db, "elderly", elderlyId);
-  await deleteDoc(elderlyRef);
+export async function deleteElderly(elderlyId, operationId) {
+  await mutateElderly({
+    action: "delete",
+    elderlyId,
+    operationId: requireOperationId(operationId),
+  });
 }
 
 /* =========================
    Server-side pagination (Firestore cursor)
 
-   These helpers implement real Firestore pagination using orderBy + limit +
-   startAfter. They are intended for future adoption when the current UI moves
-   away from client-side filtering/search. The existing getElderly() is still
-   used by pages that need the full dataset for stats cards and multi-field
-   client-side search (see PHASE_8_10 in the audit).
+   Real Firestore pagination for the admin list. Search and filters are applied
+   before limit/startAfter; unrestricted getElderly() remains for explicit
+   full-report actions only.
 ========================= */
 
 /**
  * Fetch a single page of elderly documents.
- * @param {{ pageSize?: number, cursor?: import("firebase/firestore").DocumentSnapshot|null }} opts
+ * @param {{ pageSize?: number, cursor?: import("firebase/firestore").DocumentSnapshot|null, criteria?: object }} opts
  * @returns {Promise<{ items: object[], firstVisible: any, lastVisible: any, hasNextPage: boolean }>}
  */
-export async function getElderlyPage({ pageSize = 20, cursor = null } = {}) {
-  const base = [where("status", "==", "פעיל"), limit(pageSize + 1)];
-  const q = cursor
-    ? query(elderlyCollection, where("status", "==", "פעיל"), startAfter(cursor), limit(pageSize + 1))
-    : query(elderlyCollection, ...base);
+function getElderlyCriteriaConstraints(criteria = {}) {
+  const normalized = buildElderlyQueryCriteria(criteria);
+  const constraints = [where("status", "==", normalized.status)];
+  if (normalized.area) constraints.push(where("area", "==", normalized.area));
+  if (normalized.neighborhood) constraints.push(where("neighborhood", "==", normalized.neighborhood));
+  if (normalized.marital) constraints.push(where("marital", "==", normalized.marital));
+  if (normalized.volStatus) constraints.push(where("volStatus", "==", normalized.volStatus));
+  if (normalized.searchTerm) {
+    constraints.push(where("searchPrefixes", "array-contains", normalized.searchTerm));
+  }
+  return constraints;
+}
+
+export async function getElderlyPage({ pageSize = 20, cursor = null, criteria = {} } = {}) {
+  const constraints = getElderlyCriteriaConstraints(criteria);
+  if (cursor) constraints.push(startAfter(cursor));
+  constraints.push(limit(pageSize + 1));
+  const q = query(elderlyCollection, ...constraints);
 
   const snap = await getDocs(q);
   const docs = snap.docs;
@@ -128,6 +154,13 @@ export async function getElderlyPage({ pageSize = 20, cursor = null } = {}) {
     lastVisible: pageDocs[pageDocs.length - 1] || null,
     hasNextPage,
   };
+}
+
+export async function getElderlyQueryCount(criteria = {}) {
+  const snap = await getCountFromServer(
+    query(elderlyCollection, ...getElderlyCriteriaConstraints(criteria)),
+  );
+  return snap.data().count;
 }
 
 /**
@@ -145,10 +178,11 @@ export async function getElderlyCount() {
  */
 export async function getElderlyStatusCounts() {
   const active = where("status", "==", "פעיל");
-  const [totalSnap, connectedSnap, phoneSnap] = await Promise.all([
+  const [totalSnap, connectedSnap, phoneSnap, indexedSnap] = await Promise.all([
     getCountFromServer(query(elderlyCollection, active)),
     getCountFromServer(query(elderlyCollection, active, where("volStatus", "==", "כן"))),
     getCountFromServer(query(elderlyCollection, active, where("volStatus", "==", "קשר טלפוני"))),
+    getCountFromServer(query(elderlyCollection, active, where("searchSchemaVersion", "==", 1))),
   ]);
   const total = totalSnap.data().count;
   const connected = connectedSnap.data().count;
@@ -157,6 +191,7 @@ export async function getElderlyStatusCounts() {
     total,
     connected,
     phoneContact,
+    searchIndexed: indexedSnap.data().count,
     without: Math.max(0, total - connected - phoneContact),
   };
 }
@@ -172,8 +207,9 @@ export async function getElderlyForVolunteerIds(volunteerIds = []) {
   if (ids.length === 0) return [];
   const chunks = [];
   for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
-  const results = await Promise.all(
-    chunks.map((chunk) => getDocs(query(elderlyCollection, where("volId", "in", chunk)))),
+  const { results } = await mapWithConcurrency(
+    chunks,
+    (chunk) => getDocs(query(elderlyCollection, where("volId", "in", chunk))),
   );
   return results.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })));
 }

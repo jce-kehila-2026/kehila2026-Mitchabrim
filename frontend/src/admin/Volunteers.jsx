@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell } from "recharts";
 
@@ -12,6 +12,7 @@ import TablePagination from "@/components/admin/TablePagination.jsx";
 import {
   getVolunteers,
   getVolunteersPage,
+  getVolunteersQueryCount,
   getVolunteersStatusCounts,
   createVolunteer,
   editVolunteer,
@@ -20,15 +21,15 @@ import {
   createVolunteerGroup,
   editVolunteerGroup,
   addVolunteerToGroup,
-  increaseGroupCount,
   removeVolunteerFromGroup,
   deleteVolunteerGroup,
   clearGroupFromVolunteers,
 } from "../services/volunteersService";
 import { getReportsForVolunteer } from "../services/reportsService";
 import { getTasksForVolunteer, taskStatusLabel, taskTypeLabel, taskStatusBadge } from "../services/tasksService";
-import { getElderly, getElderlyForVolunteerIds } from "../services/elderlyService";
+import { getElderlyForVolunteerIds } from "../services/elderlyService";
 import useFirestorePagination from "../hooks/useFirestorePagination";
+import useDebouncedValue from "../hooks/useDebouncedValue";
 
 import useAreasAndNeighborhoods from "../hooks/useAreasAndNeighborhoods";
 
@@ -54,6 +55,8 @@ import {
   filterName,
 } from "@/utils/validation";
 import { sanitizeFormData } from "@/utils/sanitize";
+import { createOperationId } from "@/utils/operationId";
+import { getEffectiveSearchTerm } from "@/utils/firestoreSearch";
 
 const LETTERS_RE = /^[\u0590-\u05FF\u0600-\u06FFa-zA-Z\s'"\-]+$/;
 const isLettersOnly = (v) => LETTERS_RE.test((v || "").trim());
@@ -100,6 +103,7 @@ const CHART_COLORS = ["#8B0000", "#D4A574", "#5F9EA0", "#4682B4", "#9ACD32", "#F
 ========================= */
 
 export default function Volunteers() {
+  const addVolunteerOperationRef = useRef(null);
   const [tab, setTab] = useState("volunteers");
 
   const [showCharts, setShowCharts] = useState(false);
@@ -140,19 +144,25 @@ export default function Volunteers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterArea]);
 
-  // Any filter/search active → fall back to full-collection mode so that
-  // multi-field client-side search (including assigned-elderly names) still
-  // works. Documented in the notice below the filter bar and in the audit.
-  const hasFiltersOrSearch = !!(
-    filterArea || filterNeighborhood || filterStatus || filterInsurance || search.trim()
-  );
-
   const PAGE_SIZE = 20;
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const effectiveSearch = getEffectiveSearchTerm(debouncedSearch);
+  const queryCriteria = useMemo(() => ({
+    area: filterArea,
+    neighborhood: filterNeighborhood,
+    status: filterStatus,
+    insurance: filterInsurance,
+    search: effectiveSearch,
+  }), [filterArea, filterNeighborhood, filterStatus, filterInsurance, effectiveSearch]);
+  const queryKey = JSON.stringify(queryCriteria);
+  const hasActiveQuery = !!(
+    filterArea || filterNeighborhood || filterStatus || filterInsurance || effectiveSearch
+  );
 
   /* =========================
      Stats via count aggregations
   ========================= */
-  const [stats, setStats] = useState({ total: 0, assigned: 0, pending: 0 });
+  const [stats, setStats] = useState({ total: 0, assigned: 0, pending: 0, searchIndexed: 0 });
   const [statsVersion, setStatsVersion] = useState(0);
   useEffect(() => {
     let mounted = true;
@@ -161,14 +171,14 @@ export default function Volunteers() {
         const s = await getVolunteersStatusCounts();
         if (mounted) {
           setStats(s);
-          setTotalCount(s.total);
+          if (!hasActiveQuery) setTotalCount(s.total);
         }
       } catch (err) {
         console.error("getVolunteersStatusCounts failed:", err);
       }
     })();
     return () => { mounted = false; };
-  }, [statsVersion]);
+  }, [statsVersion, hasActiveQuery]);
 
   /* =========================
      Volunteers cursor pagination
@@ -176,15 +186,29 @@ export default function Volunteers() {
   const [totalCount, setTotalCount] = useState(null);
 
   const fetchVolunteersPage = useCallback(
-    ({ cursor }) => getVolunteersPage({ pageSize: PAGE_SIZE, cursor }),
-    [],
+    ({ cursor }) => getVolunteersPage({ pageSize: PAGE_SIZE, cursor, criteria: queryCriteria }),
+    [queryCriteria],
   );
   const paged = useFirestorePagination({
     fetchPage: fetchVolunteersPage,
     totalCount,
     pageSize: PAGE_SIZE,
-    deps: [statsVersion],
+    deps: [statsVersion, queryKey],
   });
+
+  useEffect(() => {
+    if (!hasActiveQuery) return undefined;
+    let cancelled = false;
+    getVolunteersQueryCount(queryCriteria)
+      .then((count) => {
+        if (!cancelled) setTotalCount(count);
+      })
+      .catch((err) => {
+        console.error("getVolunteersQueryCount failed:", err);
+        if (!cancelled) setError("שגיאה בטעינת מספר תוצאות החיפוש");
+      });
+    return () => { cancelled = true; };
+  }, [queryKey, statsVersion, hasActiveQuery]);
 
   /* =========================
      Assigned-elderly for the CURRENT PAGE only (no full-collection read)
@@ -219,30 +243,53 @@ export default function Volunteers() {
   }, [paged.items]);
 
   /* =========================
-     Full-collection cache — filter/search mode + print + duplicate checks
+     Full-collection cache — explicit print/chart/group management actions only
   ========================= */
   const [fullVolunteers, setFullVolunteers] = useState(null);
-  const [fullElderly, setFullElderly] = useState(null);
   const [fullLoading, setFullLoading] = useState(false);
+  const fullRequestRef = useRef(null);
+  const fullRequestVersionRef = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      fullRequestVersionRef.current += 1;
+    };
+  }, []);
   const ensureFull = useCallback(async () => {
-    if (fullVolunteers && fullElderly) return { vols: fullVolunteers, elderly: fullElderly };
-    setFullLoading(true);
-    try {
-      const [vols, elderly] = await Promise.all([
-        getVolunteers(),
-        getElderly().catch(() => []),
-      ]);
-      setFullVolunteers(vols);
-      setFullElderly(elderly);
-      return { vols, elderly };
-    } catch (err) {
-      console.error("ensureFull failed:", err);
-      setError("שגיאה בטעינת הנתונים מ-Firebase");
-      return { vols: [], elderly: [] };
-    } finally {
-      setFullLoading(false);
-    }
-  }, [fullVolunteers, fullElderly]);
+    if (fullVolunteers) return { vols: fullVolunteers };
+    if (fullRequestRef.current) return fullRequestRef.current;
+    const version = fullRequestVersionRef.current;
+    if (mountedRef.current) setFullLoading(true);
+    const request = getVolunteers()
+      .then((vols) => {
+        if (mountedRef.current && version === fullRequestVersionRef.current) {
+          setFullVolunteers(vols);
+        }
+        return { vols };
+      })
+      .catch((err) => {
+        console.error("ensureFull failed:", err);
+        if (mountedRef.current && version === fullRequestVersionRef.current) {
+          setError("שגיאה בטעינת הנתונים מ-Firebase");
+        }
+        throw err;
+      })
+      .finally(() => {
+        if (fullRequestRef.current === request) fullRequestRef.current = null;
+        if (mountedRef.current && version === fullRequestVersionRef.current) {
+          setFullLoading(false);
+        }
+      });
+    fullRequestRef.current = request;
+    return request;
+  }, [fullVolunteers]);
+  const invalidateFullCache = useCallback(() => {
+    fullRequestVersionRef.current += 1;
+    fullRequestRef.current = null;
+    setFullVolunteers(null);
+  }, []);
 
   const volunteerChartData = useMemo(() => {
     if (!fullVolunteers) return { barData: [], pieData: [] };
@@ -282,78 +329,35 @@ export default function Volunteers() {
     return { barData, pieData };
   }, [groups]);
 
-  useEffect(() => {
-    if (hasFiltersOrSearch && (!fullVolunteers || !fullElderly)) ensureFull();
-  }, [hasFiltersOrSearch, fullVolunteers, fullElderly, ensureFull]);
-
   // Groups always load in full (small dataset, no cursor pagination needed).
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         setGroupsLoading(true);
         const groupsData = await getVolunteerGroups();
-        setGroups(groupsData);
+        if (!cancelled) setGroups(groupsData);
       } catch (err) {
         console.error(err);
-        setError("שגיאה בטעינת הקבוצות");
+        if (!cancelled) setError("שגיאה בטעינת הקבוצות");
       } finally {
-        setGroupsLoading(false);
+        if (!cancelled) setGroupsLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, []);
-
-  // Full-mode elderlyByVolunteer (for filter/search + name-based search).
-  const fullElderlyByVolunteer = useMemo(() => {
-    const map = new Map();
-    if (!fullElderly) return map;
-    for (const e of fullElderly) {
-      if (!e.volId) continue;
-      const name = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "אזרח ותיק";
-      const arr = map.get(e.volId) || [];
-      arr.push({ id: e.id, name });
-      map.set(e.volId, arr);
-    }
-    return map;
-  }, [fullElderly]);
 
   const fullSorted = useMemo(() => {
     if (!fullVolunteers) return [];
     return [...fullVolunteers].sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
   }, [fullVolunteers]);
 
-  const visibleVolunteers = useMemo(() => {
-    if (!hasFiltersOrSearch) return [];
-    const q = search.trim().toLowerCase();
-    return fullSorted.filter((v) => {
-      if (filterArea && v.area !== filterArea) return false;
-      if (filterNeighborhood && v.neighborhood !== filterNeighborhood) return false;
-      if (filterStatus && v.status !== filterStatus) return false;
-      if (filterInsurance && (v.insurance || "לא") !== filterInsurance) return false;
-      if (q) {
-        const assigned = (fullElderlyByVolunteer.get(v.id) || []).map((e) => e.name).join(" ");
-        const hay = [v.name, v.phone, v.group, v.neighborhood, v.area, assigned]
-          .filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [hasFiltersOrSearch, fullSorted, filterArea, filterNeighborhood, filterStatus, filterInsurance, search, fullElderlyByVolunteer]);
-
-  // Filter-mode client-side pagination.
-  const [filterPage, setFilterPage] = useState(1);
-  const filterTotalPages = Math.max(1, Math.ceil(visibleVolunteers.length / PAGE_SIZE));
-  useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterStatus, filterInsurance, search]);
-  useEffect(() => { if (filterPage > filterTotalPages) setFilterPage(filterTotalPages); }, [filterPage, filterTotalPages]);
-  const filterPageStart = (filterPage - 1) * PAGE_SIZE;
-  const filterPageItems = visibleVolunteers.slice(filterPageStart, filterPageStart + PAGE_SIZE);
-
-  // Unified view.
-  const volPageItems = hasFiltersOrSearch ? filterPageItems : paged.items;
-  const volCurrentPage = hasFiltersOrSearch ? filterPage : paged.page;
-  const volTotalPages = hasFiltersOrSearch ? filterTotalPages : paged.totalPages;
-  const volPaginationTotal = hasFiltersOrSearch ? visibleVolunteers.length : (totalCount ?? 0);
-  const activeElderlyByVolunteer = hasFiltersOrSearch ? fullElderlyByVolunteer : elderlyByVolunteer;
-  const loading = hasFiltersOrSearch ? fullLoading : paged.loading;
+  const volPageItems = paged.items;
+  const volCurrentPage = paged.page;
+  const volTotalPages = paged.totalPages;
+  const volPaginationTotal = totalCount ?? 0;
+  const activeElderlyByVolunteer = elderlyByVolunteer;
+  const loading = paged.loading;
 
   // Groups pagination — unchanged (client-side slice).
   const [groupPage, setGroupPage] = useState(1);
@@ -381,7 +385,11 @@ export default function Volunteers() {
     return src.filter((v) => v.groupId === group.id || v.group === group.name);
   };
 
-  const invalidate = () => setStatsVersion((v) => v + 1);
+  const invalidate = () => {
+    fullRequestVersionRef.current += 1;
+    fullRequestRef.current = null;
+    setStatsVersion((v) => v + 1);
+  };
 
   /* =========================
      Firebase Actions
@@ -402,13 +410,14 @@ export default function Volunteers() {
 
   const handleAddVolunteer = async (newVolunteer) => {
     try {
-      await createVolunteer(sanitizeFormData(newVolunteer));
+      addVolunteerOperationRef.current ||= createOperationId();
+      await createVolunteer(sanitizeFormData(newVolunteer), addVolunteerOperationRef.current);
       if (newVolunteer.groupId) {
-        await increaseGroupCount(newVolunteer.groupId);
         setGroups((prev) => prev.map((g) => (g.id === newVolunteer.groupId ? { ...g, count: (g.count || 0) + 1 } : g)));
       }
+      addVolunteerOperationRef.current = null;
       setShowAdd(false);
-      setFullVolunteers(null);
+      invalidateFullCache();
       invalidate();
     } catch (err) {
       console.error(err);
@@ -535,16 +544,37 @@ export default function Volunteers() {
   };
 
   const handleOpenPrint = async () => {
-    await ensureFull();
-    setShowPrint(true);
+    try {
+      await ensureFull();
+      setShowPrint(true);
+    } catch {
+      // ensureFull already exposes the error and leaves retry available.
+    }
   };
   const handleOpenAdd = () => {
-    ensureFull(); // load full for group member lookups inside the form
+    ensureFull().catch(() => {}); // load full for group member lookups inside the form
+    addVolunteerOperationRef.current = createOperationId();
     setShowAdd(true);
   };
   const handleOpenManageGroup = async (groupId) => {
-    await ensureFull();
-    setOpenGroupId(groupId);
+    try {
+      await ensureFull();
+      setOpenGroupId(groupId);
+    } catch {
+      // Keep the modal closed because its member list would be incomplete.
+    }
+  };
+  const handleToggleCharts = async () => {
+    if (showCharts) {
+      setShowCharts(false);
+      return;
+    }
+    try {
+      await ensureFull();
+      setShowCharts(true);
+    } catch {
+      // Keep charts closed and allow retry.
+    }
   };
 
   /* =========================
@@ -594,10 +624,7 @@ export default function Volunteers() {
         <button
           className="btn btn-outline"
           style={{ fontSize: 13, padding: '6px 16px' }}
-          onClick={async () => {
-            if (!showCharts) await ensureFull();
-            setShowCharts(!showCharts);
-          }}
+          onClick={handleToggleCharts}
         >
           {showCharts ? "📊 הסתר גרפים" : "📊 הצג גרפים"}
         </button>
@@ -702,7 +729,7 @@ export default function Volunteers() {
           )}
           {areasEmpty && <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>}
           <SearchFilters
-            searchPlaceholder="חיפוש לפי שם, טלפון, קבוצה, שכונה או אזרח ותיק משויך..."
+            searchPlaceholder="חיפוש מתחיל לפי שם, טלפון, קבוצה או שכונה..."
             searchValue={search}
             onSearchChange={(e) => setSearch(e.target.value)}
             filters={[
@@ -733,13 +760,12 @@ export default function Volunteers() {
             ]}
           />
 
-          {hasFiltersOrSearch && (
+          {(effectiveSearch || filterInsurance) && stats.total > stats.searchIndexed && (
             <div style={{
-              background: "#eef4ff", border: "1px solid #c7d7ff", color: "#1e3a8a",
+              background: "#fef3c7", border: "1px solid #fde68a", color: "#92400e",
               borderRadius: 10, padding: "8px 12px", margin: "10px 0", fontSize: 13,
             }}>
-              מצב חיפוש/סינון פעיל — נטענים כל המתנדבים והאזרחים כדי לתמוך בחיפוש חופשי לפי שם מתנדב, טלפון,
-              קבוצה, שכונה ואזרח משויך. נקו את החיפוש והמסננים כדי לחזור לטעינה מדפדפת (20 מתנדבים בכל פעם) מ-Firebase.
+              חלק מהרשומות הישנות טרם הוכנו לחיפוש או לסינון ביטוח. התוצאות עשויות להיות חלקיות עד להפעלת PERF-05 backfill.
             </div>
           )}
 
@@ -808,9 +834,9 @@ export default function Volunteers() {
             totalCount={volPaginationTotal}
             pageSize={PAGE_SIZE}
             loading={loading}
-            onNext={() => hasFiltersOrSearch ? setFilterPage((p) => Math.min(filterTotalPages, p + 1)) : paged.next()}
-            onPrevious={() => hasFiltersOrSearch ? setFilterPage((p) => Math.max(1, p - 1)) : paged.prev()}
-            onPageChange={(p) => hasFiltersOrSearch ? setFilterPage(p) : paged.goToPage(p)}
+            onNext={paged.next}
+            onPrevious={paged.prev}
+            onPageChange={paged.goToPage}
           />
         </SectionCard>
       )}
@@ -864,7 +890,10 @@ export default function Volunteers() {
         </SectionCard>
       )}
 
-      {showAdd && <AddVolunteerModal groups={groups} onClose={() => setShowAdd(false)} onSave={handleAddVolunteer} />}
+      {showAdd && <AddVolunteerModal groups={groups} onClose={() => {
+        addVolunteerOperationRef.current = null;
+        setShowAdd(false);
+      }} onSave={handleAddVolunteer} />}
 
       {showPrint && fullVolunteers && <PrintReportModal volunteers={fullSorted} onClose={() => setShowPrint(false)} />}
 

@@ -1,6 +1,5 @@
 import {
   collection,
-  addDoc,
   getDocs,
   updateDoc,
   deleteDoc,
@@ -9,13 +8,16 @@ import {
   query,
   where,
   orderBy,
+  documentId,
   limit,
   startAfter,
   getCountFromServer,
+  runTransaction,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
 import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
+import { requireOperationId } from "../utils/operationId";
 
 const tasksCollection = collection(db, "volunteerTasks");
 
@@ -75,7 +77,7 @@ async function getTasksPageBy(field, value, { pageSize = 20, cursor = null } = {
   const snap = await getDocs(query(
     tasksCollection,
     where(field, "==", value),
-    orderBy("createdAt", "desc"),
+    orderBy(documentId()),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize + 1),
   ));
@@ -112,7 +114,8 @@ export function getTasksForAuthUidCount(authUid) {
   return getTasksCountBy("volunteerAuthUid", authUid);
 }
 
-export async function createTask(data, createdBy = null) {
+export async function createTask(data, createdBy = null, operationId) {
+  const safeOperationId = requireOperationId(operationId);
   const payload = {
     volunteerId: data.volunteerId || null,
     volunteerAuthUid: data.volunteerAuthUid || null,
@@ -126,16 +129,26 @@ export async function createTask(data, createdBy = null) {
     status: sanitizeText(data.status, 40) || "open",
     priority: sanitizeText(data.priority, 40) || "normal",
     createdBy: createdBy || null,
+    operationId: safeOperationId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
-  const docRef = await addDoc(tasksCollection, payload);
+  const docRef = doc(tasksCollection, `task_${safeOperationId}`);
+  const notificationRef = doc(db, "volunteerNotifications", `task_assigned_${docRef.id}`);
+  const result = await runTransaction(db, async (transaction) => {
+    const existing = await transaction.get(docRef);
+    if (existing.exists()) {
+      if (existing.data().operationId !== safeOperationId) {
+        const error = new Error("Task operation ID collision");
+        error.code = "db01/operation-conflict";
+        throw error;
+      }
+      return { id: existing.id, ...existing.data(), idempotentReplay: true };
+    }
 
-  // Create a single notification for the volunteer (only at creation time,
-  // so refreshing the admin page does not duplicate notifications).
-  if (payload.volunteerAuthUid) {
-    try {
-      await addDoc(collection(db, "volunteerNotifications"), {
+    transaction.set(docRef, payload);
+    if (payload.volunteerAuthUid) {
+      transaction.set(notificationRef, {
         volunteerAuthUid: payload.volunteerAuthUid,
         volunteerId: payload.volunteerId,
         type: "task_assigned",
@@ -147,12 +160,10 @@ export async function createTask(data, createdBy = null) {
         read: false,
         createdAt: serverTimestamp(),
       });
-    } catch (err) {
-      console.warn("createTask: notification failed:", err.message);
     }
-  }
-
-  return { id: docRef.id, ...payload };
+    return { id: docRef.id, ...payload, idempotentReplay: false };
+  });
+  return result;
 }
 
 

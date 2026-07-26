@@ -15,10 +15,11 @@ import {
 } from "../services/linkService.js";
 import { validateUrl } from "@/utils/validation";
 import { sanitizeText } from "@/utils/sanitize";
-
-const CATEGORIES = ["עירייה", "ביטוח מתנדבים", "רישום משתתפי פרלמנט", "עדכון מפגשי פרלמנט", "קנבה", "מתנדבים", "ביטוח", "הדרכה", "מקורות", "אחר"];
+import useSettingsCategories from "@/hooks/useSettingsCategories";
+import { LINK_CATEGORIES_TITLE } from "@/utils/categorySettings";
 
 export default function Links() {
+  const { categories } = useSettingsCategories(LINK_CATEGORIES_TITLE);
   const [links, setLinks] = useState([]);
   const [filteredLinks, setFilteredLinks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -203,7 +204,7 @@ export default function Links() {
           filters={[
             {
               label: "קטגוריה",
-              options: ["הכל", ...CATEGORIES],
+              options: ["הכל", ...categories],
               value: selectedCategory,
               onChange: (e) => setSelectedCategory(e.target.value),
             },
@@ -338,7 +339,12 @@ export default function Links() {
                 <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>קטגוריה *</label>
                 <select required value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "8px" }}>
                   <option value="">בחר קטגוריה...</option>
-                  {CATEGORIES.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
+                  {[
+                    ...categories,
+                    ...(formData.category && !categories.includes(formData.category)
+                      ? [formData.category]
+                      : []),
+                  ].map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
                 </select>
               </div>
               <div style={{ marginBottom: "15px" }}>

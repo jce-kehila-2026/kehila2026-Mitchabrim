@@ -21,8 +21,10 @@ import {
   query,
   orderBy,
   getDocs,
+  runTransaction,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { requireOperationId } from "../utils/operationId";
 
 // ---------------------------------------------------------------------
 // "financial" collection (Reports.jsx admin exports)
@@ -62,7 +64,21 @@ export async function getFinancialTransactions() {
  * The payload shape (fields and types) is passed through unchanged so
  * this stays a thin wrapper: no field renames, no defaults added.
  */
-export async function createFinancialTransaction(payload) {
+export async function createFinancialTransaction(payload, { operationId } = {}) {
+  if (operationId) {
+    const safeOperationId = requireOperationId(operationId);
+    const transactionRef = doc(db, TX_COLLECTION, `financial_${safeOperationId}`);
+    return runTransaction(db, async (transaction) => {
+      const existing = await transaction.get(transactionRef);
+      if (existing.exists()) return transactionRef;
+      transaction.set(transactionRef, {
+        ...(payload || {}),
+        operationId: safeOperationId,
+        createdAt: serverTimestamp(),
+      });
+      return transactionRef;
+    });
+  }
   return addDoc(collection(db, TX_COLLECTION), {
     ...(payload || {}),
     createdAt: serverTimestamp(),
@@ -93,10 +109,112 @@ export async function deleteFinancialTransaction(id) {
  * @param {File} file
  * @returns {Promise<{ url: string, path: string }>} download URL + path
  */
-export async function uploadReceiptFile(file) {
-  const path = `${RECEIPTS_STORAGE_PREFIX}/${Date.now()}_${file.name}`;
+export async function uploadReceiptFile(file, { operationId } = {}) {
+  const safeFileName = String(file?.name || "receipt")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .slice(-120);
+  const path = operationId
+    ? `${RECEIPTS_STORAGE_PREFIX}/${requireOperationId(operationId)}_${safeFileName}`
+    : `${RECEIPTS_STORAGE_PREFIX}/${Date.now()}_${safeFileName}`;
   const fileRef = ref(storage, path);
   await uploadBytes(fileRef, file);
   const url = await getDownloadURL(fileRef);
   return { url, path };
+}
+
+export async function moveReceiptLinkage({
+  sourceId,
+  targetId,
+  sourceIsStandalone,
+  sourceAttachmentId = null,
+  receiptUrl,
+  receiptName,
+  receipt,
+  receiptStoragePath = "",
+  operationId,
+}) {
+  const safeOperationId = requireOperationId(operationId);
+  if (!sourceId) throw new Error("Receipt source is required");
+  if (targetId && targetId === sourceId && !sourceIsStandalone) {
+    return { sourceId, targetId, idempotentReplay: true };
+  }
+
+  const sourceRef = doc(db, TX_COLLECTION, sourceId);
+  const destinationRef = targetId
+    ? doc(db, TX_COLLECTION, targetId)
+    : doc(db, TX_COLLECTION, `receipt_${safeOperationId}`);
+  return runTransaction(db, async (transaction) => {
+    const [sourceSnap, destinationSnap] = await Promise.all([
+      transaction.get(sourceRef),
+      transaction.get(destinationRef),
+    ]);
+    if (!sourceSnap.exists()) {
+      if (
+        destinationSnap.exists()
+        && destinationSnap.data().receiptMoveOperationId === safeOperationId
+      ) {
+        return {
+          sourceId,
+          targetId: destinationRef.id,
+          idempotentReplay: true,
+        };
+      }
+      const error = new Error("Receipt source not found");
+      error.code = "db01/receipt-source-not-found";
+      throw error;
+    }
+
+    const receiptPatch = {
+      receiptUrl: receiptUrl || "",
+      receiptName: receiptName || "",
+      receipt: receipt || "",
+      receiptStoragePath: receiptStoragePath || "",
+      receiptMoveOperationId: safeOperationId,
+    };
+    if (targetId) {
+      if (!destinationSnap.exists()) {
+        const error = new Error("Receipt destination not found");
+        error.code = "db01/receipt-destination-not-found";
+        throw error;
+      }
+      transaction.update(destinationRef, receiptPatch);
+    } else {
+      transaction.set(destinationRef, {
+        type: "קבלה_בלבד",
+        amount: 0,
+        source: "—",
+        project: "—",
+        date: new Date().toISOString().split("T")[0],
+        ...receiptPatch,
+        notes: "קבלה עצמאית במאגר",
+        operationId: safeOperationId,
+        createdAt: serverTimestamp(),
+      });
+    }
+
+    if (sourceIsStandalone) {
+      transaction.delete(sourceRef);
+    } else if (sourceAttachmentId) {
+      const nextAttachments = Array.isArray(sourceSnap.data().attachments)
+        ? sourceSnap.data().attachments.filter((attachment) => attachment.id !== sourceAttachmentId)
+        : [];
+      transaction.update(sourceRef, {
+        attachments: nextAttachments,
+        receiptMoveOperationId: safeOperationId,
+      });
+    } else {
+      transaction.update(sourceRef, {
+        receiptUrl: "",
+        receiptName: "",
+        receipt: "",
+        receiptStoragePath: "",
+        receiptMoveOperationId: safeOperationId,
+      });
+    }
+    return {
+      sourceId,
+      targetId: destinationRef.id,
+      idempotentReplay: false,
+    };
+  });
 }

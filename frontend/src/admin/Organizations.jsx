@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
@@ -33,6 +33,7 @@ const CATEGORY_OPTIONS = [
 const STATUS_OPTIONS = ["פעיל", "לא פעיל"];
 
 import { validatePhone, validateEmail, validateName, filterDigits, filterName } from "@/utils/validation";
+import { createOperationId } from "@/utils/operationId";
 import { sanitizeFormData } from "@/utils/sanitize";
 const Req = () => <span style={{ color: "#dc2626", marginInlineStart: 4 }}>*</span>;
 const FieldError = ({ msg }) =>
@@ -59,6 +60,7 @@ const categoryBadge = (c) => {
 ========================= */
 
 export default function Organizations() {
+  const createOrganizationOperationRef = useRef(null);
   const [orgs, setOrgs] = useState([]);
   const [allContacts, setAllContacts] = useState([]);
 
@@ -150,7 +152,9 @@ export default function Organizations() {
       const saved = await createOrganizationWithPrimaryContact(
         sanitizeFormData(orgForm),
         sanitizeFormData(primaryForm),
+        createOrganizationOperationRef.current ||= createOperationId(),
       );
+      createOrganizationOperationRef.current = null;
       await reload();
       setShowAdd(false);
       showToast("הארגון נוסף בהצלחה");
@@ -211,7 +215,10 @@ export default function Organizations() {
       subtitle="ניהול גופים, שותפים ואנשי קשר של ארגונים העובדים עם המיזם."
       actions={
         <>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+          <button className="btn btn-primary" onClick={() => {
+            createOrganizationOperationRef.current = createOperationId();
+            setShowAdd(true);
+          }}>
             + הוספת ארגון
           </button>
           <button className="btn" onClick={() => setShowPrint(true)}>
@@ -338,7 +345,10 @@ export default function Organizations() {
 
       {showAdd && (
         <OrganizationModal
-          onClose={() => setShowAdd(false)}
+          onClose={() => {
+            createOrganizationOperationRef.current = null;
+            setShowAdd(false);
+          }}
           onCreate={handleCreate}
         />
       )}

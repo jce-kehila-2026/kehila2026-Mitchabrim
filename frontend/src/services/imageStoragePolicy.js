@@ -1,6 +1,18 @@
 export const PUBLIC_IMAGE_PREFIX = "images/public";
 export const PRIVATE_IMAGE_PREFIX = "images/private";
 export const LEGACY_IMAGE_PREFIX = "images/";
+export const GALLERY_IMAGE_MAX_MB = 5;
+export const GALLERY_IMAGE_MAX_BYTES = GALLERY_IMAGE_MAX_MB * 1024 * 1024;
+
+export function validateGalleryImage(file) {
+  if (!file || !String(file.type || "").toLowerCase().startsWith("image/")) {
+    return { valid: false, reason: "type" };
+  }
+  if (file.size > GALLERY_IMAGE_MAX_BYTES) {
+    return { valid: false, reason: "size" };
+  }
+  return { valid: true, reason: "" };
+}
 
 const safeSegment = (value, fallback = "image") => {
   const cleaned = String(value || "")

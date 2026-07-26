@@ -3,6 +3,7 @@ import useSiteContent from "@/hooks/useSiteContent";
 
 function HeroCircleImage({ src, alt, className, priority }) {
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   if (!src) {
     return <div className={`hero-circle-placeholder ${className || ""}`.trim()} aria-hidden />;
   }
@@ -15,11 +16,13 @@ function HeroCircleImage({ src, alt, className, priority }) {
         src={src}
         alt={alt || ""}
         onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
         loading={priority ? "eager" : "lazy"}
-        {...(priority ? { fetchpriority: "high" } : {})}
+        fetchPriority={priority ? "high" : "low"}
         decoding="async"
         style={{
-          opacity: loaded ? 1 : 0,
+          display: failed ? "none" : undefined,
+          opacity: loaded && !failed ? 1 : 0,
           transition: "opacity 400ms ease",
         }}
       />
@@ -45,7 +48,7 @@ export default function HeroSection() {
                 className="hero-logo"
                 width="840"
                 height="507"
-                fetchpriority="high"
+                fetchPriority="high"
                 decoding="async"
               />
             </div>
@@ -94,10 +97,10 @@ export default function HeroSection() {
               <HeroCircleImage src={h.imageMain} priority />
             </div>
             <div className="circle-img circle-img-sm circle-img-sm-tl">
-              <HeroCircleImage src={h.imageTopLeft} priority />
+              <HeroCircleImage src={h.imageTopLeft} />
             </div>
             <div className="circle-img circle-img-md circle-img-md-br">
-              <HeroCircleImage src={h.imageBottom} priority />
+              <HeroCircleImage src={h.imageBottom} />
             </div>
           </div>
         </div>

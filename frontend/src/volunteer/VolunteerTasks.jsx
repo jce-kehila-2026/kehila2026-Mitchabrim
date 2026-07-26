@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import LoadingLine from "@/components/common/LoadingLine.jsx";
 import StatusBadge from "@/components/common/StatusBadge.jsx";
@@ -14,6 +14,11 @@ import {
   taskStatusBadge,
 } from "@/services/tasksService";
 import { useAuth } from "@/context/AuthContext";
+import {
+  loadInitialVolunteerTasks,
+  mergeUniqueNewestFirst,
+  sortNewestFirst,
+} from "@/utils/perf02Records";
 import { Calendar, Phone, X } from "lucide-react";
 
 const fmtDate = (val) => {
@@ -56,33 +61,32 @@ export default function VolunteerTasks() {
   const [toDate, setToDate] = useState("");
   const [openTaskId, setOpenTaskId] = useState(null);
   const [savingStatus, setSavingStatus] = useState(false);
+  const requestVersion = useRef(0);
 
   useEffect(() => {
+    const version = ++requestVersion.current;
     let cancelled = false;
     async function load() {
       if (vLoading) return;
+      setTasks([]);
+      setCursor(null);
+      setHasMore(false);
+      setQueryMode(null);
+      setTotalCount(0);
       try {
         setLoading(true);
         setError("");
-        let pageResult = { items: [], lastVisible: null, hasNextPage: false };
-        let count = 0;
-        let mode = null;
-        if (volunteer?.id) {
-          [pageResult, count] = await Promise.all([
-            getTasksForVolunteerPage({ volunteerId: volunteer.id, pageSize: 20 }),
-            getTasksForVolunteerCount(volunteer.id),
-          ]);
-          mode = "volunteerId";
-        }
-        if (pageResult.items.length === 0 && user?.uid) {
-          [pageResult, count] = await Promise.all([
-            getTasksForAuthUidPage({ authUid: user.uid, pageSize: 20 }),
-            getTasksForAuthUidCount(user.uid),
-          ]);
-          mode = "authUid";
-        }
-        if (!cancelled) {
-          setTasks(pageResult.items);
+        const { pageResult, count, mode } = await loadInitialVolunteerTasks({
+          volunteerId: volunteer?.id,
+          authUid: user?.uid,
+          pageSize: 20,
+          getVolunteerPage: getTasksForVolunteerPage,
+          getVolunteerCount: getTasksForVolunteerCount,
+          getAuthPage: getTasksForAuthUidPage,
+          getAuthCount: getTasksForAuthUidCount,
+        });
+        if (!cancelled && version === requestVersion.current) {
+          setTasks(sortNewestFirst(pageResult.items));
           setCursor(pageResult.lastVisible);
           setHasMore(pageResult.hasNextPage);
           setQueryMode(mode);
@@ -90,35 +94,37 @@ export default function VolunteerTasks() {
         }
       } catch (err) {
         console.error("load tasks error:", err);
-        if (!cancelled) setError("שגיאה בטעינת המשימות");
+        if (!cancelled && version === requestVersion.current) setError("שגיאה בטעינת המשימות");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && version === requestVersion.current) setLoading(false);
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      requestVersion.current += 1;
+    };
   }, [volunteer?.id, user?.uid, vLoading]);
 
   const loadMore = async () => {
     if (!hasMore || loadingMore) return;
+    const version = requestVersion.current;
     setLoadingMore(true);
     setError("");
     try {
       const next = queryMode === "volunteerId"
         ? await getTasksForVolunteerPage({ volunteerId: volunteer?.id, pageSize: 20, cursor })
         : await getTasksForAuthUidPage({ authUid: user?.uid, pageSize: 20, cursor });
-      setTasks((current) => {
-        const byId = new Map(current.map((item) => [item.id, item]));
-        next.items.forEach((item) => byId.set(item.id, item));
-        return [...byId.values()];
-      });
+      if (version !== requestVersion.current) return;
+      setTasks((current) => mergeUniqueNewestFirst(current, next.items));
       setCursor(next.lastVisible);
       setHasMore(next.hasNextPage);
     } catch (err) {
+      if (version !== requestVersion.current) return;
       console.error("load more tasks error:", err);
       setError("שגיאה בטעינת משימות נוספות");
     } finally {
-      setLoadingMore(false);
+      if (version === requestVersion.current) setLoadingMore(false);
     }
   };
 

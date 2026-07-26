@@ -5,8 +5,21 @@ import { HttpsError } from "firebase-functions/v2/https";
 const TYPES = new Set(["אזרח ותיק", "פונה עבור אזרח ותיק אחר", "מתעניין בהתנדבות", "איש מקצוע", "אחר"]);
 const IP_LIMIT = 10;
 const PHONE_LIMIT = 3;
+const IDEMPOTENCY_RETENTION_MS = 86_400_000;
 const clean = (value, max) => typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, max) : "";
 const digest = (pepper, value) => createHmac("sha256", pepper).update(value).digest("hex");
+const timestampMillis = (value) => (
+  value && typeof value.toMillis === "function" ? value.toMillis() : null
+);
+const effectiveExpirationMillis = (document, retentionMs) => {
+  const data = document?.data?.() || {};
+  return timestampMillis(data.expiresAt)
+    ?? (
+      timestampMillis(data.createdAt) == null
+        ? null
+        : timestampMillis(data.createdAt) + retentionMs
+    );
+};
 
 function validate(raw) {
   const data = {
@@ -43,8 +56,16 @@ export async function submitJoinRequestCore({ db, data, appCheckToken, ip, peppe
     const [idem, duplicate, ipCounter, phoneCounter] = await Promise.all([
       tx.get(idemRef), tx.get(dupRef), tx.get(ipRef), tx.get(phoneRef),
     ]);
-    if (idem.exists) return { status: "duplicate", requestId: idem.data().requestId };
-    if (duplicate.exists && duplicate.data().expiresAt?.toMillis() > now) {
+    if (
+      idem.exists
+      && effectiveExpirationMillis(idem, IDEMPOTENCY_RETENTION_MS) > now
+    ) {
+      return { status: "duplicate", requestId: idem.data().requestId };
+    }
+    if (
+      duplicate.exists
+      && effectiveExpirationMillis(duplicate, IDEMPOTENCY_RETENTION_MS) > now
+    ) {
       return { status: "duplicate", requestId: duplicate.data().requestId };
     }
     if ((ipCounter.data()?.count || 0) >= IP_LIMIT || (phoneCounter.data()?.count || 0) >= PHONE_LIMIT) {
@@ -62,12 +83,12 @@ export async function submitJoinRequestCore({ db, data, appCheckToken, ip, peppe
       message: `${input.fullName} שלח/ה בקשת הצטרפות (${input.type})`,
       requestId: requestRef.id, read: false, createdAt,
     });
-    tx.create(idemRef, { requestId: requestRef.id, createdAt, expiresAt: Timestamp.fromMillis(now + 86400000) });
-    tx.set(dupRef, { requestId: requestRef.id, createdAt, expiresAt: Timestamp.fromMillis(now + 86400000) });
+    tx.set(idemRef, { requestId: requestRef.id, createdAt, expiresAt: Timestamp.fromMillis(now + IDEMPOTENCY_RETENTION_MS) });
+    tx.set(dupRef, { requestId: requestRef.id, createdAt, expiresAt: Timestamp.fromMillis(now + IDEMPOTENCY_RETENTION_MS) });
     tx.set(ipRef, { count: FieldValue.increment(1), expiresAt: Timestamp.fromMillis(now + 1200000) }, { merge: true });
     tx.set(phoneRef, { count: FieldValue.increment(1), expiresAt: Timestamp.fromMillis(now + 172800000) }, { merge: true });
     return { status: "submitted", requestId: requestRef.id };
   });
 }
 
-export const limits = { IP_LIMIT, PHONE_LIMIT };
+export const limits = { IP_LIMIT, PHONE_LIMIT, IDEMPOTENCY_RETENTION_MS };

@@ -84,4 +84,8 @@ export async function getJoinRequestFunctions() {
   return joinRequestFunctions;
 }
 
+// Authenticated, App Check-protected callable Functions share the same regional
+// client. The alias keeps existing join-request callers backward compatible.
+export const getSecureFunctions = getJoinRequestFunctions;
+
 export default app;

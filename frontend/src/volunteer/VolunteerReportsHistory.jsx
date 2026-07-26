@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import LoadingLine from "@/components/common/LoadingLine.jsx";
@@ -8,6 +8,7 @@ import {
   getReportsForAuthUidCount,
   getReportsForAuthUidPage,
 } from "@/services/reportsService.js";
+import { mergeUniqueNewestFirst, sortNewestFirst } from "@/utils/perf02Records.js";
 import { Calendar, Tag, User, Search, Plus, ChevronLeft } from "lucide-react";
 
 const fmtDate = (val) => {
@@ -28,11 +29,17 @@ export default function VolunteerReportsHistory() {
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [search, setSearch] = useState("");
+  const requestVersion = useRef(0);
 
   useEffect(() => {
+    const version = ++requestVersion.current;
     let cancelled = false;
     async function load() {
-      if (!user?.uid) { setReports([]); setLoading(false); return; }
+      setReports([]);
+      setCursor(null);
+      setHasMore(false);
+      setTotalCount(0);
+      if (!user?.uid) { setLoading(false); return; }
       setLoading(true);
       setError("");
       try {
@@ -40,28 +47,32 @@ export default function VolunteerReportsHistory() {
           getReportsForAuthUidPage({ authUid: user.uid, pageSize: 20 }),
           getReportsForAuthUidCount(user.uid),
         ]);
-        if (!cancelled) {
-          setReports(pageResult.items);
+        if (!cancelled && version === requestVersion.current) {
+          setReports(sortNewestFirst(pageResult.items));
           setCursor(pageResult.lastVisible);
           setHasMore(pageResult.hasNextPage);
           setTotalCount(count);
         }
       } catch (err) {
         console.error("getReportsForAuthUid error:", err);
-        if (!cancelled) {
+        if (!cancelled && version === requestVersion.current) {
           setReports([]);
           setError("שגיאה בטעינת הדוחות.");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && version === requestVersion.current) setLoading(false);
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      requestVersion.current += 1;
+    };
   }, [user?.uid]);
 
   const loadMore = async () => {
     if (!user?.uid || !hasMore || loadingMore) return;
+    const version = requestVersion.current;
     setLoadingMore(true);
     setError("");
     try {
@@ -70,18 +81,16 @@ export default function VolunteerReportsHistory() {
         pageSize: 20,
         cursor,
       });
-      setReports((current) => {
-        const byId = new Map(current.map((item) => [item.id, item]));
-        next.items.forEach((item) => byId.set(item.id, item));
-        return [...byId.values()];
-      });
+      if (version !== requestVersion.current) return;
+      setReports((current) => mergeUniqueNewestFirst(current, next.items));
       setCursor(next.lastVisible);
       setHasMore(next.hasNextPage);
     } catch (err) {
+      if (version !== requestVersion.current) return;
       console.error("load more reports error:", err);
       setError("שגיאה בטעינת דוחות נוספים.");
     } finally {
-      setLoadingMore(false);
+      if (version === requestVersion.current) setLoadingMore(false);
     }
   };
 
