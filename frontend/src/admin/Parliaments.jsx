@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import parliamentsHero from "@/assets/parliaments-hero.webp";
 import parliamentsHeroMobile from "@/assets/parliaments-hero-mobile.webp";
@@ -10,18 +10,18 @@ import {
   createParliament,
   editParliament,
   deleteParliament,
-  addParticipant,
-  getParticipants,
+  addParticipantsAtomically,
+  getParticipantsByParliament,
   updateParticipantAttendance,
-  removeParticipant,
-  getMeetings,
-  addMeeting,
+  getMeetingsByParliament,
+  addMeetingWithAttendance,
   updateMeeting,
   deleteMeeting,
   getMeetingAttendance,
   upsertMeetingAttendance,
-  deleteMeetingAttendance,
+  removeParticipantWithAttendance,
   getMeetingExpenses,
+  getMeetingAggregates,
   addMeetingExpense,
   updateMeetingExpense,
   deleteMeetingExpense,
@@ -30,6 +30,7 @@ import { getElderly } from "@/services/elderlyService.js";
 import { getVolunteers } from "@/services/volunteersService.js";
 import { getAreaNames } from "@/services/settingsService.js";
 import { sanitizeFormData } from "@/utils/sanitize";
+import { createOperationId } from "@/utils/operationId";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import {
   ResponsiveContainer,
@@ -55,6 +56,7 @@ const LOCATION_OPTIONS = [
   "בית הספר היסודי",
 ];
 const PLACEMENT_OPTIONS = ["קבוע", "זמני", "אורח"];
+const EMPTY_LIST = [];
 
 const statusBadge = (s) =>
   s === "פעיל" ? "badge-green" : s === "בהכנה" ? "badge-orange" : "badge-gray";
@@ -82,6 +84,7 @@ export default function Parliaments() {
   const [participantsMap, setParticipantsMap] = useState({});
   const [nextMeetingMap, setNextMeetingMap] = useState({}); // pid -> "YYYY-MM-DD" of next upcoming meeting
   const [meetingsCountMap, setMeetingsCountMap] = useState({}); // pid -> number of past meetings done
+  const [meetingsMap, setMeetingsMap] = useState({});
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -106,23 +109,23 @@ export default function Parliaments() {
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        const list = await getParliaments();
+        const [list, pMap, loadedMeetingsMap] = await Promise.all([
+          getParliaments(),
+          getParticipantsByParliament(),
+          getMeetingsByParliament(),
+        ]);
+        if (cancelled) return;
         setParliaments(list || []);
-        // Load participants + meetings for every parliament so counts/nextDate are live
+        setMeetingsMap(loadedMeetingsMap);
+        // Derive live counts/dates from the two batched child reads.
         const today = new Date().toISOString().slice(0, 10);
-        const pMap = {};
         const nMap = {};
         const mCountMap = {};
-        await Promise.all(
-          (list || []).map(async (p) => {
-            try {
-              const [parts, meets] = await Promise.all([
-                getParticipants(p.id).catch(() => []),
-                getMeetings(p.id).catch(() => []),
-              ]);
-              pMap[p.id] = parts;
+        (list || []).forEach((p) => {
+              const meets = loadedMeetingsMap[p.id] || [];
               const upcoming = meets
                 .filter((m) => m.date && m.date >= today)
                 .sort((a, b) => String(a.date).localeCompare(String(b.date))
@@ -130,9 +133,8 @@ export default function Parliaments() {
               nMap[p.id] = upcoming.length ? upcoming[0].date : "";
               const count = meets.filter(m => m.date && m.date <= today).length;
               mCountMap[p.id] = count;
-            } catch { /* ignore */ }
-          }),
-        );
+        });
+        if (cancelled) return;
         setParticipantsMap(pMap);
         setNextMeetingMap(nMap);
         setMeetingsCountMap(mCountMap);
@@ -145,7 +147,7 @@ export default function Parliaments() {
     (async () => {
       try {
         const names = await getAreaNames();
-        setAreaOptions(names);
+        if (!cancelled) setAreaOptions(names);
       } catch (e) { console.warn("areas load failed", e); }
     })();
 
@@ -155,14 +157,23 @@ export default function Parliaments() {
         const names = (vols || [])
           .map((v) => v.name || `${v.firstName || ""} ${v.lastName || ""}`.trim())
           .filter(Boolean);
-        setVolunteerOptions(Array.from(new Set(names)));
+        if (!cancelled) setVolunteerOptions(Array.from(new Set(names)));
       } catch (e) { console.warn("volunteers load failed", e); }
     })();
+    return () => { cancelled = true; };
   }, []);
 
   const setParticipantsFor = (pid, updater) => {
     setParticipantsMap((prev) => {
       const current = prev[pid] || [];
+      const next = typeof updater === "function" ? updater(current) : updater;
+      return { ...prev, [pid]: next };
+    });
+  };
+
+  const setMeetingsFor = (pid, updater) => {
+    setMeetingsMap((prev) => {
+      const current = prev[pid] || EMPTY_LIST;
       const next = typeof updater === "function" ? updater(current) : updater;
       return { ...prev, [pid]: next };
     });
@@ -281,6 +292,8 @@ export default function Parliaments() {
         parl={selected}
         allParliaments={parliaments}
         participants={participantsMap[selected.id] || []}
+        meetings={meetingsMap[selected.id] || EMPTY_LIST}
+        setMeetings={(updater) => setMeetingsFor(selected.id, updater)}
         setParticipants={(updater) => setParticipantsFor(selected.id, updater)}
         onBack={() => setSelectedId(null)}
         onEdit={(data) => handleEditParliament(selected.id, data)}
@@ -439,7 +452,9 @@ export default function Parliaments() {
 }
 
 /* =================== Parliament Detail =================== */
-function ParliamentDetail({ parl, allParliaments, participants, setParticipants, onBack, onEdit, onDelete, areaOptions, volunteerOptions }) {
+function ParliamentDetail({ parl, allParliaments, participants, meetings, setMeetings, setParticipants, onBack, onEdit, onDelete, areaOptions, volunteerOptions }) {
+  const meetingOperationId = useRef(null);
+  const participantOperationId = useRef(null);
   const [tab, setTab] = useState("participants");
   const [showEdit, setShowEdit] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
@@ -447,50 +462,42 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
   const [elderlyList, setElderlyList] = useState([]);
 
   // Meetings state
-  const [meetings, setMeetings] = useState([]);
   const [showAddMeeting, setShowAddMeeting] = useState(false);
   const [editMeeting, setEditMeeting] = useState(null);
   const [openMeeting, setOpenMeeting] = useState(null);
   const [meetingArrived, setMeetingArrived] = useState({});
   const [meetingExpenseTotal, setMeetingExpenseTotal] = useState({});
+  const aggregateRequestRef = useRef(0);
 
-  // Load participants + elderly on mount
+  // Participants and meetings were loaded once by the parent list.
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        const parts = await getParticipants(parl.id);
-        if (parts && parts.length) setParticipants(parts);
-      } catch (e) { console.warn("Failed to load participants:", e); }
-    })();
-    (async () => {
-      try { setElderlyList(await getElderly()); }
+        const list = await getElderly();
+        if (!cancelled) setElderlyList(list);
+      }
       catch (e) { console.warn("elderly load failed", e); }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; };
   }, [parl.id]);
 
-  // Load meetings + per-meeting aggregates from Firestore.
-  const refreshMeetings = async () => {
+  // Two path-scoped collection-group queries replace two reads per meeting.
+  const refreshMeetingAggregates = async () => {
+    const requestId = ++aggregateRequestRef.current;
     try {
-      const list = await getMeetings(parl.id);
-      setMeetings(list);
-      const arrived = {};
-      const expTotals = {};
-      await Promise.all(list.map(async (m) => {
-        try {
-          const [att, exps] = await Promise.all([
-            getMeetingAttendance(parl.id, m.id),
-            getMeetingExpenses(parl.id, m.id),
-          ]);
-          arrived[m.id] = att.filter((a) => a.arrived === "כן").length;
-          expTotals[m.id] = exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-        } catch (e) { console.warn("meeting agg failed", e); }
-      }));
-      setMeetingArrived(arrived);
-      setMeetingExpenseTotal(expTotals);
+      const { arrivedByMeeting, expenseTotalByMeeting } = await getMeetingAggregates(parl.id);
+      if (requestId !== aggregateRequestRef.current) return;
+      setMeetingArrived(arrivedByMeeting);
+      setMeetingExpenseTotal(expenseTotalByMeeting);
     } catch (e) { console.warn("Failed to load meetings:", e); }
   };
-  useEffect(() => { refreshMeetings(); /* eslint-disable-next-line */ }, [parl.id]);
+
+  useEffect(() => {
+    refreshMeetingAggregates();
+    return () => { aggregateRequestRef.current += 1; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parl.id]);
 
   // Look up an elderly record for a participant (by id or by name).
   const matchElderly = (p) => {
@@ -667,11 +674,10 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
   const existingNames = allParliaments.filter((p) => p.id !== parl.id).map((p) => p.name);
 
   const handleAddParticipants = async (chosenIds) => {
-    const saved = [];
-    for (const id of chosenIds) {
-      const chosen = elderlyList.find((e) => String(e.id) === String(id));
-      if (!chosen) continue;
-      const payload = {
+    const payloads = chosenIds.map((id) => {
+      const chosen = elderlyList.find((elderly) => String(elderly.id) === String(id));
+      if (!chosen) return null;
+      return {
         firstName: chosen.firstName || "",
         lastName: chosen.lastName || "",
         elderlyId: chosen.id,
@@ -681,16 +687,20 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
         area: chosen.area || "",
         type: "קבוע",
       };
-      try {
-        const s = await addParticipant(parl.id, payload);
-        saved.push({ ...payload, id: s.id });
-      } catch (err) {
-        console.warn("addParticipant failed:", err);
-        saved.push({ ...payload, id: `tmp-${Date.now()}-${Math.random()}` });
-      }
+    }).filter(Boolean);
+    try {
+      participantOperationId.current ||= createOperationId();
+      const saved = await addParticipantsAtomically(
+        parl.id,
+        payloads,
+        participantOperationId.current,
+      );
+      participantOperationId.current = null;
+      setParticipants((prev) => [...prev, ...saved]);
+      setShowAddParticipant(false);
+    } catch (err) {
+      console.warn("addParticipants failed:", err);
     }
-    setParticipants((prev) => [...prev, ...saved]);
-    setShowAddParticipant(false);
   };
 
   const handleRemoveParticipant = async (p) => {
@@ -699,59 +709,33 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
       // Preserve participant name in past/today meetings, and remove them
       // from meetings that haven't happened yet.
       const todayIso = new Date().toISOString().slice(0, 10);
-      await Promise.all(
-        (meetings || []).map(async (m) => {
-          const isFuture = m.date && m.date > todayIso;
-          if (isFuture) {
-            try { await deleteMeetingAttendance(parl.id, m.id, p.id); } catch {}
-          } else {
-            try {
-              await upsertMeetingAttendance(parl.id, m.id, p.id, {
-                firstName: p.firstName || "",
-                lastName: p.lastName || "",
-                elderlyId: p.elderlyId || "",
-                phone: p.phone || "",
-                homePhone: p.homePhone || "",
-                address: p.address || "",
-              });
-            } catch {}
-          }
-        }),
-      );
-      await removeParticipant(parl.id, p.id);
-    } catch (e) { console.warn("removeParticipant failed:", e); }
+      await removeParticipantWithAttendance(parl.id, p, meetings, todayIso);
+    } catch (e) {
+      console.warn("removeParticipant failed:", e);
+      return;
+    }
     setParticipants((prev) => prev.filter((x) => x.id !== p.id));
   };
 
 
   const handleAddMeeting = async (data) => {
     try {
-      const saved = await addMeeting(parl.id, data);
+      meetingOperationId.current ||= createOperationId();
+      const saved = await addMeetingWithAttendance(
+        parl.id,
+        data,
+        participants,
+        meetingOperationId.current,
+      );
+      meetingOperationId.current = null;
       setMeetings((prev) => [...prev, saved]);
       setMeetingArrived((prev) => ({ ...prev, [saved.id]: 0 }));
       setMeetingExpenseTotal((prev) => ({ ...prev, [saved.id]: 0 }));
 
-      // Snapshot the CURRENT participant list into this meeting's attendance
-      // collection as immutable AttendanceRecords (id + name + defaults).
-      // This locks the participant roster for this meeting at creation time,
-      // so future removals/additions don't rewrite past meetings.
-      await Promise.all(
-        (participants || []).map((p) =>
-          upsertMeetingAttendance(parl.id, saved.id, p.id, {
-            firstName: p.firstName || "",
-            lastName: p.lastName || "",
-            elderlyId: p.elderlyId || "",
-            phone: p.phone || "",
-            homePhone: p.homePhone || "",
-            address: p.address || "",
-            called: "לא",
-            confirmed: "ממתין",
-            arrived: "—",
-            notes: "",
-          }).catch((e) => console.warn("snapshot attendance failed", e)),
-        ),
-      );
-    } catch (e) { console.warn("addMeeting failed:", e); }
+    } catch (e) {
+      console.warn("addMeeting failed:", e);
+      return;
+    }
     setShowAddMeeting(false);
   };
   const handleUpdateMeeting = async (id, data) => {
@@ -777,7 +761,7 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
         participants={sortedParticipants}
         phoneFor={phoneFor}
         homePhoneFor={homePhoneFor}
-        onBack={() => { refreshMeetings(); setOpenMeeting(null); }}
+        onBack={() => { refreshMeetingAggregates(); setOpenMeeting(null); }}
       />
     );
   }
@@ -811,7 +795,10 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
           actions={
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn" onClick={handlePrintParticipants}>🖨️ הדפסת רשימה</button>
-              <button className="btn btn-primary" onClick={() => setShowAddParticipant(true)}>+ הוספת משתתפים</button>
+              <button className="btn btn-primary" onClick={() => {
+                participantOperationId.current = createOperationId();
+                setShowAddParticipant(true);
+              }}>+ הוספת משתתפים</button>
             </div>
           }
         >
@@ -842,7 +829,10 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
           actions={
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn" onClick={handlePrintMeetings}>🖨️ הדפסת רשימה</button>
-              <button className="btn btn-primary" onClick={() => setShowAddMeeting(true)}>+ הוספת פגישה</button>
+              <button className="btn btn-primary" onClick={() => {
+                meetingOperationId.current = createOperationId();
+                setShowAddMeeting(true);
+              }}>+ הוספת פגישה</button>
             </div>
           }
         >
@@ -894,7 +884,10 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
         <AddParticipantModal
           elderlyList={elderlyList}
           excludeIds={participants.map((p) => String(p.elderlyId))}
-          onClose={() => setShowAddParticipant(false)}
+          onClose={() => {
+            participantOperationId.current = null;
+            setShowAddParticipant(false);
+          }}
           onSave={handleAddParticipants}
         />
       )}
@@ -902,7 +895,10 @@ function ParliamentDetail({ parl, allParliaments, participants, setParticipants,
       {showAddMeeting && (
         <MeetingFormModal
           title="הוספת פגישה"
-          onClose={() => setShowAddMeeting(false)}
+          onClose={() => {
+            meetingOperationId.current = null;
+            setShowAddMeeting(false);
+          }}
           onSave={handleAddMeeting}
         />
       )}
@@ -932,18 +928,24 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
 
   // Load attendance + expenses for THIS meeting
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const list = await getMeetingAttendance(parl.id, meeting.id);
+        if (cancelled) return;
         const map = {};
         list.forEach((a) => { map[a.id] = a; });
         setAttendance(map);
       } catch (e) { console.warn("attendance load failed", e); }
     })();
     (async () => {
-      try { setExpenses(await getMeetingExpenses(parl.id, meeting.id)); }
+      try {
+        const list = await getMeetingExpenses(parl.id, meeting.id);
+        if (!cancelled) setExpenses(list);
+      }
       catch (e) { console.warn("expenses load failed", e); }
     })();
+    return () => { cancelled = true; };
   }, [parl.id, meeting.id]);
 
   const attFor = (pid) => attendance[pid] || { called: "לא", confirmed: "ממתין", arrived: "—", notes: "" };

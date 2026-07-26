@@ -12,6 +12,7 @@
 
 import { db } from "../firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
+import { getCategoryItems, normalizeCategoryGroups } from "../utils/categorySettings";
 
 const COLLECTION = "settings";
 const DOC_ID = "general";
@@ -51,4 +52,9 @@ export async function getAreasAndNeighborhoods() {
 export async function getAreaNames() {
   const areas = await getAreasAndNeighborhoods();
   return areas.map((a) => a.area).filter(Boolean);
+}
+
+export async function getSettingsCategoryItems(groupTitle) {
+  const data = await getSettingsGeneral();
+  return getCategoryItems(normalizeCategoryGroups(data?.categories), groupTitle);
 }

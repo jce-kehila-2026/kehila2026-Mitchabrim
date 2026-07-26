@@ -10,11 +10,12 @@ import {
   query,
   where,
   orderBy,
-  writeBatch,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
 import { sanitizeFormData } from "../utils/sanitize";
+import { commitBatchOperations, deleteQueryInChunks } from "../utils/firestoreBulk";
+import { mapWithConcurrency } from "../utils/bulkOperations";
 
 const contactsCol = collection(db, "elderlyContactPersons");
 const linksCol = collection(db, "elderlyContactLinks");
@@ -65,12 +66,8 @@ export async function updateElderlyContact(id, data) {
 }
 
 export async function deleteElderlyContact(id) {
-  // remove all links first
-  const linksSnap = await getDocs(query(linksCol, where("contactId", "==", id)));
-  const batch = writeBatch(db);
-  linksSnap.docs.forEach((d) => batch.delete(d.ref));
-  batch.delete(doc(db, "elderlyContactPersons", id));
-  await batch.commit();
+  await deleteQueryInChunks(db, query(linksCol, where("contactId", "==", id)));
+  await deleteDoc(doc(db, "elderlyContactPersons", id));
 }
 
 export async function archiveElderlyContact(id) {
@@ -101,11 +98,12 @@ export async function getContactsForElderly(elderlyId) {
   const snap = await getDocs(query(linksCol, where("elderlyId", "==", elderlyId)));
   const links = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   if (links.length === 0) return [];
-  const contacts = await Promise.all(
-    links.map(async (l) => {
+  const { results: contacts } = await mapWithConcurrency(
+    links,
+    async (l) => {
       const c = await getElderlyContactById(l.contactId);
       return c ? { ...c, _linkId: l.id } : null;
-    }),
+    },
   );
   return contacts.filter(Boolean);
 }
@@ -138,9 +136,8 @@ export async function unlinkContactFromElderly(contactId, elderlyId) {
   const snap = await getDocs(
     query(linksCol, where("contactId", "==", contactId), where("elderlyId", "==", elderlyId)),
   );
-  const batch = writeBatch(db);
-  snap.docs.forEach((d) => batch.delete(d.ref));
-  await batch.commit();
+  const operations = snap.docs.map((d) => (batch) => batch.delete(d.ref));
+  await commitBatchOperations(db, operations);
 }
 
 export async function removeLinkById(linkId) {
@@ -155,27 +152,31 @@ export async function syncContactLinks(contactId, elderlyArray) {
   const desiredIds = new Set((elderlyArray || []).map((e) => e.id));
   const currentIds = new Set(current.map((l) => l.elderlyId));
 
-  const batch = writeBatch(db);
+  const operations = [];
   // delete removed
   current.forEach((l) => {
-    if (!desiredIds.has(l.elderlyId)) batch.delete(doc(db, "elderlyContactLinks", l.id));
+    if (!desiredIds.has(l.elderlyId)) {
+      operations.push((batch) => batch.delete(doc(db, "elderlyContactLinks", l.id)));
+    }
   });
   // add new
   (elderlyArray || []).forEach((e) => {
     if (!currentIds.has(e.id)) {
       const elderlyName =
         `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "אזרח ותיק";
-      const ref = doc(linksCol);
-      batch.set(ref, {
-        contactId,
-        elderlyId: e.id,
-        elderlyName,
-        elderlyArea: e.area || "",
-        elderlyNeighborhood: e.neighborhood || "",
-        relationNote: "",
-        createdAt: serverTimestamp(),
+      const ref = doc(linksCol, `${contactId}__${e.id}`);
+      operations.push((batch) => {
+        batch.set(ref, {
+          contactId,
+          elderlyId: e.id,
+          elderlyName,
+          elderlyArea: e.area || "",
+          elderlyNeighborhood: e.neighborhood || "",
+          relationNote: "",
+          createdAt: serverTimestamp(),
+        }, { merge: true });
       });
     }
   });
-  await batch.commit();
+  return commitBatchOperations(db, operations);
 }

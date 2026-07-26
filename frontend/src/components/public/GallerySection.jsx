@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
 import { Link } from "react-router-dom";
 import { auth } from "../../firebase";
-import { getPublicImages } from "../../services/imagesService";
+import { getPublicGalleryImages } from "../../services/imagesService";
 import { Camera, Image } from "lucide-react";
 
 // Small cap for the homepage carousel. /public-gallery uses its own larger cap.
@@ -51,7 +51,7 @@ export default function GallerySection() {
     let cancelled = false;
     const fetchImages = async () => {
       try {
-        const fetched = await getPublicImages({ max: HOME_GALLERY_MAX });
+        const fetched = await getPublicGalleryImages({ max: HOME_GALLERY_MAX });
         if (!cancelled) setImages(fetched);
       } catch (error) {
         const authState = auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous";

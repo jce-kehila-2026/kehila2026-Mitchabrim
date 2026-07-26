@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { auth } from "../firebase";
-import { getPublicImages } from "../services/imagesService";
+import { getPublicGalleryImages } from "../services/imagesService";
 import { Camera, Image } from "lucide-react";
 import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
@@ -25,7 +25,7 @@ export default function PublicGallery() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const fetchedImages = await getPublicImages({ max: 200 });
+        const fetchedImages = await getPublicGalleryImages({ max: 200 });
         setImages(fetchedImages);
 
         const uniqueCategories = [...new Set(fetchedImages.map(img => img.category).filter(Boolean))];

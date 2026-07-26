@@ -12,13 +12,14 @@ import {
   limit as fbLimit,
   onSnapshot,
   getDocs,
-  addDoc,
-  updateDoc,
   deleteDoc,
   doc,
   serverTimestamp,
+  runTransaction,
 } from "firebase/firestore";
 import { sanitizeText } from "../utils/sanitize";
+import { retrySafeRead } from "../utils/errorPolicy";
+import { requireOperationId } from "../utils/operationId";
 
 const COLLECTION = "profileUpdateRequests";
 
@@ -45,7 +46,7 @@ export function subscribeAllProfileUpdateRequests(onData, onError, { max } = {})
  */
 export async function getAllProfileUpdateRequests() {
   const q = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
-  const snap = await getDocs(q);
+  const snap = await retrySafeRead(() => getDocs(q));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
@@ -76,23 +77,27 @@ export async function createProfileUpdateRequest({
   volunteerAuthUid,
   volunteerName,
   message,
+  operationId,
 }) {
+  const safeOperationId = requireOperationId(operationId);
   const trimmed = sanitizeText(message, 1000);
   const safeVolName = sanitizeText(volunteerName, 200);
 
-  const reqRef = await addDoc(collection(db, COLLECTION), {
+  const reqRef = doc(db, COLLECTION, `profile_${safeOperationId}`);
+  const notificationRef = doc(db, "notifications", `profile_request_${reqRef.id}`);
+  const requestPayload = {
     volunteerId,
     volunteerAuthUid,
     volunteerName: safeVolName,
     message: trimmed,
     status: "pending",
+    operationId: safeOperationId,
     createdAt: serverTimestamp(),
     reviewedAt: null,
     reviewedBy: null,
     adminResponse: "",
-  });
-
-  await addDoc(collection(db, "notifications"), {
+  };
+  const notificationPayload = {
     audience: "admin",
     type: "profile_update_request",
     title: "בקשה חדשה לעדכון פרטי מתנדב",
@@ -100,9 +105,25 @@ export async function createProfileUpdateRequest({
     requestId: reqRef.id,
     read: false,
     createdAt: serverTimestamp(),
-  });
+  };
 
-  return { id: reqRef.id };
+  return runTransaction(db, async (transaction) => {
+    const existing = await transaction.get(reqRef);
+    if (existing.exists()) {
+      if (
+        existing.data().operationId !== safeOperationId
+        || existing.data().volunteerAuthUid !== volunteerAuthUid
+      ) {
+        const error = new Error("Profile request operation ID conflict");
+        error.code = "db01/operation-conflict";
+        throw error;
+      }
+      return { id: reqRef.id, idempotentReplay: true };
+    }
+    transaction.set(reqRef, requestPayload);
+    transaction.set(notificationRef, notificationPayload);
+    return { id: reqRef.id, idempotentReplay: false };
+  });
 }
 
 /**
@@ -110,18 +131,18 @@ export async function createProfileUpdateRequest({
  * volunteer. `decision` is "approved" or "rejected".
  */
 export async function decideProfileUpdateRequest({ requestId, volunteerAuthUid, decision, response }) {
+  if (!["approved", "rejected"].includes(decision)) {
+    const error = new Error("Invalid profile request decision");
+    error.code = "db01/invalid-decision";
+    throw error;
+  }
   const safeResponse = sanitizeText(response, 2000);
-
-  await updateDoc(doc(db, COLLECTION, requestId), {
-    status: decision,
-    adminResponse: safeResponse,
-    reviewedAt: serverTimestamp(),
-    reviewedBy: auth.currentUser?.uid || null,
-  });
-
-  await addDoc(collection(db, "volunteerNotifications"), {
+  const requestRef = doc(db, COLLECTION, requestId);
+  const notificationRef = doc(db, "volunteerNotifications", `profile_response_${requestId}`);
+  const notificationPayload = {
     volunteerAuthUid,
     type: "profile_update_response",
+    decision,
     title: decision === "approved" ? "הבקשה שלך אושרה" : "הבקשה שלך נדחתה",
     message:
       safeResponse ||
@@ -131,6 +152,44 @@ export async function decideProfileUpdateRequest({ requestId, volunteerAuthUid, 
     requestId,
     read: false,
     createdAt: serverTimestamp(),
+  };
+
+  return runTransaction(db, async (transaction) => {
+    const [requestSnap, notificationSnap] = await Promise.all([
+      transaction.get(requestRef),
+      transaction.get(notificationRef),
+    ]);
+    if (!requestSnap.exists()) {
+      const error = new Error("Profile update request not found");
+      error.code = "db01/not-found";
+      throw error;
+    }
+    const current = requestSnap.data();
+    if (current.volunteerAuthUid !== volunteerAuthUid) {
+      const error = new Error("Profile request volunteer mismatch");
+      error.code = "db01/identity-conflict";
+      throw error;
+    }
+    if (current.status !== "pending" && current.status !== decision) {
+      const error = new Error("Profile request was already decided differently");
+      error.code = "db01/decision-conflict";
+      throw error;
+    }
+    if (current.status === decision && notificationSnap.exists()) {
+      return { id: requestId, decision, idempotentReplay: true };
+    }
+    if (current.status === "pending") {
+      transaction.update(requestRef, {
+        status: decision,
+        adminResponse: safeResponse,
+        reviewedAt: serverTimestamp(),
+        reviewedBy: auth.currentUser?.uid || null,
+      });
+    }
+    if (!notificationSnap.exists()) {
+      transaction.set(notificationRef, notificationPayload);
+    }
+    return { id: requestId, decision, idempotentReplay: current.status === decision };
   });
 }
 

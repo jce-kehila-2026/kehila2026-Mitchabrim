@@ -9,6 +9,7 @@ import {
   query,
   where,
   orderBy,
+  documentId,
   limit,
   startAfter,
   getCountFromServer,
@@ -82,7 +83,7 @@ export async function getReportsForAuthUidPage({
   const snap = await getDocs(query(
     reportsCollection,
     where("volunteerAuthUid", "==", authUid),
-    orderBy("createdAt", "desc"),
+    orderBy(documentId()),
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize + 1),
   ));

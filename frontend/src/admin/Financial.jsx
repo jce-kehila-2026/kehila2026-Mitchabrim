@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import { Coins, Heart } from "lucide-react";
@@ -8,7 +8,9 @@ import {
   updateFinancialTransaction,
   deleteFinancialTransaction,
   uploadReceiptFile,
+  moveReceiptLinkage,
 } from "@/services/financialService";
+import { createOperationId } from "@/utils/operationId";
 import {
   ResponsiveContainer,
   BarChart,
@@ -88,6 +90,8 @@ export default function Financial() {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadData, setUploadData] = useState({ receiptName: "", receiptNumber: "", transactionId: "" });
   const [editReceiptData, setEditReceiptData] = useState(null);
+  const receiptUploadOperationId = useRef(null);
+  const receiptMoveOperationId = useRef(null);
 
   // ==========================================
   // FIREBASE DATA FETCHING
@@ -228,6 +232,7 @@ export default function Financial() {
             receiptUrl: att.url,
             receiptName: att.name,
             receipt: att.number,
+            receiptStoragePath: att.storagePath || "",
             isStandalone: false,
             isAttachment: true,
             attachmentId: att.id,
@@ -481,7 +486,12 @@ export default function Financial() {
     }
     setIsUploading(true);
     try {
-      const { url: downloadUrl } = await uploadReceiptFile(uploadFile);
+      receiptUploadOperationId.current ||= createOperationId();
+      const operationId = receiptUploadOperationId.current;
+      const { url: downloadUrl, path: storagePath } = await uploadReceiptFile(
+        uploadFile,
+        { operationId },
+      );
 
       const finalReceiptName = uploadData.receiptName.trim() || uploadFile.name;
       const finalReceiptNum = uploadData.receiptNumber.trim() || "ללא מספר";
@@ -493,13 +503,17 @@ export default function Financial() {
           url: downloadUrl,
           name: finalReceiptName,
           number: finalReceiptNum,
-          id: Date.now().toString(),
+          id: operationId,
+          storagePath,
         };
         await updateAndStoreTransaction(uploadData.transactionId, {
-          attachments: [...currentAttachments, newAttachment],
+          attachments: [
+            ...currentAttachments.filter((attachment) => attachment.id !== operationId),
+            newAttachment,
+          ],
         });
       } else {
-        await createAndStoreTransaction({
+        const ref = await createFinancialTransaction({
           type: "קבלה_בלבד",
           amount: 0,
           source: "—",
@@ -508,9 +522,27 @@ export default function Financial() {
           receiptUrl: downloadUrl,
           receiptName: finalReceiptName,
           receipt: finalReceiptNum,
+          receiptStoragePath: storagePath,
           notes: "קבלה עצמאית במאגר",
+        }, { operationId });
+        setTransactions((current) => {
+          if (current.some((transaction) => transaction.id === ref.id)) return current;
+          return sortTransactions([{
+            id: ref.id,
+            type: "קבלה_בלבד",
+            amount: 0,
+            source: "—",
+            project: "—",
+            date: new Date().toISOString().split("T")[0],
+            receiptUrl: downloadUrl,
+            receiptName: finalReceiptName,
+            receipt: finalReceiptNum,
+            receiptStoragePath: storagePath,
+            notes: "קבלה עצמאית במאגר",
+          }, ...current]);
         });
       }
+      receiptUploadOperationId.current = null;
       setIsUploadModalOpen(false);
       setUploadFile(null);
       setUploadData({ receiptName: "", receiptNumber: "", transactionId: "" });
@@ -527,7 +559,16 @@ export default function Financial() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const { id, isStandalone, isAttachment, attachmentId, receiptUrl, receiptName, receipt } = editReceiptData;
+      const {
+        id,
+        isStandalone,
+        isAttachment,
+        attachmentId,
+        receiptUrl,
+        receiptName,
+        receipt,
+        receiptStoragePath,
+      } = editReceiptData;
       const oldTxId = id;
       const newTxId = uploadData.transactionId;
 
@@ -537,30 +578,21 @@ export default function Financial() {
         return;
       }
 
-      if (isStandalone) {
-        if (newTxId) {
-          await updateAndStoreTransaction(newTxId, { receiptUrl, receiptName, receipt });
-          await deleteAndStoreTransaction(oldTxId);
-        }
-      } else {
-        if (newTxId) {
-          await updateAndStoreTransaction(newTxId, { receiptUrl, receiptName, receipt });
-          await updateAndStoreTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
-        } else {
-          await createAndStoreTransaction({
-            type: "קבלה_בלבד",
-            amount: 0,
-            source: "—",
-            project: "—",
-            date: new Date().toISOString().split("T")[0],
-            receiptUrl,
-            receiptName,
-            receipt,
-            notes: "קבלה עצמאית במאגר",
-          });
-          await updateAndStoreTransaction(oldTxId, { receiptUrl: "", receiptName: "", receipt: "" });
-        }
-      }
+      receiptMoveOperationId.current ||= createOperationId();
+      await moveReceiptLinkage({
+        sourceId: oldTxId,
+        targetId: newTxId || null,
+        sourceIsStandalone: isStandalone,
+        sourceAttachmentId: isAttachment ? attachmentId : null,
+        receiptUrl,
+        receiptName,
+        receipt,
+        receiptStoragePath: receiptStoragePath || "",
+        operationId: receiptMoveOperationId.current,
+      });
+      const refreshed = await getFinancialTransactions();
+      setTransactions(sortTransactions(refreshed));
+      receiptMoveOperationId.current = null;
       setIsEditReceiptModalOpen(false);
       showToast("שיוך הקבלה עודכן בהצלחה!");
     } catch (error) {
@@ -660,7 +692,10 @@ export default function Financial() {
             </svg>
             הוספת פעולה כספית
           </button>
-          <button onClick={() => setIsUploadModalOpen(true)} className="action-btn-secondary">
+          <button onClick={() => {
+            receiptUploadOperationId.current = createOperationId();
+            setIsUploadModalOpen(true);
+          }} className="action-btn-secondary">
             <svg
               width="18"
               height="18"
@@ -1337,8 +1372,10 @@ export default function Financial() {
                             receiptUrl: r.receiptUrl,
                             receiptName: r.receiptName,
                             receipt: r.receipt,
+                            receiptStoragePath: r.receiptStoragePath || "",
                           });
                           setUploadData({ ...uploadData, transactionId: r.isStandalone ? "" : r.id });
+                          receiptMoveOperationId.current = createOperationId();
                           setIsEditReceiptModalOpen(true);
                         }}
                         className="action-icon-btn action-icon-edit"
@@ -2046,6 +2083,7 @@ export default function Financial() {
               </h3>
               <button
                 onClick={() => {
+                  receiptUploadOperationId.current = null;
                   setIsUploadModalOpen(false);
                   setUploadFile(null);
                 }}
@@ -2212,6 +2250,7 @@ export default function Financial() {
               <button
                 type="button"
                 onClick={() => {
+                  receiptUploadOperationId.current = null;
                   setIsUploadModalOpen(false);
                   setUploadFile(null);
                 }}
@@ -2296,7 +2335,10 @@ export default function Financial() {
             >
               <h3 style={{ margin: 0, color: "#343a40", fontSize: "1.4rem", fontWeight: "bold" }}>עריכת שיוך קבלה</h3>
               <button
-                onClick={() => setIsEditReceiptModalOpen(false)}
+                onClick={() => {
+                  receiptMoveOperationId.current = null;
+                  setIsEditReceiptModalOpen(false);
+                }}
                 style={{
                   background: "#f8f9fa",
                   border: "1px solid #e2d8c9",
@@ -2389,7 +2431,10 @@ export default function Financial() {
             >
               <button
                 type="button"
-                onClick={() => setIsEditReceiptModalOpen(false)}
+                onClick={() => {
+                  receiptMoveOperationId.current = null;
+                  setIsEditReceiptModalOpen(false);
+                }}
                 style={{
                   padding: "12px 28px",
                   borderRadius: "30px",

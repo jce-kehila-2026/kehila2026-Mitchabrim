@@ -14,11 +14,15 @@ import {
   deleteAllowedUser,
   sendPasswordSetupEmail,
 } from "@/services/allowedUsersService";
-import { getVolunteers, unlinkVolunteerAuthUid } from "@/services/volunteersService";
+import { getVolunteers } from "@/services/volunteersService";
 import {
   getSettingsGeneral,
   saveSettingsGeneral,
 } from "@/services/settingsService";
+import {
+  isProtectedCategory,
+  normalizeCategoryGroups,
+} from "@/utils/categorySettings";
 
 const ROLE_LABEL = { admin: "מנהל", volunteer: "מתנדב" };
 
@@ -67,7 +71,9 @@ export default function Settings() {
   // ==========================================
   // STATE: 4. Categories (Now fully dynamic)
   // ==========================================
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState(() => (
+    sortCategories(normalizeCategoryGroups(undefined))
+  ));
   const [newCategoryGroupName, setNewCategoryGroupName] = useState("");
   const [newCategoryInputs, setNewCategoryInputs] = useState({});
 
@@ -111,28 +117,7 @@ export default function Settings() {
           ];
           setAreas(sortAreas(loadedAreas));
 
-          // Categories are locked to two fixed groups: image + link.
-          // The admin can only manage items inside these groups.
-          const FIXED_GROUPS = ["קטגוריות תמונות", "קטגוריות קישורים"];
-          const dbCats = data?.categories;
-          let loadedCats = [];
-          if (Array.isArray(dbCats)) {
-            loadedCats = dbCats;
-          } else if (dbCats && typeof dbCats === 'object') {
-            loadedCats = Object.entries(dbCats).map(([key, val]) => ({
-              title: key === 'images' ? "קטגוריות תמונות" : (key === 'links' ? "קטגוריות קישורים" : key),
-              items: Array.isArray(val) ? val : []
-            }));
-          }
-          // Ensure both fixed groups exist; drop any legacy extra groups from the UI.
-          const byTitle = new Map(loadedCats.map((g) => [g?.title, g]));
-          const normalizedCats = FIXED_GROUPS.map((title) => {
-            const existing = byTitle.get(title);
-            if (existing) return { title, items: Array.isArray(existing.items) ? existing.items : [] };
-            if (title === "קטגוריות תמונות") return { title, items: ["פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"] };
-            return { title, items: ["טפסים", "מסמכים", "תקשורת", "קישורים חיצוניים"] };
-          });
-          setCategories(sortCategories(normalizedCats));
+          setCategories(sortCategories(normalizeCategoryGroups(data?.categories)));
 
         }
       } catch (error) {
@@ -187,7 +172,7 @@ export default function Settings() {
     try {
       await saveSettingsGeneral({
         areas: updatedAreas || areas,
-        categories: updatedCategories || categories
+        categories: normalizeCategoryGroups(updatedCategories || categories)
       });
       showToast("השינויים נשמרו בהצלחה!");
     } catch (error) {
@@ -303,6 +288,10 @@ export default function Settings() {
 
   const requestDeleteCategoryItem = (groupIndex, itemIndex) => {
     const itemName = categories[groupIndex]?.items[itemIndex];
+    if (isProtectedCategory(categories[groupIndex]?.title, itemName)) {
+      showToast("לא ניתן למחוק את קטגוריית תמונות אתר פרסומי");
+      return;
+    }
     setGenericConfirm({
       isOpen: true,
       title: "מחיקת קטגוריה",
@@ -501,17 +490,8 @@ export default function Settings() {
     try {
       const { user } = deleteConfirm;
       if (!user?.id) throw new Error("Missing user ID");
-      // If the user was linked to a volunteer profile, clear the back-link on
-      // the volunteer so it can be safely re-linked to another auth account
-      // later (prevents stale volunteers/{V}.authUid).
-      if (user.linkedVolunteerId) {
-        try {
-          await unlinkVolunteerAuthUid(user.linkedVolunteerId);
-        } catch (e) {
-          console.warn("clear volunteer authUid failed:", e.message);
-        }
-      }
-      await deleteAllowedUser(user.id);
+      const result = await deleteAllowedUser(user.id, user.linkedVolunteerId || null);
+      if (!result?.success) throw new Error(result?.error || "User deletion failed");
       showToast("המשתמש נמחק בהצלחה");
       await refreshUsers();
     } catch (error) {
@@ -769,7 +749,12 @@ export default function Settings() {
               <div style={{ padding: "16px", display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
                 {(catGroup?.items || []).map((item, j) => (
                   <span key={j} style={compactPillStyle}>
-                    {item} <button onClick={() => requestDeleteCategoryItem(i, j)} style={{ background: "none", border: "none", color: "#adb5bd", cursor: "pointer", padding: 0, fontSize: "12px", display: "flex" }}>✕</button>
+                    {item}
+                    {isProtectedCategory(catGroup.title, item) ? (
+                      <span title="קטגוריה קבועה" aria-label="קטגוריה קבועה">🔒</span>
+                    ) : (
+                      <button onClick={() => requestDeleteCategoryItem(i, j)} style={{ background: "none", border: "none", color: "#adb5bd", cursor: "pointer", padding: 0, fontSize: "12px", display: "flex" }}>✕</button>
+                    )}
                   </span>
                 ))}
                 

@@ -4,6 +4,7 @@ import { defineSecret } from "firebase-functions/params";
 import { onCall } from "firebase-functions/v2/https";
 import { submitJoinRequestCore } from "./src/joinRequestCore.js";
 import { inviteUserCore } from "./src/inviteUserCore.js";
+import { elderlyMutationCore } from "./src/elderlyMutationCore.js";
 import { getAuth } from "firebase-admin/auth";
 
 initializeApp();
@@ -22,6 +23,15 @@ export const inviteUser = onCall({
 }, async (request) => inviteUserCore({
   db: getFirestore(),
   auth: getAuth(),
+  callerUid: request.auth?.uid,
+  data: request.data,
+}));
+
+export const mutateElderly = onCall({
+  region: "us-central1",
+  enforceAppCheck: true,
+}, async (request) => elderlyMutationCore({
+  db: getFirestore(),
   callerUid: request.auth?.uid,
   data: request.data,
 }));

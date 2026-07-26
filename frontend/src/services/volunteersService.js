@@ -9,16 +9,18 @@ import {
   query,
   where,
   orderBy,
-  increment,
-  writeBatch,
   limit,
   startAfter,
   getCountFromServer,
+  runTransaction,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
 import { getDoc } from "firebase/firestore";
 import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
+import { buildVolunteerQueryCriteria, buildVolunteerSearchFields } from "../utils/firestoreSearch";
+import { processQueryInChunks } from "../utils/firestoreBulk";
+import { requireOperationId } from "../utils/operationId";
 
 const volunteersCollection = collection(db, "volunteers");
 
@@ -131,33 +133,52 @@ export async function getVolunteers() {
   }));
 }
 
-export async function createVolunteer(volunteerData) {
+export async function createVolunteer(volunteerData, operationId) {
+  const safeOperationId = requireOperationId(operationId);
   const clean = sanitizeFormData(volunteerData);
-  const docRef = await addDoc(volunteersCollection, {
+  const searchFields = buildVolunteerSearchFields(clean);
+  const volunteerRef = doc(volunteersCollection, `volunteer_${safeOperationId}`);
+  const groupRef = clean.groupId ? doc(db, "volunteerGroups", clean.groupId) : null;
+  const payload = {
     ...clean,
+    ...searchFields,
+    operationId: safeOperationId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  });
-
-  return {
-    id: docRef.id,
-    ...clean,
   };
+
+  return runTransaction(db, async (transaction) => {
+    const [existing, groupSnap] = await Promise.all([
+      transaction.get(volunteerRef),
+      groupRef ? transaction.get(groupRef) : Promise.resolve(null),
+    ]);
+    if (existing.exists()) {
+      if (existing.data().operationId !== safeOperationId) {
+        const error = new Error("Volunteer operation ID collision");
+        error.code = "db01/operation-conflict";
+        throw error;
+      }
+      return { id: existing.id, ...existing.data(), idempotentReplay: true };
+    }
+    if (groupRef && !groupSnap?.exists()) {
+      const error = new Error("Volunteer group not found");
+      error.code = "db01/group-not-found";
+      throw error;
+    }
+    transaction.set(volunteerRef, payload);
+    if (groupRef) {
+      transaction.update(groupRef, {
+        count: Number(groupSnap.data().count || 0) + 1,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return { id: volunteerRef.id, ...clean, idempotentReplay: false };
+  });
 }
 
 export async function editVolunteer(volunteerId, volunteerData) {
-  const volunteerRef = doc(db, "volunteers", volunteerId);
   const clean = sanitizeFormData(volunteerData);
-
-  await updateDoc(volunteerRef, {
-    ...clean,
-    updatedAt: serverTimestamp(),
-  });
-
-  return {
-    id: volunteerId,
-    ...clean,
-  };
+  return updateVolunteerWithGroupAccounting(volunteerId, clean);
 }
 
 /* =========================
@@ -210,30 +231,13 @@ export async function editVolunteerGroup(groupId, groupData) {
 ========================= */
 
 export async function addVolunteerToGroup(volunteerId, group, role, notes = "") {
-  const volunteerRef = doc(db, "volunteers", volunteerId);
-  const groupRef = doc(db, "volunteerGroups", group.id);
-
-  await updateDoc(volunteerRef, {
+  const groupPatch = {
     groupId: group.id,
     group: sanitizeText(group.name, 200),
     groupRole: sanitizeText(role || "חבר קבוצה", 100),
     groupNotes: sanitizeText(notes, 2000),
-    updatedAt: serverTimestamp(),
-  });
-
-  await updateDoc(groupRef, {
-    count: increment(1),
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function increaseGroupCount(groupId) {
-  const groupRef = doc(db, "volunteerGroups", groupId);
-
-  await updateDoc(groupRef, {
-    count: increment(1),
-    updatedAt: serverTimestamp(),
-  });
+  };
+  return updateVolunteerWithGroupAccounting(volunteerId, groupPatch);
 }
 
 /* =========================
@@ -242,27 +246,94 @@ export async function increaseGroupCount(groupId) {
 
 export async function deleteVolunteer(volunteerId) {
   const volunteerRef = doc(db, "volunteers", volunteerId);
-  await deleteDoc(volunteerRef);
+  return runTransaction(db, async (transaction) => {
+    const volunteerSnap = await transaction.get(volunteerRef);
+    if (!volunteerSnap.exists()) return { deleted: false, idempotentReplay: true };
+    const groupId = volunteerSnap.data().groupId;
+    const groupRef = groupId ? doc(db, "volunteerGroups", groupId) : null;
+    const groupSnap = groupRef ? await transaction.get(groupRef) : null;
+    transaction.delete(volunteerRef);
+    if (groupRef && groupSnap?.exists()) {
+      transaction.update(groupRef, {
+        count: Math.max(0, Number(groupSnap.data().count || 0) - 1),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return { deleted: true, idempotentReplay: false };
+  });
 }
 
 export async function removeVolunteerFromGroup(volunteerId, groupId) {
-  const volunteerRef = doc(db, "volunteers", volunteerId);
-
-  await updateDoc(volunteerRef, {
+  const groupPatch = {
     groupId: null,
     group: "ללא קבוצה",
     groupRole: "",
     groupNotes: "",
-    updatedAt: serverTimestamp(),
-  });
+  };
+  return updateVolunteerWithGroupAccounting(volunteerId, groupPatch, { expectedCurrentGroupId: groupId });
+}
 
-  if (groupId) {
-    const groupRef = doc(db, "volunteerGroups", groupId);
-    await updateDoc(groupRef, {
-      count: increment(-1),
+async function updateVolunteerWithGroupAccounting(
+  volunteerId,
+  cleanPatch,
+  { expectedCurrentGroupId } = {},
+) {
+  const volunteerRef = doc(db, "volunteers", volunteerId);
+  return runTransaction(db, async (transaction) => {
+    const current = await transaction.get(volunteerRef);
+    if (!current.exists()) {
+      const error = new Error("Volunteer not found");
+      error.code = "db01/volunteer-not-found";
+      throw error;
+    }
+    const currentData = current.data();
+    const oldGroupId = currentData.groupId || null;
+    if (expectedCurrentGroupId !== undefined && oldGroupId !== (expectedCurrentGroupId || null)) {
+      if (!oldGroupId && cleanPatch.groupId == null) {
+        return { id: volunteerId, ...currentData, idempotentReplay: true };
+      }
+      const error = new Error("Volunteer group changed concurrently");
+      error.code = "db01/group-conflict";
+      throw error;
+    }
+    const changesGroup = Object.prototype.hasOwnProperty.call(cleanPatch, "groupId");
+    const nextGroupId = changesGroup ? (cleanPatch.groupId || null) : oldGroupId;
+    const oldGroupRef = oldGroupId && oldGroupId !== nextGroupId
+      ? doc(db, "volunteerGroups", oldGroupId)
+      : null;
+    const nextGroupRef = nextGroupId && nextGroupId !== oldGroupId
+      ? doc(db, "volunteerGroups", nextGroupId)
+      : null;
+    const [oldGroupSnap, nextGroupSnap] = await Promise.all([
+      oldGroupRef ? transaction.get(oldGroupRef) : Promise.resolve(null),
+      nextGroupRef ? transaction.get(nextGroupRef) : Promise.resolve(null),
+    ]);
+    if (nextGroupRef && !nextGroupSnap?.exists()) {
+      const error = new Error("Target volunteer group not found");
+      error.code = "db01/group-not-found";
+      throw error;
+    }
+
+    const merged = { ...currentData, ...cleanPatch };
+    transaction.update(volunteerRef, {
+      ...cleanPatch,
+      ...buildVolunteerSearchFields(merged),
       updatedAt: serverTimestamp(),
     });
-  }
+    if (oldGroupRef && oldGroupSnap?.exists()) {
+      transaction.update(oldGroupRef, {
+        count: Math.max(0, Number(oldGroupSnap.data().count || 0) - 1),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    if (nextGroupRef) {
+      transaction.update(nextGroupRef, {
+        count: Number(nextGroupSnap.data().count || 0) + 1,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return { id: volunteerId, ...cleanPatch, idempotentReplay: false };
+  });
 }
 
 export async function deleteVolunteerGroup(groupId) {
@@ -272,36 +343,51 @@ export async function deleteVolunteerGroup(groupId) {
 
 export async function clearGroupFromVolunteers(groupId) {
   const q = query(volunteersCollection, where("groupId", "==", groupId));
-  const snapshot = await getDocs(q);
-
-  if (snapshot.empty) return;
-
-  const batch = writeBatch(db);
-
-  snapshot.docs.forEach((docItem) => {
-    batch.update(docItem.ref, {
+  return processQueryInChunks(db, q, (docItem) => (batch) => {
+    const groupPatch = {
       groupId: null,
       group: "ללא קבוצה",
       groupRole: "",
       groupNotes: "",
+    };
+    batch.update(docItem.ref, {
+      ...groupPatch,
+      ...buildVolunteerSearchFields({ ...docItem.data(), ...groupPatch }),
       updatedAt: serverTimestamp(),
     });
   });
-
-  await batch.commit();
 }
 /* =========================
    Server-side pagination (Firestore cursor)
 
-   Real Firestore cursor pagination — intended for future adoption when the
-   volunteers admin page moves away from client-side filtering/search across
-   assigned-elderly names. See PHASE_8_10 in CURRENT_PROJECT_STATUS_AUDIT.md.
+   Real Firestore cursor pagination. Search and supported filters are applied
+   before limit/startAfter. Assigned elderly are fetched separately for the
+   current page only.
 ========================= */
 
-export async function getVolunteersPage({ pageSize = 20, cursor = null } = {}) {
-  const q = cursor
-    ? query(volunteersCollection, orderBy("createdAt", "desc"), startAfter(cursor), limit(pageSize + 1))
-    : query(volunteersCollection, orderBy("createdAt", "desc"), limit(pageSize + 1));
+function getVolunteerCriteriaConstraints(criteria = {}, { includeOrder = true } = {}) {
+  const normalized = buildVolunteerQueryCriteria(criteria);
+  const constraints = [];
+  if (normalized.area) constraints.push(where("area", "==", normalized.area));
+  if (normalized.neighborhood) constraints.push(where("neighborhood", "==", normalized.neighborhood));
+  if (normalized.status) constraints.push(where("status", "==", normalized.status));
+  if (normalized.insurance) constraints.push(where("insuranceKey", "==", normalized.insurance));
+  if (normalized.searchTerm) {
+    constraints.push(where("searchPrefixes", "array-contains", normalized.searchTerm));
+  }
+  const hasCriteria = Boolean(
+    normalized.area || normalized.neighborhood || normalized.status ||
+    normalized.insurance || normalized.searchTerm,
+  );
+  if (includeOrder && !hasCriteria) constraints.push(orderBy("createdAt", "desc"));
+  return constraints;
+}
+
+export async function getVolunteersPage({ pageSize = 20, cursor = null, criteria = {} } = {}) {
+  const constraints = getVolunteerCriteriaConstraints(criteria);
+  if (cursor) constraints.push(startAfter(cursor));
+  constraints.push(limit(pageSize + 1));
+  const q = query(volunteersCollection, ...constraints);
 
   const snap = await getDocs(q);
   const docs = snap.docs;
@@ -316,6 +402,13 @@ export async function getVolunteersPage({ pageSize = 20, cursor = null } = {}) {
   };
 }
 
+export async function getVolunteersQueryCount(criteria = {}) {
+  const snap = await getCountFromServer(
+    query(volunteersCollection, ...getVolunteerCriteriaConstraints(criteria, { includeOrder: false })),
+  );
+  return snap.data().count;
+}
+
 export async function getVolunteersCount() {
   const snap = await getCountFromServer(volunteersCollection);
   return snap.data().count;
@@ -326,14 +419,16 @@ export async function getVolunteersCount() {
  * Matches labels used in the volunteers admin stats cards.
  */
 export async function getVolunteersStatusCounts() {
-  const [totalSnap, assignedSnap, pendingSnap] = await Promise.all([
+  const [totalSnap, assignedSnap, pendingSnap, indexedSnap] = await Promise.all([
     getCountFromServer(volunteersCollection),
     getCountFromServer(query(volunteersCollection, where("status", "==", "משויך לאזרח ותיק"))),
     getCountFromServer(query(volunteersCollection, where("status", "==", "ממתין לשיבוץ"))),
+    getCountFromServer(query(volunteersCollection, where("searchSchemaVersion", "==", 1))),
   ]);
   return {
     total: totalSnap.data().count,
     assigned: assignedSnap.data().count,
     pending: pendingSnap.data().count,
+    searchIndexed: indexedSnap.data().count,
   };
 }

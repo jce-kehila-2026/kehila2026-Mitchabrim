@@ -30,7 +30,14 @@ import {
   isPathPrivate,
   isPathPublic,
   resolveManagedImagePath,
+  validateGalleryImage,
 } from "./imageStoragePolicy";
+import { retrySafeRead } from "../utils/errorPolicy";
+import {
+  isPublicGalleryImage,
+  PROMOTIONAL_IMAGE_CATEGORY,
+  shouldImageBePublic,
+} from "../utils/categorySettings";
 
 const IMAGES_COLLECTION = "images";
 
@@ -66,7 +73,7 @@ export async function loadAdminImagePreview(image) {
 
 export async function getPublicImages({ max = 500 } = {}) {
   const q = query(collection(db, IMAGES_COLLECTION), where("isPublic", "==", true), limit(max));
-  const snap = await getDocs(q);
+  const snap = await retrySafeRead(() => getDocs(q));
   const items = [];
   snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
   items.sort((a, b) => {
@@ -77,14 +84,31 @@ export async function getPublicImages({ max = 500 } = {}) {
   return items;
 }
 
+export async function getPublicGalleryImages({ max = 200 } = {}) {
+  // Firestore cannot express "public AND category != X" without changing the
+  // query/index contract. Keep the read bounded, then exclude the reserved
+  // promotional category from gallery presentation.
+  const fetchMax = max <= 10 ? Math.min(50, max * 5) : max;
+  const items = await getPublicImages({ max: fetchMax });
+  return items.filter(isPublicGalleryImage).slice(0, max);
+}
+
 export async function getAllImages() {
-  const snap = await getDocs(collection(db, IMAGES_COLLECTION));
+  const snap = await retrySafeRead(() => getDocs(collection(db, IMAGES_COLLECTION)));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 export async function uploadImage({ file, title, category, notes, isPublic }) {
+  const validation = validateGalleryImage(file);
+  if (!validation.valid) {
+    const error = new Error(validation.reason === "size"
+      ? "Gallery images must not exceed 5MB"
+      : "Only image files can be uploaded");
+    error.code = "storage/invalid-argument";
+    throw error;
+  }
   const imageRef = doc(collection(db, IMAGES_COLLECTION));
-  const publicFlag = isPublic === true;
+  const publicFlag = shouldImageBePublic(category, isPublic);
   const storagePath = imageStoragePath({ imageId: imageRef.id, fileName: file.name, isPublic: publicFlag });
   const storageRef = ref(storage, storagePath);
   await uploadBytes(storageRef, file);
@@ -169,8 +193,9 @@ export async function updateImage(imageId, { title, category, notes, isPublic })
   const imageSnap = await getDoc(doc(db, IMAGES_COLLECTION, imageId));
   if (!imageSnap.exists()) throw new Error("Image metadata not found");
   let image = { id: imageSnap.id, ...imageSnap.data() };
-  if (image.isPublic !== (isPublic === true)) {
-    image = await moveManagedImage(image, isPublic === true);
+  const nextIsPublic = shouldImageBePublic(category, isPublic);
+  if (image.isPublic !== nextIsPublic) {
+    image = await moveManagedImage(image, nextIsPublic);
   }
   await updateDoc(doc(db, IMAGES_COLLECTION, imageId), { title, category, notes: notes || "" });
   return { ...image, title, category, notes: notes || "" };
@@ -181,6 +206,9 @@ export async function toggleImagePublic(imageOrId, isPublic) {
   const snap = await getDoc(doc(db, IMAGES_COLLECTION, imageId));
   if (!snap.exists()) throw new Error("Image metadata not found");
   const image = { id: snap.id, ...snap.data() };
+  if (image.category === PROMOTIONAL_IMAGE_CATEGORY && isPublic !== true) {
+    return image;
+  }
   return moveManagedImage(image, isPublic === true);
 }
 

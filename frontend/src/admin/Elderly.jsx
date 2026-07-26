@@ -35,17 +35,21 @@ import TablePagination from "@/components/admin/TablePagination.jsx";
 import {
   getElderly,
   getElderlyPage,
+  getElderlyQueryCount,
   getElderlyStatusCounts,
   createElderly,
   editElderly,
   deleteElderly,
 } from "@/services/elderlyService.js";
-import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
+import { getVolunteers } from "@/services/volunteersService.js";
 import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import useFirestorePagination from "@/hooks/useFirestorePagination.js";
+import useDebouncedValue from "@/hooks/useDebouncedValue.js";
 import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
 import { sanitizeFormData } from "@/utils/sanitize";
+import { getEffectiveSearchTerm } from "@/utils/firestoreSearch";
+import { createOperationId } from "@/utils/operationId";
 
 /* ===== Options (shared with volunteers page) =====
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
@@ -123,12 +127,18 @@ export default function Elderly() {
   }, [filterArea]);
 
   const PAGE_SIZE = 20;
-  const hasFiltersOrSearch = !!(
-    filterArea ||
-    filterNeighborhood ||
-    filterMarital ||
-    filterVolStatus ||
-    search.trim()
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const effectiveSearch = getEffectiveSearchTerm(debouncedSearch);
+  const queryCriteria = useMemo(() => ({
+    area: filterArea,
+    neighborhood: filterNeighborhood,
+    marital: filterMarital,
+    volStatus: filterVolStatus,
+    search: effectiveSearch,
+  }), [filterArea, filterNeighborhood, filterMarital, filterVolStatus, effectiveSearch]);
+  const queryKey = JSON.stringify(queryCriteria);
+  const hasActiveQuery = !!(
+    filterArea || filterNeighborhood || filterMarital || filterVolStatus || effectiveSearch
   );
 
   // Cache-invalidation counter (bumped after mutations to force refetch).
@@ -139,6 +149,7 @@ export default function Elderly() {
     connected: 0,
     without: 0,
     phoneContact: 0,
+    searchIndexed: 0,
   });
   const [totalCount, setTotalCount] = useState(null);
 
@@ -148,50 +159,86 @@ export default function Elderly() {
       .then((nextStats) => {
         if (cancelled) return;
         setStats(nextStats);
-        setTotalCount(nextStats.total);
+        if (!hasActiveQuery) setTotalCount(nextStats.total);
       })
       .catch((err) => {
         console.error("Failed to load elderly counts:", err);
         if (!cancelled) setLoadError("טעינת נתוני הסיכום נכשלה.");
       });
     return () => { cancelled = true; };
-  }, [statsVersion]);
+  }, [statsVersion, hasActiveQuery]);
 
   const fetchElderlyPage = useCallback(
-    ({ cursor }) => getElderlyPage({ pageSize: PAGE_SIZE, cursor }),
-    [],
+    ({ cursor }) => getElderlyPage({ pageSize: PAGE_SIZE, cursor, criteria: queryCriteria }),
+    [queryCriteria],
   );
   const paged = useFirestorePagination({
     fetchPage: fetchElderlyPage,
     totalCount,
     pageSize: PAGE_SIZE,
-    deps: [statsVersion],
+    deps: [statsVersion, queryKey],
   });
 
-  // ---- Full-collection cache. Loaded on mount so we can filter to מצב=פעיל
-  // and compute stats + charts client-side. ----
+  useEffect(() => {
+    if (!hasActiveQuery) return undefined;
+    let cancelled = false;
+    getElderlyQueryCount(queryCriteria)
+      .then((count) => {
+        if (!cancelled) setTotalCount(count);
+      })
+      .catch((err) => {
+        console.error("Failed to count filtered elderly:", err);
+        if (!cancelled) setLoadError("טעינת מספר תוצאות החיפוש נכשלה.");
+      });
+    return () => { cancelled = true; };
+  }, [queryKey, statsVersion, hasActiveQuery]);
+
+  // Full reads remain isolated behind explicit print/chart/form actions.
   const [fullData, setFullData] = useState(null);
   const [fullLoading, setFullLoading] = useState(false);
-  const ensureFullData = useCallback(async () => {
-    setFullLoading(true);
-    try {
-      const items = await getElderly();
-      const data = items.length ? items : SEED;
-      setFullData(data);
-      return data;
-    } catch (err) {
-      console.error("Failed to load full elderly collection:", err);
-      setLoadError("טעינה מ-Firebase נכשלה — מוצגים נתוני דוגמה.");
-      setFullData(SEED);
-      return SEED;
-    } finally {
-      setFullLoading(false);
-    }
-  }, []);
-
+  const fullDataCacheRef = useRef(null);
+  const fullDataRequestRef = useRef(null);
+  const fullDataVersionRef = useRef(0);
+  const mountedRef = useRef(true);
   useEffect(() => {
-    if (hasFiltersOrSearch && !fullData) ensureFullData();
-  }, [hasFiltersOrSearch, fullData, ensureFullData]);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      fullDataVersionRef.current += 1;
+    };
+  }, []);
+  const ensureFullData = useCallback(async () => {
+    if (fullDataCacheRef.current) return fullDataCacheRef.current;
+    if (fullDataRequestRef.current) return fullDataRequestRef.current;
+    const version = fullDataVersionRef.current;
+    if (mountedRef.current) setFullLoading(true);
+    const request = getElderly()
+      .then((items) => {
+        const data = items.length ? items : SEED;
+        if (mountedRef.current && version === fullDataVersionRef.current) {
+          fullDataCacheRef.current = data;
+          setFullData(data);
+        }
+        return data;
+      })
+      .catch((err) => {
+        console.error("Failed to load full elderly collection:", err);
+        if (mountedRef.current && version === fullDataVersionRef.current) {
+          fullDataCacheRef.current = null;
+          setLoadError("טעינת הנתונים המלאים מ-Firebase נכשלה. ניתן לנסות שוב.");
+          setFullData(null);
+        }
+        throw err;
+      })
+      .finally(() => {
+        if (fullDataRequestRef.current === request) fullDataRequestRef.current = null;
+        if (mountedRef.current && version === fullDataVersionRef.current) {
+          setFullLoading(false);
+        }
+      });
+    fullDataRequestRef.current = request;
+    return request;
+  }, []);
 
   // Only active seniors are shown in the table + stats + charts.
   const activeData = useMemo(
@@ -220,39 +267,11 @@ export default function Elderly() {
     return { barData, pieData };
   }, [activeData]);
 
-  // Filtered + sorted view of the active seniors.
-  const filteredFull = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const sorted = [...activeData].sort((a, b) =>
-      fullName(a).localeCompare(fullName(b), "he"),
-    );
-    return sorted.filter((e) => {
-      if (filterArea && e.area !== filterArea) return false;
-      if (filterNeighborhood && e.neighborhood !== filterNeighborhood) return false;
-      if (filterMarital && e.marital !== filterMarital) return false;
-      if (filterVolStatus && e.volStatus !== filterVolStatus) return false;
-      if (q) {
-        const hay = [
-          fullName(e), e.idNum, e.mobile, e.homePhone, e.neighborhood,
-          e.area, e.address, e.notes, e.volName, e.contactPersonName,
-        ].filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [activeData, filterArea, filterNeighborhood, filterMarital, filterVolStatus, search]);
-
-  const [filterPage, setFilterPage] = useState(1);
-  const filterTotalPages = Math.max(1, Math.ceil(filteredFull.length / PAGE_SIZE));
-  useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterMarital, filterVolStatus, search]);
-  useEffect(() => { if (filterPage > filterTotalPages) setFilterPage(filterTotalPages); }, [filterPage, filterTotalPages]);
-  const filterPageStart = (filterPage - 1) * PAGE_SIZE;
-  const filteredPageItems = filteredFull.slice(filterPageStart, filterPageStart + PAGE_SIZE);
-  const pageItems = hasFiltersOrSearch ? filteredPageItems : paged.items;
-  const currentPage = hasFiltersOrSearch ? filterPage : paged.page;
-  const totalPages = hasFiltersOrSearch ? filterTotalPages : paged.totalPages;
-  const paginationTotal = hasFiltersOrSearch ? filteredFull.length : (totalCount ?? 0);
-  const loading = hasFiltersOrSearch ? fullLoading : paged.loading;
+  const pageItems = paged.items;
+  const currentPage = paged.page;
+  const totalPages = paged.totalPages;
+  const paginationTotal = totalCount ?? 0;
+  const loading = paged.loading;
 
 
 
@@ -262,89 +281,87 @@ export default function Elderly() {
     pageItems.find((e) => e.id === openId) ||
     null;
 
-  // Recompute a volunteer's status based on assignments. Uses a passed-in list.
-  const syncVolunteerStatus = async (volunteerId, elderlyList) => {
-    if (!volunteerId || typeof volunteerId !== "string") return;
-    const stillAssigned = elderlyList.some((e) => e.volId === volunteerId);
-    const newStatus = stillAssigned ? "משויך לאזרח ותיק" : "ממתין לשיבוץ";
-    try {
-      await editVolunteer(volunteerId, { status: newStatus });
-    } catch (err) {
-      console.error("syncVolunteerStatus failed:", err);
-    }
-  };
+  const createMutationIdRef = useRef(null);
+  const editMutationIdRef = useRef(null);
 
   // Invalidate paginated + count caches after any mutation.
   const invalidate = () => {
+    fullDataVersionRef.current += 1;
+    fullDataCacheRef.current = null;
+    fullDataRequestRef.current = null;
     setFullData(null);
     setStatsVersion((v) => v + 1);
   };
 
   const handleEditElderly = async (id, updated) => {
-    const prevVolId = openElderly?.volId || null;
+    editMutationIdRef.current ||= createOperationId();
     try {
       // eslint-disable-next-line no-unused-vars
       const { id: _omit, ...payload } = sanitizeFormData(updated);
-      await editElderly(id, payload);
+      await editElderly(id, payload, editMutationIdRef.current);
     } catch (err) {
       console.error("editElderly failed:", err);
-      alert("שמירה ל-Firebase נכשלה. השינוי נשמר מקומית בלבד.");
+      alert("שמירה ל-Firebase נכשלה. לא בוצע שינוי חלקי.");
+      return;
     }
-    if (fullData) {
-      const next = fullData.map((e) => (e.id === id ? { ...e, ...updated, id } : e));
-      setFullData(next);
-      const affected = new Set([prevVolId, updated.volId].filter(Boolean));
-      for (const vid of affected) await syncVolunteerStatus(vid, next);
-    } else if (prevVolId || updated.volId) {
-      const next = await ensureFullData();
-      const affected = new Set([prevVolId, updated.volId].filter(Boolean));
-      for (const vid of affected) await syncVolunteerStatus(vid, next);
-    }
+    editMutationIdRef.current = null;
     setOpenId(null);
     invalidate();
   };
 
   const handleCreateElderly = async (entry) => {
     const clean = sanitizeFormData(entry);
+    createMutationIdRef.current ||= createOperationId();
     try {
-      await createElderly(clean);
+      await createElderly(clean, createMutationIdRef.current);
     } catch (err) {
       console.error("createElderly failed:", err);
       alert("הוספה ל-Firebase נכשלה.");
+      return;
     }
+    createMutationIdRef.current = null;
     setShowAdd(false);
     invalidate();
-    if (entry.volId) {
-      const next = await ensureFullData();
-      await syncVolunteerStatus(entry.volId, next);
-    }
   };
 
   const handleDeleteElderly = async (elderly) => {
     if (!elderly) return;
     if (!window.confirm(`האם למחוק את ${fullName(elderly)}? פעולה זו אינה הפיכה.`)) return;
     try {
-      if (typeof elderly.id === "string") await deleteElderly(elderly.id);
+      if (typeof elderly.id === "string") await deleteElderly(elderly.id, createOperationId());
     } catch (err) {
       console.error("deleteElderly failed:", err);
       alert("מחיקה מ-Firebase נכשלה.");
+      return;
     }
-    if (fullData) setFullData(fullData.filter((e) => e.id !== elderly.id));
     setOpenId(null);
     invalidate();
-    if (elderly.volId) {
-      const next = await ensureFullData();
-      await syncVolunteerStatus(elderly.volId, next);
-    }
   };
 
   const handleOpenPrint = async () => {
-    await ensureFullData();
-    setShowPrint(true);
+    try {
+      await ensureFullData();
+      setShowPrint(true);
+    } catch {
+      // ensureFullData already exposes the actionable error in the page.
+    }
   };
   const handleOpenAdd = async () => {
-    ensureFullData();
+    ensureFullData().catch(() => {});
+    createMutationIdRef.current = createOperationId();
     setShowAdd(true);
+  };
+  const handleToggleCharts = async () => {
+    if (showCharts) {
+      setShowCharts(false);
+      return;
+    }
+    try {
+      await ensureFullData();
+      setShowCharts(true);
+    } catch {
+      // Keep charts closed and allow the next click to retry.
+    }
   };
 
   const totalStat = stats.total;
@@ -367,10 +384,7 @@ export default function Elderly() {
           <button className="btn" onClick={handleOpenPrint}>הדפסת רשימה</button>
           <button
             className="btn btn-outline"
-            onClick={async () => {
-              if (!showCharts) await ensureFullData();
-              setShowCharts(!showCharts);
-            }}
+            onClick={handleToggleCharts}
           >
             {showCharts ? "📊 הסתר גרפים" : "📊 הצג גרפים"}
           </button>
@@ -445,7 +459,7 @@ export default function Elderly() {
           <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>
         )}
         <SearchFilters
-          searchPlaceholder="חיפוש לפי שם, טלפון, ת.ז, שכונה או הערות..."
+          searchPlaceholder="חיפוש מתחיל לפי שם, טלפון או ת.ז..."
           searchValue={search}
           onSearchChange={(e) => setSearch(e.target.value)}
           filters={[
@@ -475,6 +489,14 @@ export default function Elderly() {
             },
           ]}
         />
+        {effectiveSearch && stats.total > stats.searchIndexed && (
+          <div style={{
+            background: "#fef3c7", border: "1px solid #fde68a", color: "#92400e",
+            borderRadius: 10, padding: "8px 12px", margin: "10px 0", fontSize: 13,
+          }}>
+            חלק מהרשומות הישנות טרם הוכנו לחיפוש. התוצאות עשויות להיות חלקיות עד להפעלת PERF-05 backfill.
+          </div>
+        )}
         <DataTable
           columns={[
             {
@@ -486,7 +508,10 @@ export default function Elderly() {
               key: "name",
               label: "שם",
               render: (r) => (
-                <button className="link-btn" onClick={() => setOpenId(r.id)}>{fullName(r)}</button>
+                <button className="link-btn" onClick={() => {
+                  editMutationIdRef.current = createOperationId();
+                  setOpenId(r.id);
+                }}>{fullName(r)}</button>
               ),
             },
             { key: "idNum", label: "ת.ז.", render: (r) => r.idNum || "—" },
@@ -527,13 +552,9 @@ export default function Elderly() {
           totalCount={paginationTotal}
           pageSize={PAGE_SIZE}
           loading={loading}
-          onNext={() => hasFiltersOrSearch
-            ? setFilterPage((p) => Math.min(filterTotalPages, p + 1))
-            : paged.next()}
-          onPrevious={() => hasFiltersOrSearch
-            ? setFilterPage((p) => Math.max(1, p - 1))
-            : paged.prev()}
-          onPageChange={(p) => hasFiltersOrSearch ? setFilterPage(p) : paged.goToPage(p)}
+          onNext={paged.next}
+          onPrevious={paged.prev}
+          onPageChange={paged.goToPage}
         />
 
 
@@ -544,7 +565,10 @@ export default function Elderly() {
           title="הוספת אזרח ותיק"
           initial={null}
           existingIds={(fullData || pageItems).map((d) => ({ id: d.id, idNum: d.idNum }))}
-          onClose={() => setShowAdd(false)}
+          onClose={() => {
+            createMutationIdRef.current = null;
+            setShowAdd(false);
+          }}
           onSave={handleCreateElderly}
         />
       )}
@@ -552,7 +576,10 @@ export default function Elderly() {
         <ElderlyProfileModal
           entry={openElderly}
           existingIds={(fullData || pageItems).map((d) => ({ id: d.id, idNum: d.idNum }))}
-          onClose={() => setOpenId(null)}
+          onClose={() => {
+            editMutationIdRef.current = null;
+            setOpenId(null);
+          }}
           onSave={(updated) => handleEditElderly(openElderly.id, updated)}
           onDelete={() => handleDeleteElderly(openElderly)}
         />
