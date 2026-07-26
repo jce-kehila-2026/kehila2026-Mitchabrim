@@ -18,7 +18,7 @@ function HeroCircleImage({ src, alt, className, priority }) {
         onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
         loading={priority ? "eager" : "lazy"}
-        fetchPriority={priority ? "high" : "low"}
+        fetchpriority={priority ? "high" : "low"}
         decoding="async"
         style={{
           display: failed ? "none" : undefined,
@@ -48,7 +48,7 @@ export default function HeroSection() {
                 className="hero-logo"
                 width="840"
                 height="507"
-                fetchPriority="high"
+                fetchpriority="high"
                 decoding="async"
               />
             </div>

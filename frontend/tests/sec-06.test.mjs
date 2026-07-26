@@ -49,13 +49,14 @@ try {
   const serviceSource = readFileSync(resolve(root, "src/services/joinRequestsService.js"), "utf8");
   const joinFormSource = readFileSync(resolve(root, "src/components/public/JoinRequestSection.jsx"), "utf8");
   const hostingConfig = JSON.parse(readFileSync(resolve(root, "firebase.json"), "utf8"));
-  assert.match(firebaseSource, /await getToken\(appCheck, false\)[\s\S]*getFunctions\(app, "us-central1"\)/);
+  assert.match(firebaseSource, /getRegionalFunctions\(\)[\s\S]*getFunctions\(app, "us-central1"\)/);
+  assert.match(firebaseSource, /getSecureFunctions\(\)[\s\S]*await getToken\(appCheck, false\)/);
   assert.match(firebaseSource, /import\.meta\.env\.DEV[\s\S]*VITE_FIREBASE_APPCHECK_DEBUG/);
   assert.match(firebaseSource, /prepareAppCheckDebugMode\(self\)/);
   assert.match(firebaseSource, /join-request\/app-check-debug-token-rejected/);
-  assert.match(firebaseSource, /connectFunctionsEmulator\(joinRequestFunctions, "127\.0\.0\.1", 5001\)/);
-  assert.match(serviceSource, /isJoinRequestAppCheckConfigured/);
-  assert.match(serviceSource, /await getJoinRequestFunctions\(\)[\s\S]*limitedUseAppCheckTokens: true/);
+  assert.match(firebaseSource, /connectFunctionsEmulator\(regionalFunctions, "127\.0\.0\.1", 5001\)/);
+  assert.match(serviceSource, /await getJoinRequestFunctions\(\)[\s\S]*httpsCallable\(functions, "submitJoinRequest"\)/);
+  assert.doesNotMatch(serviceSource, /isJoinRequestAppCheckConfigured|limitedUseAppCheckTokens/);
   assert.equal(hostingConfig.hosting.public, "dist");
 
   const cryptoStub = {
@@ -98,7 +99,6 @@ try {
   assert.equal(semanticDuplicate.status, "duplicate");
   assert.equal(db.count("joinRequests/"), 1);
 
-  await assert.rejects(() => submitJoinRequestCore({ ...context, data: base(2), appCheckToken: "" }), (e) => e.code === "failed-precondition");
   await assert.rejects(() => submitJoinRequestCore({ ...context, data: { ...base(2), phone: "bad" } }), (e) => e.code === "invalid-argument");
 
   for (let i = 2; i <= limits.IP_LIMIT; i += 1) await submitJoinRequestCore({ ...context, data: base(i) });
@@ -106,7 +106,7 @@ try {
   assert.equal(db.count("joinRequests/"), limits.IP_LIMIT);
   assert.equal(db.count("notifications/"), limits.IP_LIMIT);
 
-  console.log("SEC-06: 31 assertions passed (cross-origin debug UUID compatibility, App Check readiness/order, hosting/client configuration, rules, validation, atomic writes, idempotency, duplicate and rapid-submission protection).");
+  console.log("SEC-06: public join callable and protected admin callables are separated; rules, validation, atomic writes, idempotency, duplicate and rapid-submission protection passed.");
 } finally {
   await deleteApp(app);
 }

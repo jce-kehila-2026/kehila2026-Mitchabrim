@@ -39,8 +39,7 @@ function validate(raw) {
   return data;
 }
 
-export async function submitJoinRequestCore({ db, data, appCheckToken, ip, pepper, now = Date.now() }) {
-  if (!appCheckToken) throw new HttpsError("failed-precondition", "Application verification required.");
+export async function submitJoinRequestCore({ db, data, ip, pepper, now = Date.now() }) {
   if (!pepper) throw new HttpsError("internal", "Service is not configured.");
   const input = validate(data);
   const idemHash = digest(pepper, input.idempotencyKey);
