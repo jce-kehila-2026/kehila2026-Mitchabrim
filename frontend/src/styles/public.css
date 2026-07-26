@@ -110,28 +110,37 @@
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 999;
-    background: rgba(42, 26, 20, 0.55);
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+    background: rgba(20, 12, 8, 0.6);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    overflow: hidden;
   }
   .pub-nav-mobile-inner {
-    position: absolute;
+    position: fixed;
     top: 0;
-    left: 0;
-    right: auto;
+    right: 0;
+    bottom: 0;
     width: min(280px, 80vw);
     height: 100%;
-    background: #fbf5ec;
+    background: var(--color-surface, #fffaf2);
+    background-color: #fffaf2;
     border-inline-end: 1px solid var(--color-border);
-    padding: 96px 24px 32px;
+    padding: 88px 20px 24px;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: 4px;
     box-shadow: var(--shadow-lg);
+    overflow-y: auto;
+    z-index: 10000;
     animation: slideInMobile 0.25s ease both;
   }
   @keyframes slideInMobile {
     from {
-      transform: translateX(-40px);
+      transform: translateX(40px);
       opacity: 0;
     }
     to {
@@ -140,6 +149,8 @@
     }
   }
   .pub-nav-mobile-inner a {
+    display: block;
+    width: 100%;
     padding: 12px 14px;
     border-radius: 10px;
     font-weight: 500;
@@ -153,6 +164,7 @@
   .pub-nav-mobile-inner .btn-primary {
     margin-top: 12px;
     text-align: center;
+    color: #fff;
   }
 }
 

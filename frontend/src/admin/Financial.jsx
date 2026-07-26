@@ -745,8 +745,15 @@ export default function Financial() {
           .receipt-info { flex-basis: 100%; min-width: 0; }
           .receipt-actions { flex-direction: row; }
           .reports-charts-grid { grid-template-columns: 1fr !important; gap: 14px !important; }
-          .filter-section { padding: 14px; }
-          .search-input-wrapper { max-width: 100% !important; }
+          .filter-section { padding: 14px; gap: 12px; }
+          .filter-row-1 { flex-direction: column; align-items: stretch; gap: 12px; }
+          .filter-row-2 { flex-direction: column; align-items: stretch; gap: 12px; padding: 12px; }
+          .filter-row-2 .adv-filter-group { border-right: none !important; padding-right: 0 !important; flex-wrap: wrap; }
+          .filter-pills-container { width: 100%; justify-content: space-between; overflow-x: auto; border-radius: 16px; }
+          .filter-btn { padding: 8px 12px; font-size: 12.5px; flex: 1 1 auto; }
+          .search-input-wrapper { max-width: 100% !important; width: 100%; }
+          .adv-filter-group { width: 100%; justify-content: space-between; }
+          .adv-filter-input { flex: 1; width: auto !important; min-width: 0; }
           .fin-table th, .fin-table td { padding: 10px 12px; font-size: 12.5px; }
         }
 
