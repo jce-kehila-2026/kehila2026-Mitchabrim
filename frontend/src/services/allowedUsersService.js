@@ -7,7 +7,7 @@
 //  - The client sends the standard password-reset email only after the
 //    backend operation succeeds. No password is stored in Firestore.
 
-import { auth, db, getJoinRequestFunctions } from "../firebase";
+import { auth, db, getSecureFunctions } from "../firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 import { devLog as telemetryDevLog } from "./telemetry";
@@ -216,7 +216,7 @@ export const inviteUser = async ({ email, displayName, role, active = true, link
   }
 
   try {
-    const functions = await getJoinRequestFunctions();
+    const functions = await getSecureFunctions();
     if (!functions) throw new Error("Application verification is not configured.");
     const createInvitation = httpsCallable(functions, "inviteUser");
     const response = await createInvitation({

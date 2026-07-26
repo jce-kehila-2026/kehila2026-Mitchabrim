@@ -11,9 +11,9 @@ initializeApp();
 const hashPepper = defineSecret("JOIN_REQUEST_HASH_PEPPER");
 
 export const submitJoinRequest = onCall({
-  enforceAppCheck: true, consumeAppCheckToken: true, secrets: [hashPepper],
+  secrets: [hashPepper],
 }, async (request) => submitJoinRequestCore({
-  db: getFirestore(), data: request.data, appCheckToken: request.app?.token,
+  db: getFirestore(), data: request.data,
   ip: request.rawRequest?.ip, pepper: hashPepper.value(),
 }));
 
