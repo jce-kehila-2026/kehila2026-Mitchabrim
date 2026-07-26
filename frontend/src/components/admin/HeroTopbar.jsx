@@ -47,15 +47,13 @@ export default function HeroTopbar() {
 
   useEffect(() => {
     if (!user) return;
-    {
-      let finalName = user.displayName;
-      if (!finalName && user.email) finalName = user.email.split("@")[0];
-      setUserData({
-        name: finalName || "מנהל",
-        initial: (finalName || "מ").charAt(0).toUpperCase(),
-        role: "מנהל מערכת",
-      });
-    }
+    let finalName = user.displayName;
+    if (!finalName && user.email) finalName = user.email.split("@")[0];
+    setUserData({
+      name: finalName || "מנהל",
+      initial: (finalName || "מ").charAt(0).toUpperCase(),
+      role: "מנהל מערכת",
+    });
   }, [user]);
 
   useEffect(() => {
@@ -73,7 +71,6 @@ export default function HeroTopbar() {
     return () => unsub();
   }, []);
 
-  // Outside click — treat the fixed dropdown as part of its trigger.
   useEffect(() => {
     const onDocClick = (e) => {
       const t = e.target;
@@ -90,16 +87,37 @@ export default function HeroTopbar() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  // Position dropdowns via fixed coordinates so they escape .admin-hero (overflow:hidden).
+  // Keep fixed-positioned dropdowns anchored to their triggers on scroll/resize.
   useLayoutEffect(() => {
-    if (!notifOpen || !notifBtnRef.current) return;
-    const r = notifBtnRef.current.getBoundingClientRect();
-    setNotifPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    if (!notifOpen) return;
+    const update = () => {
+      if (!notifBtnRef.current) return;
+      const r = notifBtnRef.current.getBoundingClientRect();
+      setNotifPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
   }, [notifOpen]);
+
   useLayoutEffect(() => {
-    if (!menuOpen || !menuBtnRef.current) return;
-    const r = menuBtnRef.current.getBoundingClientRect();
-    setMenuPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    if (!menuOpen) return;
+    const update = () => {
+      if (!menuBtnRef.current) return;
+      const r = menuBtnRef.current.getBoundingClientRect();
+      setMenuPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
   }, [menuOpen]);
 
   const handleLogout = async () => {
@@ -149,7 +167,7 @@ export default function HeroTopbar() {
           <div
             ref={notifDropdownRef}
             className="hero-dropdown hero-notif-dropdown"
-            style={{ position: "fixed", top: notifPos.top, right: notifPos.right, left: "auto" }}
+            style={{ position: "fixed", top: notifPos.top, right: notifPos.right, left: "auto", zIndex: 1000 }}
           >
             <div className="hero-dropdown-header">
               התראות
@@ -199,7 +217,7 @@ export default function HeroTopbar() {
           <div
             ref={menuDropdownRef}
             className="hero-dropdown hero-user-dropdown"
-            style={{ position: "fixed", top: menuPos.top, right: menuPos.right, left: "auto" }}
+            style={{ position: "fixed", top: menuPos.top, right: menuPos.right, left: "auto", zIndex: 1000 }}
           >
             <button className="hero-menu-item" onClick={() => { setMenuOpen(false); navigate("/admin/profile"); }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

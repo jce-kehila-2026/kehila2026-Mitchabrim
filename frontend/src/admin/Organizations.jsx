@@ -235,7 +235,7 @@ export default function Organizations() {
         </div>
       )}
 
-      <div className="stats-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+      <div className="stats-grid">
         <StatsCard icon="🤝" title="גופי התנדבות" value={String(stats["גופי התנדבות"])} />
         <StatsCard icon="💝" title="גופי תרומות" value={String(stats["גופי תרומות"])} />
         <StatsCard icon="🤲" title="שיתופי פעולה" value={String(stats["שיתופי פעולה"])} />

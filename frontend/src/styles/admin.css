@@ -210,9 +210,22 @@
   .admin-shell { grid-template-columns: var(--sidebar-w-collapsed) 1fr; }
   .admin-shell.is-collapsed { grid-template-columns: var(--sidebar-w-collapsed) 1fr; }
   .admin-sidebar:not(.collapsed) {
-    position: fixed; inset-block: 0; inset-inline-end: 0;
-    width: var(--sidebar-w); z-index: 30;
+    position: fixed; inset-block: 0; inset-inline-start: 0; inset-inline-end: auto;
+    width: min(var(--sidebar-w), 82vw); z-index: 30;
     box-shadow: var(--shadow-lg);
+  }
+}
+
+/* Responsive hero dropdowns (notifications / user menu) */
+@media (max-width: 640px) {
+  .hero-notif-dropdown {
+    width: min(320px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px);
+    right: 12px !important;
+  }
+  .hero-user-dropdown {
+    width: min(220px, calc(100vw - 24px)) !important;
+    right: 12px !important;
   }
 }
 
@@ -229,8 +242,9 @@
 
 /* ----- Stats cards ----- */
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 24px; }
-@media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px) { .stats-grid { grid-template-columns: 1fr; } }
+.stats-grid.stats-grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) { .stats-grid, .stats-grid.stats-grid-3 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .stats-grid, .stats-grid.stats-grid-3 { grid-template-columns: 1fr; } }
 
 .stats-card {
   background: #fff; border-radius: var(--radius-lg);
@@ -968,4 +982,3 @@
     background: linear-gradient(to left, rgba(251, 244, 234, 0.92) 0%, rgba(251, 244, 234, 0.55) 70%, rgba(251, 244, 234, 0.2) 100%);
   }
 }
-
