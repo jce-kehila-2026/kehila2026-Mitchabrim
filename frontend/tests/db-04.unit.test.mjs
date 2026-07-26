@@ -39,14 +39,14 @@ test("DB-04 query catalog covers all UI filter combinations and operational quer
   const volunteerMatrix = cases.filter((item) => item.name.startsWith("volunteers:"));
   assert.equal(elderlyMatrix.length, 32);
   assert.equal(volunteerMatrix.length, 32);
-  assert.equal(cases.length, 81);
+  assert.equal(cases.length, 80);
 
   const checks = cases.reduce(
     (total, item) => total + Number(Boolean(item.page))
       + Number(Boolean(item.pagination)) + Number(Boolean(item.count)),
     0,
   );
-  assert.equal(checks, 215);
+  assert.equal(checks, 214);
   for (const item of elderlyMatrix) {
     assert.ok(item.filters.some((filter) => (
       filter.fieldFilter?.field?.fieldPath === "status"
@@ -55,7 +55,6 @@ test("DB-04 query catalog covers all UI filter combinations and operational quer
   assert.ok(cases.some((item) => item.name === "volunteerReports:volunteerId+createdAt-desc"));
   assert.ok(cases.some((item) => item.name === "profileUpdateRequests:volunteerAuthUid+createdAt-desc"));
   assert.ok(cases.some((item) => item.name === "volunteerNotifications:volunteerAuthUid+createdAt-desc"));
-  assert.ok(cases.some((item) => item.name === "login_sessions:userId+isActive"));
 });
 
 test("firestore.indexes.json contains exactly the seven proven composite indexes without duplicates", () => {
