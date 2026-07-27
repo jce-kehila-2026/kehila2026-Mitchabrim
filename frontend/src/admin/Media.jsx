@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
-import { Search, Globe } from "lucide-react";
+import { Search, Globe, Copy } from "lucide-react";
 
 // Firestore + Storage access is encapsulated in the images service.
 import {
@@ -216,6 +216,21 @@ export default function Media() {
     } catch (error) {
       console.error("Error updating image public status:", error);
       showToast("שגיאה בעדכון סטטוס התמונה.");
+    }
+  };
+
+  const copyPublicImageUrl = async (e, image) => {
+    e.stopPropagation();
+    if (!image?.isPublic || !image.url) {
+      showToast("אין קישור ציבורי זמין לתמונה זו");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(image.url);
+      showToast("קישור התמונה הועתק");
+    } catch (error) {
+      console.error("Unable to copy public image URL:", error);
+      showToast("לא ניתן להעתיק את הקישור בדפדפן זה");
     }
   };
 
@@ -683,6 +698,34 @@ export default function Media() {
                   </svg>
                 )}
               </button>
+
+              {img.isPublic && img.url && (
+                <button
+                  type="button"
+                  onClick={(e) => copyPublicImageUrl(e, img)}
+                  title="העתקת קישור התמונה"
+                  aria-label={`העתקת קישור: ${img.title || "תמונה"}`}
+                  style={{
+                    position: "absolute",
+                    top: 46,
+                    right: 8,
+                    background: "rgba(255, 255, 255, 0.94)",
+                    color: "#8b2c2c",
+                    border: "1px solid #d9c5bd",
+                    borderRadius: "50%",
+                    width: 30,
+                    height: 30,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    zIndex: 5,
+                  }}
+                >
+                  <Copy size={15} />
+                </button>
+              )}
 
               <div
                 style={{

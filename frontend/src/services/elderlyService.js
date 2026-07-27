@@ -9,6 +9,7 @@ import {
   limit,
   startAfter,
   getCountFromServer,
+  documentId,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
@@ -45,6 +46,21 @@ export async function getElderlyById(elderlyId) {
   const snap = await getDoc(doc(db, "elderly", elderlyId));
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() };
+}
+
+export async function getElderlyByIds(elderlyIds = []) {
+  const ids = Array.from(new Set(elderlyIds.map(String).filter(Boolean)));
+  if (!ids.length) return [];
+  const chunks = [];
+  for (let index = 0; index < ids.length; index += 30) chunks.push(ids.slice(index, index + 30));
+  const { results } = await mapWithConcurrency(
+    chunks,
+    (chunk) => getDocs(query(elderlyCollection, where(documentId(), "in", chunk))),
+  );
+  return results.flatMap((snapshot) => snapshot.docs.map((item) => ({
+    id: item.id,
+    ...item.data(),
+  })));
 }
 
 /**
