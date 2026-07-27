@@ -12,24 +12,17 @@
 
 import { db, getSecureFunctions } from "../firebase";
 import {
-  collection,
-  collectionGroup,
   doc,
   getDoc,
-  getDocs,
-  query,
   runTransaction,
-  serverTimestamp,
   setDoc,
-  where,
-  writeBatch,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { normalizeErrorCode } from "../utils/errorPolicy";
 import { getCategoryItems, normalizeCategoryGroups } from "../utils/categorySettings";
 import {
   locationNameKey,
   normalizeLocationName,
-  updateAreasModel,
 } from "../utils/elderlyFormModel";
 
 const COLLECTION = "settings";
@@ -135,89 +128,39 @@ export async function addLanguage(language, fallback = []) {
 export async function updateLocationSettings(change) {
   const functions = await getSecureFunctions();
   if (!functions) {
-    if (!import.meta.env.DEV) {
-      throw new Error("App Check is required for location updates");
-    }
-    return updateLocationSettingsLocally(change);
+    const error = new Error("App Check is required for location updates");
+    error.code = "location-settings/app-check-required";
+    throw error;
   }
   const result = await httpsCallable(functions, "updateLocationSettings")(change);
   return result.data;
 }
 
-async function updateLocationSettingsLocally(change) {
-  const settings = await getSettingsGeneral();
-  const areas = updateAreasModel(settings?.areas || [], change);
-  const writes = new Map();
-  const addPatch = (snapshot, patch, belongsToSource = () => true) => {
-    snapshot.docs.forEach((item) => {
-      if (!belongsToSource(item.data())) return;
-      const current = writes.get(item.ref.path) || { ref: item.ref, patch: {} };
-      current.patch = { ...current.patch, ...patch, updatedAt: serverTimestamp() };
-      writes.set(item.ref.path, current);
-    });
-  };
-  const matchesSourceArea = (record) => (
-    !record.area || locationNameKey(record.area) === locationNameKey(change.oldArea)
-  );
-
-  if (change.type === "renameArea") {
-    const rootNames = ["elderly", "volunteers", "parliaments"];
-    const snapshots = await Promise.all([
-      ...rootNames.map((name) => getDocs(query(
-        collection(db, name),
-        where("area", "==", change.oldArea),
-      ))),
-      getDocs(collectionGroup(db, "elderlyParticipants")),
-      getDocs(collectionGroup(db, "participants")),
-      getDocs(query(collection(db, "elderlyContacts"), where("elderlyArea", "==", change.oldArea))),
-    ]);
-    snapshots.slice(0, 3).forEach((snapshot) => addPatch(snapshot, { area: change.newArea }));
-    snapshots.slice(3, 5).forEach((snapshot) => addPatch(
-      snapshot,
-      { area: change.newArea },
-      (record) => locationNameKey(record.area) === locationNameKey(change.oldArea),
-    ));
-    addPatch(snapshots.at(-1), { elderlyArea: change.newArea });
-  } else {
-    const neighborhood = change.type === "renameNeighborhood"
-      ? change.newNeighborhood
-      : change.oldNeighborhood;
-    const area = change.type === "moveNeighborhood" ? change.targetArea : change.oldArea;
-    const snapshots = await Promise.all([
-      getDocs(query(collection(db, "elderly"), where("neighborhood", "==", change.oldNeighborhood))),
-      getDocs(query(collection(db, "volunteers"), where("neighborhood", "==", change.oldNeighborhood))),
-      getDocs(query(collection(db, "parliaments"), where("neighborhood", "==", change.oldNeighborhood))),
-      getDocs(collectionGroup(db, "elderlyParticipants")),
-      getDocs(collectionGroup(db, "participants")),
-      getDocs(query(collection(db, "elderlyContacts"), where("elderlyNeighborhood", "==", change.oldNeighborhood))),
-    ]);
-    snapshots.slice(0, 3).forEach((snapshot) => addPatch(
-      snapshot,
-      { area, neighborhood },
-      matchesSourceArea,
-    ));
-    snapshots.slice(3, 5).forEach((snapshot) => addPatch(
-      snapshot,
-      { area, neighborhood },
-      (record) => locationNameKey(record.neighborhood) === locationNameKey(change.oldNeighborhood)
-        && matchesSourceArea(record),
-    ));
-    addPatch(
-      snapshots.at(-1),
-      { elderlyArea: area, elderlyNeighborhood: neighborhood },
-      (record) => !record.elderlyArea
-        || locationNameKey(record.elderlyArea) === locationNameKey(change.oldArea),
-    );
+export function locationSettingsErrorMessage(error) {
+  const code = normalizeErrorCode(error);
+  const reason = error?.details?.reason;
+  const count = Number(error?.details?.referenceCount || 0);
+  if (reason === "location-in-use") {
+    return `לא ניתן למחוק: קיימות ${count} רשומות מקושרות. יש להעביר או לעדכן אותן תחילה.`;
   }
-
-  const pendingWrites = [...writes.values()];
-  for (let offset = 0; offset < pendingWrites.length; offset += 400) {
-    const batch = writeBatch(db);
-    pendingWrites.slice(offset, offset + 400).forEach(({ ref, patch }) => batch.update(ref, patch));
-    await batch.commit();
+  if (reason === "too-many-references") {
+    return `לא ניתן להשלים את הפעולה בבטחה: נמצאו ${count} רשומות לעדכון. יש לפנות למנהל המערכת.`;
   }
-  await setDoc(doc(db, COLLECTION, DOC_ID), { areas, updatedAt: serverTimestamp() }, { merge: true });
-  return { areas, updatedReferences: writes.size, mode: "development-direct" };
+  if (code === "unauthenticated") return "ההתחברות פגה. יש להתחבר מחדש ולנסות שוב.";
+  if (code === "permission-denied") return "אין הרשאת מנהל פעילה לביצוע הפעולה.";
+  if (["invalid-argument", "already-exists", "not-found"].includes(code)) {
+    return error?.message || "פרטי האזור או השכונה אינם תקינים.";
+  }
+  if (
+    code.includes("app-check")
+    || ["failed-precondition", "internal", "unavailable"].includes(code)
+  ) {
+    return "אימות אבטחת היישום או שירות העדכון נכשל. יש לרענן ולנסות שוב.";
+  }
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return "אין חיבור לרשת. לא בוצע שינוי.";
+  }
+  return "עדכון האזור או השכונה נכשל. לא בוצע שינוי.";
 }
 
 export async function getSettingsCategoryItems(groupTitle) {

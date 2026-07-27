@@ -131,6 +131,17 @@ export function updateAreasModel(areas = [], change = {}) {
     }
     source.neighborhoods.splice(index, 1);
     target.neighborhoods.push(oldNeighborhood);
+  } else if (change.type === "deleteNeighborhood") {
+    const source = next.find((area) => locationNameKey(area.area) === locationNameKey(oldArea));
+    const index = source?.neighborhoods.findIndex(
+      (name) => locationNameKey(name) === locationNameKey(oldNeighborhood),
+    ) ?? -1;
+    if (index < 0) throw new Error("השכונה לא נמצאה");
+    source.neighborhoods.splice(index, 1);
+  } else if (change.type === "deleteArea") {
+    const index = next.findIndex((area) => locationNameKey(area.area) === locationNameKey(oldArea));
+    if (index < 0) throw new Error("האזור לא נמצא");
+    next.splice(index, 1);
   } else {
     throw new Error("פעולת מיקום לא מוכרת");
   }
