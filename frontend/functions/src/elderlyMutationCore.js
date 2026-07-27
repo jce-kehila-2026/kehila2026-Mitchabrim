@@ -46,6 +46,39 @@ function buildSearchFields(data) {
   };
 }
 
+export function validateElderlyData(data) {
+  const exactDigits = (field, length, required = false) => {
+    const value = data[field];
+    if (value == null || value === "") {
+      if (required) throw new HttpsError("invalid-argument", `${field} is required.`);
+      return;
+    }
+    if (typeof value !== "string" || !new RegExp(`^\\d{${length}}$`).test(value)) {
+      throw new HttpsError("invalid-argument", `${field} must contain exactly ${length} digits.`);
+    }
+  };
+  exactDigits("idNum", 9);
+  exactDigits("mobile", 10, true);
+  exactDigits("homePhone", 9);
+  if (data.birth) {
+    if (typeof data.birth !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data.birth)) {
+      throw new HttpsError("invalid-argument", "birth must be a complete date.");
+    }
+    const [year, month, day] = data.birth.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1
+      || parsed.getUTCDate() !== day || parsed.getTime() > Date.now()) {
+      throw new HttpsError("invalid-argument", "birth is invalid or in the future.");
+    }
+  }
+  if (data.languages != null && (
+    !Array.isArray(data.languages)
+    || data.languages.some((language) => typeof language !== "string" || !language.trim())
+  )) {
+    throw new HttpsError("invalid-argument", "languages must be a string array.");
+  }
+}
+
 function validateInput(raw) {
   const action = raw?.action;
   const operationId = typeof raw?.operationId === "string" ? raw.operationId.trim() : "";
@@ -109,6 +142,7 @@ export async function elderlyMutationCore({ db, callerUid, data: raw }) {
 
     const previous = target.exists ? target.data() : {};
     const nextData = input.action === "update" ? { ...previous, ...input.data } : input.data;
+    if (input.action !== "delete") validateElderlyData(nextData);
     const oldVolId = typeof previous.volId === "string" ? previous.volId : "";
     const newVolId = input.action === "delete" || typeof nextData.volId !== "string"
       ? ""

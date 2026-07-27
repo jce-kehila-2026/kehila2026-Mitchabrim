@@ -6,6 +6,7 @@ import { submitJoinRequestCore } from "./src/joinRequestCore.js";
 import { inviteUserCore } from "./src/inviteUserCore.js";
 import { elderlyMutationCore } from "./src/elderlyMutationCore.js";
 import { getAuth } from "firebase-admin/auth";
+import { locationSettingsCore } from "./src/locationSettingsCore.js";
 
 initializeApp();
 const hashPepper = defineSecret("JOIN_REQUEST_HASH_PEPPER");
@@ -31,6 +32,15 @@ export const mutateElderly = onCall({
   region: "us-central1",
   enforceAppCheck: true,
 }, async (request) => elderlyMutationCore({
+  db: getFirestore(),
+  callerUid: request.auth?.uid,
+  data: request.data,
+}));
+
+export const updateLocationSettings = onCall({
+  region: "us-central1",
+  enforceAppCheck: true,
+}, async (request) => locationSettingsCore({
   db: getFirestore(),
   callerUid: request.auth?.uid,
   data: request.data,

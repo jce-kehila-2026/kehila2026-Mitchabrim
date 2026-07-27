@@ -26,6 +26,10 @@ import { sanitizeFormData } from "@/utils/sanitize";
 import { validateDate } from "@/utils/validation";
 import { createOperationId } from "@/utils/operationId";
 import { openSafePrintReport } from "@/utils/safePrint";
+import {
+  neighborhoodNoteEntries,
+  participantStats,
+} from "@/utils/projectParticipantStats";
 
 /* ============================================================
    Static reference data — only enums/options. All groups,
@@ -106,13 +110,7 @@ export default function Projects() {
     return map;
   }, [allVolunteers]);
 
-  const computeProjectStats = (list = []) => {
-    return {
-      elderly: list.length,
-      packages: list.filter((p) => p.receives === "כן").length,
-      delivered: list.filter((p) => p.delivery === "נמסר").length,
-    };
-  };
+  const computeProjectStats = (list = []) => participantStats(list);
 
   const setProjectStatsDirect = (projectId, stats) => {
     setProjectStats((prev) => ({ ...prev, [projectId]: stats }));
@@ -196,11 +194,7 @@ export default function Projects() {
     setProjects((prev) => [created, ...prev]);
 
     // Compute fresh stats for the new project.
-    const stats = {
-      elderly: participants.length,
-      packages: participants.filter((p) => p.receives === "כן").length,
-      delivered: participants.filter((p) => p.delivery === "נמסר").length,
-    };
+    const stats = participantStats(participants);
     setProjectStats((prev) => ({ ...prev, [created.id]: stats }));
     return created;
   };
@@ -225,7 +219,14 @@ export default function Projects() {
     return projects.map((p) => {
       const s = projectStats[p.id];
       if (!s) return p;
-      return { ...p, elderly: s.elderly, packages: s.packages, delivered: s.delivered };
+      return {
+        ...p,
+        elderly: s.elderly,
+        packages: s.packages,
+        delivered: s.delivered,
+        assigned: s.assigned,
+        specialNotes: s.notes,
+      };
     });
   }, [projects, projectStats]);
 
@@ -248,8 +249,10 @@ export default function Projects() {
         elderly: acc.elderly + (s?.elderly || 0),
         packages: acc.packages + (s?.packages || 0),
         delivered: acc.delivered + (s?.delivered || 0),
+        assigned: acc.assigned + (s?.assigned || 0),
+        notes: acc.notes + (s?.notes || 0),
       }),
-      { elderly: 0, packages: 0, delivered: 0 }
+      { elderly: 0, packages: 0, delivered: 0, assigned: 0, notes: 0 }
     );
   }, [projectStats]);
 
@@ -314,9 +317,9 @@ export default function Projects() {
     >
       <div className="stats-grid">
         <StatsCard icon="📅" title="פרויקט קרוב" value={upcoming?.name || "—"} subtitle={upcoming?.date || ""} />
-        <StatsCard icon="👵" title="אזרחים ותיקים בפרויקט" value={totals.elderly} />
         <StatsCard icon="🎁" title="כמות חבילות" value={totals.packages} />
         <StatsCard icon="📦" title="נמסרו" value={totals.delivered} />
+        <StatsCard icon="🤝" title="מספר חבילות ששובץ להן מתנדב" value={totals.assigned} />
       </div>
 
       <SectionCard>
@@ -347,6 +350,8 @@ export default function Projects() {
               { key: "elderly",   label: "מספר אזרחים ותיקים" },
               { key: "packages",  label: "כמות חבילות" },
               { key: "delivered", label: "נמסרו" },
+              { key: "assigned", label: "שובצו למתנדב / קבוצה" },
+              { key: "specialNotes", label: "הערות מיוחדות" },
               { key: "status",    label: "סטטוס", render: (r) => <span className={`badge ${projectStatusBadge(r.status)}`}>{r.status}</span> },
               { key: "delete",    label: "", render: (r) => (
                 <button className="btn-link btn-danger" onClick={() => handleDeleteProject(r.id, r.name)}>מחיקת פרויקט</button>
@@ -377,6 +382,13 @@ export default function Projects() {
             { key: "status", label: "סטטוס", options: ["הכול", ...PROJECT_STATUSES] },
           ]}
           data={filtered}
+          summary={(filteredProjects) => [[
+            "חבילות ששובצו למתנדב או קבוצה",
+            filteredProjects.reduce((sum, item) => sum + (item.assigned || 0), 0),
+          ], [
+            "הערות מיוחדות",
+            filteredProjects.reduce((sum, item) => sum + (item.specialNotes || 0), 0),
+          ]]}
           columns={[
             { key: "name", label: "שם פרויקט" },
             { key: "type", label: "סוג פרויקט" },
@@ -385,6 +397,7 @@ export default function Projects() {
             { key: "elderly", label: "אזרחים ותיקים" },
             { key: "assigned", label: "שובצו" },
             { key: "delivered", label: "נמסרו" },
+            { key: "specialNotes", label: "הערות מיוחדות" },
             { key: "status", label: "סטטוס" }
           ]}
           onClose={() => setShowPrint(false)}
@@ -617,6 +630,7 @@ function ProjectDetail({
   const [showEdit, setShowEdit] = useState(false);
   const [elderlyByNeighborhood, setElderlyByNeighborhood] = useState({});
   const [elderlyLoading, setElderlyLoading] = useState(true);
+  const [expandedNotesNeighborhood, setExpandedNotesNeighborhood] = useState("");
 
   // Real neighborhoods source — same data used by Elderly + Volunteers.
   const { allNeighborhoods } = useAreasAndNeighborhoods();
@@ -659,22 +673,19 @@ function ProjectDetail({
   const neighborhoodRows = useMemo(() => {
     return projectNeighborhoods.map((name) => {
       const rows = elderlyByNeighborhood[name] || [];
-      const packages = rows.filter((r) => r.receives === "כן").length;
-      const delivered = rows.filter((r) => r.delivery === "נמסר").length;
-      const notes = rows.filter((r) => r.notes && r.notes.trim()).length;
-      return { name, elderly: rows.length, packages, delivered, notes };
+      const stats = participantStats(rows);
+      return {
+        name,
+        ...stats,
+        noteEntries: neighborhoodNoteEntries(rows),
+      };
     });
   }, [projectNeighborhoods, elderlyByNeighborhood]);
 
   // Totals across all neighborhoods for THIS project — drive both the summary
   // cards in the detail view and the row in the main Projects table.
   const projectTotals = useMemo(() => {
-    const all = Object.values(elderlyByNeighborhood).flat();
-    return {
-      elderly: all.length,
-      packages: all.filter((r) => r.receives === "כן").length,
-      delivered: all.filter((r) => r.delivery === "נמסר").length,
-    };
+    return participantStats(Object.values(elderlyByNeighborhood).flat());
   }, [elderlyByNeighborhood]);
 
   useEffect(() => {
@@ -685,6 +696,7 @@ function ProjectDetail({
 
 
   const [showPrint, setShowPrint] = useState(false);
+  const [showPrintProject, setShowPrintProject] = useState(false);
   const [showAddElderly, setShowAddElderly] = useState(false);
   const [notesEditing, setNotesEditing] = useState(null); // { neighName, elderly }
   const [partnerGroup, setPartnerGroup] = useState(null); // existing group profile modal
@@ -758,6 +770,19 @@ function ProjectDetail({
       })),
     [allGroups, projectGroupIds, projectVolunteers, elderlyCountByProjectGroup]
   );
+
+  const assignmentLabel = (participant) => {
+    if (participant.assignedGroupId) {
+      return projectGroups.find((item) => item.id === participant.assignedGroupId)?.name
+        || "קבוצה";
+    }
+    if (participant.assignedVolunteerId) {
+      return participant.assignedVolunteerName
+        || volName(allVolunteers.find((item) => item.id === participant.assignedVolunteerId) || {})
+        || "עצמאיים";
+    }
+    return "—";
+  };
 
   const addGroupsToProject = async (ids) => {
     const newIds = ids.filter((id) => !projectGroupIds.includes(id));
@@ -957,17 +982,44 @@ function ProjectDetail({
       actions={
         <>
           <button className="btn btn-primary" onClick={() => setShowEdit(true)}>עריכה</button>
+          <button className="btn" onClick={() => setShowPrintProject(true)}>הדפסת הפרויקט</button>
         </>
       }
     >
       <button className="back-link" onClick={onBack}>→ חזרה לפרויקטים</button>
 
-      <div className="stats-grid">
+      <div className="stats-grid stats-grid-5">
         <StatsCard icon="👵" title="אזרחים ותיקים" value={projectTotals.elderly} />
         <StatsCard icon="🎁" title="כמות חבילות"   value={projectTotals.packages} />
         <StatsCard icon="📦" title="נמסרו"          value={projectTotals.delivered} />
-        <StatsCard icon="📝" title="הערות מיוחדות" value={project.notes} />
+        <StatsCard icon="🤝" title="מספר חבילות ששובץ להן מתנדב" value={projectTotals.assigned} />
+        <StatsCard icon="📝" title="הערות מיוחדות" value={projectTotals.notes} />
       </div>
+
+      {showPrintProject && (
+        <PrintModal
+          title={`דוח פרויקט — ${project.name}`}
+          data={allParticipants}
+          summary={[
+            ["פרויקט", project.name],
+            ["אזרחים ותיקים", projectTotals.elderly],
+            ["כמות חבילות", projectTotals.packages],
+            ["חבילות ששובצו למתנדב או קבוצה", projectTotals.assigned],
+            ["הערות מיוחדות", projectTotals.notes],
+          ]}
+          columns={[
+            { key: "fullName", label: "שם מלא", render: (row) => `${row.first || ""} ${row.last || ""}`.trim() },
+            { key: "neighborhood", label: "שכונה" },
+            { key: "phone", label: "טלפון" },
+            { key: "address", label: "כתובת" },
+            { key: "assignment", label: "שיבוץ בפרויקט", render: assignmentLabel },
+            { key: "receives", label: "מקבל חבילה" },
+            { key: "delivery", label: "סטטוס מסירה" },
+            { key: "notes", label: "הערות מיוחדות" },
+          ]}
+          onClose={() => setShowPrintProject(false)}
+        />
+      )}
 
       <div className="tabs">
         <button className={tab === "dist" ? "active" : ""}     onClick={() => { setTab("dist");     setNeighborhood(null); }}>ניהול חלוקה</button>
@@ -988,31 +1040,74 @@ function ProjectDetail({
               { key: "elderly",   label: "אזרחים ותיקים" },
               { key: "packages",  label: "כמות חבילות" },
               { key: "delivered", label: "נמסרו" },
-              { key: "notes",     label: "הערות מיוחדות" },
+              { key: "notes", label: "הערות מיוחדות", render: (r) => (
+                r.notes > 0 ? (
+                  <button
+                    className="cell-link"
+                    onClick={() => setExpandedNotesNeighborhood(
+                      expandedNotesNeighborhood === r.name ? "" : r.name,
+                    )}
+                  >
+                    {r.notes} — הצגת הערות
+                  </button>
+                ) : <span className="muted">אין הערות</span>
+              )},
               { key: "remove",    label: "", render: (r) => (
                 <button className="btn-link btn-danger" onClick={() => removeNeighborhoodFromProject(r.name)}>הסר שכונה מהפרויקט</button>
               )},
             ]}
             data={neighborhoodRows}
           />
+          {expandedNotesNeighborhood && (() => {
+            const selected = neighborhoodRows.find((row) => row.name === expandedNotesNeighborhood);
+            if (!selected) return null;
+            return (
+              <div style={{
+                marginTop: 16,
+                padding: 16,
+                border: "1px solid #eadfce",
+                borderRadius: 12,
+                background: "#fcfaf8",
+              }}>
+                <div style={{ fontWeight: 700, color: "#7b312d", marginBottom: 10 }}>
+                  הערות מיוחדות — {selected.name} ({selected.notes})
+                </div>
+                {selected.noteEntries.length === 0 ? (
+                  <div className="muted">אין הערות מיוחדות בשכונה זו.</div>
+                ) : selected.noteEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(120px, 0.3fr) 1fr",
+                      gap: 12,
+                      padding: "8px 0",
+                      borderBottom: "1px solid #eee5da",
+                    }}
+                  >
+                    <strong>{entry.name}</strong>
+                    <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{entry.note}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </SectionCard>
       )}
 
       {tab === "dist" && neighborhood && (() => {
         const rows = elderlyByNeighborhood[neighborhood.name] || [];
-        const neighStats = {
-          elderly: rows.length,
-          packages: rows.filter((r) => r.receives === "כן").length,
-          delivered: rows.filter((r) => r.delivery === "נמסר").length,
-        };
+        const neighStats = participantStats(rows);
         return (
         <>
           <button className="back-link" onClick={() => setNeighborhood(null)}>→ חזרה לרשימת השכונות</button>
 
-          <div className="stats-grid">
+          <div className="stats-grid stats-grid-5">
             <StatsCard icon="👵" title="אזרחים ותיקים בשכונה" value={neighStats.elderly} />
             <StatsCard icon="🎁" title="כמות חבילות" value={neighStats.packages} />
             <StatsCard icon="📦" title="נמסרו" value={neighStats.delivered} />
+            <StatsCard icon="🤝" title="שובצו למתנדב או קבוצה" value={neighStats.assigned} />
+            <StatsCard icon="📝" title="הערות מיוחדות" value={neighStats.notes} />
           </div>
 
           <SectionCard
@@ -1117,11 +1212,22 @@ function ProjectDetail({
                 { key: "delivery", label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
               ]}
               data={elderlyByNeighborhood[neighborhood.name] || []}
+              summary={(filteredRows) => {
+                const stats = participantStats(filteredRows);
+                return [
+                  ["פרויקט", project.name],
+                  ["שכונה", neighborhood.name],
+                  ["אזרחים ותיקים", stats.elderly],
+                  ["חבילות ששובצו למתנדב או קבוצה", stats.assigned],
+                  ["הערות מיוחדות", stats.notes],
+                ];
+              }}
               columns={[
                 { key: "n", label: "מס׳" },
                 { key: "fullName", label: "שם מלא", render: (r) => `${r.first || ""} ${r.last || ""}`.trim() },
                 { key: "phone", label: "טלפון" },
                 { key: "address", label: "כתובת" },
+                { key: "assignment", label: "שיבוץ בפרויקט", render: assignmentLabel },
                 { key: "receives", label: "מקבל חבילה" },
                 { key: "delivery", label: "סטטוס מסירה" },
                 { key: "notes", label: "הערות" },
@@ -1565,7 +1671,14 @@ function EditProjectModal({ project, onClose, onSave }) {
   );
 }
 
-function PrintModal({ title, filters = [], onClose, data = [], columns = [] }) {
+function PrintModal({
+  title,
+  filters = [],
+  onClose,
+  data = [],
+  columns = [],
+  summary = [],
+}) {
   const [selectedFilters, setSelectedFilters] = useState(() => {
     const initial = {};
     filters.forEach((f) => {
@@ -1588,14 +1701,22 @@ function PrintModal({ title, filters = [], onClose, data = [], columns = [] }) {
         column.render ? column.render(row) : row[column.key],
       ]),
     ));
+    const summaryEntries = typeof summary === "function" ? summary(filtered) : summary;
     const opened = openSafePrintReport({
       title,
       resultCount: printableRows.length,
-      sections: [{
-        title: "רשימה",
-        columns: columns.map((column) => [column.key, column.label]),
-        rows: printableRows,
-      }],
+      sections: [
+        ...(summaryEntries.length ? [{
+          title: "סיכום",
+          kind: "metadata",
+          entries: summaryEntries,
+        }] : []),
+        {
+          title: "רשימה",
+          columns: columns.map((column) => [column.key, column.label]),
+          rows: printableRows,
+        },
+      ],
     });
     if (!opened) {
       alert("נא לאפשר חלונות קופצים בדפדפן");

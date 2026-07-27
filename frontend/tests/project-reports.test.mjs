@@ -10,6 +10,10 @@ import {
   sortProjectReportsChronologically,
 } from "../src/utils/projectReportModel.js";
 import { openSafePrintReport } from "../src/utils/safePrint.js";
+import {
+  neighborhoodNoteEntries,
+  participantStats,
+} from "../src/utils/projectParticipantStats.js";
 
 const baseData = () => ({
   projects: [
@@ -195,6 +199,9 @@ test("project UI routes every project print action through the safe printer", ()
   const reportsSource = readFileSync(resolve(root, "src/admin/Reports.jsx"), "utf8");
   const modelSource = readFileSync(resolve(root, "src/utils/projectReportModel.js"), "utf8");
   assert.match(projectsSource, /openSafePrintReport/);
+  assert.match(projectsSource, /מספר חבילות ששובץ להן מתנדב/);
+  assert.match(projectsSource, /projectTotals\.notes/);
+  assert.match(projectsSource, /summary=\{\(filteredRows\)/);
   assert.match(reportsSource, /projectPrintSections/);
   assert.match(reportsSource, /הדפסת דוח מלא/);
   assert.match(reportsSource, /הדפסת אזרחים ותיקים/);
@@ -217,4 +224,40 @@ test("project UI routes every project print action through the safe printer", ()
     projectsSource.slice(projectsSource.indexOf("function PrintModal"), projectsSource.indexOf("function AddProjectModal")),
     /document\.write/,
   );
+});
+
+test("project participant stats count groups and independent volunteers without duplicates", () => {
+  const stats = participantStats([
+    { id: "e1", receives: "כן", assignedGroupId: "g1", notes: "" },
+    { elderlyId: "e1", receives: "כן", assignedGroupId: "g1", notes: "עודכן" },
+    { id: "e2", receives: "כן", assignedVolunteerId: "v1", notes: "  " },
+    { id: "e3", receives: "לא", assignedVolunteerId: "", assignedGroupId: "" },
+  ]);
+  assert.deepEqual(stats, {
+    elderly: 3,
+    packages: 2,
+    delivered: 0,
+    assigned: 2,
+    notes: 1,
+  });
+  assert.equal(participantStats([]).assigned, 0);
+});
+
+test("special-note counts react to add, edit and delete and stay neighborhood-scoped", () => {
+  const base = [
+    { id: "e1", first: "א", last: "א", neighborhood: "מרכז", notes: "" },
+    { id: "e2", first: "ב", last: "ב", neighborhood: "מרכז", notes: "הערה" },
+  ];
+  assert.equal(participantStats(base).notes, 1);
+  assert.equal(participantStats(base.map((item) => (
+    item.id === "e1" ? { ...item, notes: "נוספה" } : item
+  ))).notes, 2);
+  assert.equal(participantStats(base.map((item) => (
+    item.id === "e2" ? { ...item, notes: "נערכה" } : item
+  ))).notes, 1);
+  assert.equal(participantStats(base.map((item) => (
+    item.id === "e2" ? { ...item, notes: "" } : item
+  ))).notes, 0);
+  assert.deepEqual(neighborhoodNoteEntries(base).map((entry) => entry.id), ["e2"]);
+  assert.deepEqual(neighborhoodNoteEntries([]), []);
 });
