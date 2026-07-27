@@ -72,7 +72,7 @@ export default function Login() {
       </Link>
       <div className="login-container">
         <div className="login-box">
-          <img src="/logo.webp" className="logo" alt="מתחברים" width="840" height="507" fetchPriority="high" />
+          <img src="/logo.webp" className="logo" alt="מתחברים" width="840" height="507" fetchpriority="high" />
           <div className="header-text">
           </div>
           <hr />

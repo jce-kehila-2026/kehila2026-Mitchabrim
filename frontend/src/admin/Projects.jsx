@@ -25,6 +25,7 @@ import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import { sanitizeFormData } from "@/utils/sanitize";
 import { validateDate } from "@/utils/validation";
 import { createOperationId } from "@/utils/operationId";
+import { openSafePrintReport } from "@/utils/safePrint";
 
 /* ============================================================
    Static reference data — only enums/options. All groups,
@@ -375,7 +376,7 @@ export default function Projects() {
             { key: "type", label: "סוג פרויקט", options: ["הכול", ...PROJECT_TYPES] },
             { key: "status", label: "סטטוס", options: ["הכול", ...PROJECT_STATUSES] },
           ]}
-          data={projects}
+          data={filtered}
           columns={[
             { key: "name", label: "שם פרויקט" },
             { key: "type", label: "סוג פרויקט" },
@@ -1112,8 +1113,18 @@ function ProjectDetail({
             <PrintModal
               title={`הדפסת רשימת אזרחים ותיקים — ${neighborhood.name}`}
               filters={[
-                { label: "מקבל חבילה", options: ["הכול", "כן", "לא"] },
-                { label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
+                { key: "receives", label: "מקבל חבילה", options: ["הכול", "כן", "לא"] },
+                { key: "delivery", label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
+              ]}
+              data={elderlyByNeighborhood[neighborhood.name] || []}
+              columns={[
+                { key: "n", label: "מס׳" },
+                { key: "fullName", label: "שם מלא", render: (r) => `${r.first || ""} ${r.last || ""}`.trim() },
+                { key: "phone", label: "טלפון" },
+                { key: "address", label: "כתובת" },
+                { key: "receives", label: "מקבל חבילה" },
+                { key: "delivery", label: "סטטוס מסירה" },
+                { key: "notes", label: "הערות" },
               ]}
               onClose={() => setShowPrint(false)}
             />
@@ -1571,52 +1582,22 @@ function PrintModal({ title, filters = [], onClose, data = [], columns = [] }) {
       });
     });
 
-    const html = `<!doctype html>
-<html dir="rtl" lang="he">
-<head>
-  <meta charset="utf-8">
-  <title>${title}</title>
-  <style>
-    @page { size: A4 portrait; margin: 15mm 12mm; }
-    body { font-family: "Arial", sans-serif; color: #333; margin: 0; padding: 20px; }
-    h2 { text-align: center; color: #8B0000; margin-bottom: 20px; border-bottom: 2px solid #8B0000; padding-bottom: 10px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
-    th { background: #8B0000; color: #fff; padding: 10px; text-align: right; border: 1px solid #6b0000; }
-    td { padding: 8px; border: 1px solid #ddd; text-align: right; }
-    tbody tr:nth-child(even) { background: #f9f9f9; }
-    .summary { margin-top: 20px; font-weight: bold; font-size: 14px; text-align: right; }
-  </style>
-</head>
-<body>
-  <h2>${title}</h2>
-  <table>
-    <thead>
-      <tr>
-        ${columns.map(c => `<th>${c.label}</th>`).join('')}
-      </tr>
-    </thead>
-    <tbody>
-      ${filtered.map(row => `
-        <tr>
-          ${columns.map(c => `<td>${c.render ? c.render(row) : (row[c.key] == null ? '—' : String(row[c.key]))}</td>`).join('')}
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>
-  <div class="summary">סה"כ רשומות: ${filtered.length}</div>
-  <script>
-    window.onload = function() {
-      setTimeout(function() { window.print(); }, 500);
-    }
-  </script>
-</body>
-</html>`;
-
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write(html);
-      w.document.close();
-    } else {
+    const printableRows = filtered.map((row) => Object.fromEntries(
+      columns.map((column) => [
+        column.key,
+        column.render ? column.render(row) : row[column.key],
+      ]),
+    ));
+    const opened = openSafePrintReport({
+      title,
+      resultCount: printableRows.length,
+      sections: [{
+        title: "רשימה",
+        columns: columns.map((column) => [column.key, column.label]),
+        rows: printableRows,
+      }],
+    });
+    if (!opened) {
       alert("נא לאפשר חלונות קופצים בדפדפן");
     }
   };

@@ -13,6 +13,7 @@ import {
   startAfter,
   getCountFromServer,
   runTransaction,
+  documentId,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
@@ -21,6 +22,7 @@ import { sanitizeFormData, sanitizeText } from "../utils/sanitize";
 import { buildVolunteerQueryCriteria, buildVolunteerSearchFields } from "../utils/firestoreSearch";
 import { processQueryInChunks } from "../utils/firestoreBulk";
 import { requireOperationId } from "../utils/operationId";
+import { mapWithConcurrency } from "../utils/bulkOperations";
 
 const volunteersCollection = collection(db, "volunteers");
 
@@ -133,6 +135,27 @@ export async function getVolunteers() {
   }));
 }
 
+async function getCollectionDocumentsByIds(collectionRef, ids = []) {
+  const uniqueIds = Array.from(new Set(ids.map(String).filter(Boolean)));
+  if (!uniqueIds.length) return [];
+  const chunks = [];
+  for (let index = 0; index < uniqueIds.length; index += 30) {
+    chunks.push(uniqueIds.slice(index, index + 30));
+  }
+  const { results } = await mapWithConcurrency(
+    chunks,
+    (chunk) => getDocs(query(collectionRef, where(documentId(), "in", chunk))),
+  );
+  return results.flatMap((snapshot) => snapshot.docs.map((item) => ({
+    id: item.id,
+    ...item.data(),
+  })));
+}
+
+export function getVolunteersByIds(volunteerIds = []) {
+  return getCollectionDocumentsByIds(volunteersCollection, volunteerIds);
+}
+
 export async function createVolunteer(volunteerData, operationId) {
   const safeOperationId = requireOperationId(operationId);
   const clean = sanitizeFormData(volunteerData);
@@ -193,6 +216,10 @@ export async function getVolunteerGroups() {
     id: docItem.id,
     ...docItem.data(),
   }));
+}
+
+export function getVolunteerGroupsByIds(groupIds = []) {
+  return getCollectionDocumentsByIds(groupsCollection, groupIds);
 }
 
 export async function createVolunteerGroup(groupData) {
