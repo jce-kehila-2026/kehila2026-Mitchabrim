@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { EllipsisVertical, Search } from "lucide-react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 
@@ -18,11 +18,17 @@ import { getVolunteers } from "@/services/volunteersService";
 import {
   getSettingsGeneral,
   saveSettingsGeneral,
+  updateLocationSettings,
 } from "@/services/settingsService";
 import {
   isProtectedCategory,
   normalizeCategoryGroups,
 } from "@/utils/categorySettings";
+import {
+  locationNameKey,
+  normalizeLocationName,
+  updateAreasModel,
+} from "@/utils/elderlyFormModel";
 
 const ROLE_LABEL = { admin: "מנהל", volunteer: "מתנדב" };
 
@@ -38,6 +44,85 @@ const sortCategories = (catsArray) => {
     .sort((a, b) => a.title.localeCompare(b.title, 'he'))
     .map(c => ({ ...c, items: [...c.items].sort((i1, i2) => i1.localeCompare(i2, 'he')) }));
 };
+
+function LocationMenuButton({
+  menuKey,
+  openKey,
+  setOpenKey,
+  actions,
+  compact = false,
+}) {
+  const isOpen = openKey === menuKey;
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        type="button"
+        aria-label="אפשרויות"
+        aria-expanded={isOpen}
+        onClick={() => setOpenKey(isOpen ? "" : menuKey)}
+        style={{
+          width: compact ? 22 : 28,
+          height: compact ? 22 : 28,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          border: "none",
+          borderRadius: "50%",
+          background: isOpen ? "#f3e7df" : "transparent",
+          color: "#7b312d",
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        <EllipsisVertical size={compact ? 14 : 17} />
+      </button>
+      {isOpen && (
+        <span
+          role="menu"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 5px)",
+            left: 0,
+            zIndex: 30,
+            minWidth: 112,
+            padding: 5,
+            background: "#fff",
+            border: "1px solid #e2d8c9",
+            borderRadius: 10,
+            boxShadow: "0 8px 24px rgba(44, 31, 24, 0.14)",
+          }}
+        >
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpenKey("");
+                action.onClick();
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "8px 10px",
+                border: 0,
+                borderRadius: 7,
+                background: "transparent",
+                color: action.danger ? "#c0392b" : "#493c35",
+                textAlign: "right",
+                fontFamily: "inherit",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export default function Settings() {
   // ==========================================
@@ -67,6 +152,11 @@ export default function Settings() {
   const [areas, setAreas] = useState([]);
   const [newAreaName, setNewAreaName] = useState("");
   const [newNeighborhoodInputs, setNewNeighborhoodInputs] = useState({});
+  const [editAreaInputs, setEditAreaInputs] = useState({});
+  const [editNeighborhoodInputs, setEditNeighborhoodInputs] = useState({});
+  const [openLocationMenu, setOpenLocationMenu] = useState("");
+  const [editingLocation, setEditingLocation] = useState("");
+  const [movingNeighborhood, setMovingNeighborhood] = useState("");
 
   // ==========================================
   // STATE: 4. Categories (Now fully dynamic)
@@ -85,7 +175,13 @@ export default function Settings() {
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, user: null });
   const [statusConfirm, setStatusConfirm] = useState({ isOpen: false, user: null });
   const [passwordConfirm, setPasswordConfirm] = useState({ isOpen: false, user: null });
-  const [genericConfirm, setGenericConfirm] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
+  const [genericConfirm, setGenericConfirm] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    confirmLabel: "כן, המשך",
+    onConfirm: null,
+  });
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -186,7 +282,12 @@ export default function Settings() {
   const handleAddArea = (e) => {
     e.preventDefault();
     if (!newAreaName?.trim()) return;
-    const updatedAreas = sortAreas([...areas, { area: newAreaName.trim(), neighborhoods: [] }]);
+    const normalized = normalizeLocationName(newAreaName);
+    if (areas.some((area) => locationNameKey(area.area) === locationNameKey(normalized))) {
+      showToast("שם האזור כבר קיים");
+      return;
+    }
+    const updatedAreas = sortAreas([...areas, { area: normalized, neighborhoods: [] }]);
     setAreas(updatedAreas);
     setNewAreaName("");
     saveGlobalConfig(updatedAreas, null);
@@ -200,14 +301,78 @@ export default function Settings() {
     const updatedAreas = [...areas];
     const targetArea = { ...updatedAreas[areaIndex] };
     
-    if (!targetArea.neighborhoods.includes(nbName.trim())) {
-      targetArea.neighborhoods = [...targetArea.neighborhoods, nbName.trim()];
+    const normalized = normalizeLocationName(nbName);
+    const exists = areas.some((area) => area.neighborhoods.some(
+      (name) => locationNameKey(name) === locationNameKey(normalized),
+    ));
+    if (!exists) {
+      targetArea.neighborhoods = [...targetArea.neighborhoods, normalized];
       updatedAreas[areaIndex] = targetArea;
       const sortedAreas = sortAreas(updatedAreas);
       setAreas(sortedAreas);
       saveGlobalConfig(sortedAreas, null);
-    }
+    } else showToast("שם השכונה כבר קיים");
     setNewNeighborhoodInputs({ ...newNeighborhoodInputs, [areaIndex]: "" });
+  };
+
+  const requestLocationChange = (change, title, message) => {
+    let preview;
+    try {
+      preview = updateAreasModel(areas, change);
+    } catch (error) {
+      showToast(error.message);
+      return;
+    }
+    setGenericConfirm({
+      isOpen: true,
+      title,
+      message,
+      confirmLabel: "כן, המשך",
+      onConfirm: async () => {
+        try {
+          const result = await updateLocationSettings(change);
+          setAreas(sortAreas(result?.areas || preview));
+          setEditAreaInputs({});
+          setEditNeighborhoodInputs({});
+          setEditingLocation("");
+          setMovingNeighborhood("");
+          setOpenLocationMenu("");
+          showToast(`השינוי נשמר ועודכנו ${result?.updatedReferences || 0} הפניות`);
+        } catch (error) {
+          console.error("Location update failed:", error);
+          showToast("עדכון האזור או השכונה נכשל");
+        } finally {
+          setGenericConfirm({ isOpen: false });
+        }
+      },
+    });
+  };
+
+  const requestRenameArea = (area) => {
+    const newArea = normalizeLocationName(editAreaInputs[area.area]);
+    requestLocationChange(
+      { type: "renameArea", oldArea: area.area, newArea },
+      "שינוי שם אזור",
+      `שינוי שם האזור יעדכן גם רשומות המקושרות ל"${area.area}". להמשיך?`,
+    );
+  };
+
+  const requestRenameNeighborhood = (area, neighborhood) => {
+    const inputKey = `${area.area}::${neighborhood}`;
+    const newNeighborhood = normalizeLocationName(editNeighborhoodInputs[inputKey]);
+    requestLocationChange(
+      { type: "renameNeighborhood", oldArea: area.area, oldNeighborhood: neighborhood, newNeighborhood },
+      "שינוי שם שכונה",
+      `שינוי שם השכונה יעדכן גם רשומות המקושרות ל"${neighborhood}". להמשיך?`,
+    );
+  };
+
+  const requestMoveNeighborhood = (area, neighborhood, targetArea) => {
+    requestLocationChange(
+      { type: "moveNeighborhood", oldArea: area.area, oldNeighborhood: neighborhood, targetArea },
+      "העברת שכונה",
+      `העברת "${neighborhood}" אל "${targetArea}" תעדכן את האזור בכל הרשומות המקושרות. להמשיך?`,
+    );
   };
 
   const requestDeleteArea = (areaIndex) => {
@@ -215,6 +380,7 @@ export default function Settings() {
       isOpen: true,
       title: "מחיקת אזור",
       message: `האם אתה בטוח שברצונך למחוק את האזור "${areas[areaIndex]?.area}" וכל השכונות שבו?`,
+      confirmLabel: "כן, למחוק",
       onConfirm: () => {
         const updatedAreas = areas.filter((_, i) => i !== areaIndex);
         setAreas(updatedAreas);
@@ -230,6 +396,7 @@ export default function Settings() {
       isOpen: true,
       title: "מחיקת שכונה",
       message: `האם אתה בטוח שברצונך למחוק את השכונה "${nbName}"?`,
+      confirmLabel: "כן, למחוק",
       onConfirm: () => {
         const updatedAreas = [...areas];
         const targetArea = { ...updatedAreas[areaIndex] };
@@ -277,6 +444,7 @@ export default function Settings() {
       isOpen: true,
       title: "מחיקת קבוצת קטגוריות",
       message: `האם אתה בטוח שברצונך למחוק את הקבוצה "${categories[groupIndex]?.title}" וכל הקטגוריות שבה?`,
+      confirmLabel: "כן, למחוק",
       onConfirm: () => {
         const updatedCats = categories.filter((_, i) => i !== groupIndex);
         setCategories(updatedCats);
@@ -296,6 +464,7 @@ export default function Settings() {
       isOpen: true,
       title: "מחיקת קטגוריה",
       message: `האם אתה בטוח שברצונך למחוק את הקטגוריה "${itemName}"?`,
+      confirmLabel: "כן, למחוק",
       onConfirm: () => {
         const updatedCats = [...categories];
         const targetGroup = { ...updatedCats[groupIndex] };
@@ -698,32 +867,123 @@ export default function Settings() {
           </form>
         </div>
         
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px", direction: "rtl" }}>
-          {(areas || []).map((a, i) => (
-            <div key={i} style={compactCardStyle}>
-              <div style={compactCardHeaderStyle}>
-                <h4 style={{ margin: 0, color: "#343a40", fontSize: "15px", fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#8b2c2c", display: "inline-block" }}></span>
-                  {a?.area || "אזור"}
-                </h4>
-                <button onClick={() => requestDeleteArea(i)} style={textBtnDangerStyle} title="מחק אזור">מחק אזור</button>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", direction: "rtl" }}>
+          {(areas || []).map((a, i) => {
+            const areaKey = `area::${a.area}`;
+            return (
+              <div key={a.area} style={{ ...compactCardStyle, overflow: "visible" }}>
+                <div style={{ ...compactCardHeaderStyle, position: "relative", borderRadius: "12px 12px 0 0" }}>
+                  {editingLocation === areaKey ? (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+                      <input
+                        autoFocus
+                        value={editAreaInputs[a.area] ?? a.area}
+                        onChange={(e) => setEditAreaInputs({ ...editAreaInputs, [a.area]: e.target.value })}
+                        style={{ ...inputStyle, padding: "7px 10px", fontWeight: "bold" }}
+                      />
+                      <button type="button" className="btn" onClick={() => requestRenameArea(a)}>שמור</button>
+                      <button type="button" className="btn" onClick={() => setEditingLocation("")}>ביטול</button>
+                    </div>
+                  ) : (
+                    <h4 style={{ margin: 0, color: "#343a40", fontSize: "15px", fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#8b2c2c", display: "inline-block" }} />
+                      {a.area}
+                    </h4>
+                  )}
+                  {editingLocation !== areaKey && (
+                    <LocationMenuButton
+                      menuKey={areaKey}
+                      openKey={openLocationMenu}
+                      setOpenKey={setOpenLocationMenu}
+                      actions={[
+                        {
+                          label: "עריכה",
+                          onClick: () => {
+                            setEditAreaInputs({ ...editAreaInputs, [a.area]: a.area });
+                            setEditingLocation(areaKey);
+                          },
+                        },
+                        { label: "מחיקה", danger: true, onClick: () => requestDeleteArea(i) },
+                      ]}
+                    />
+                  )}
+                </div>
+
+                <div style={{ padding: 16, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  {(a?.neighborhoods || []).map((nb, j) => {
+                    const neighborhoodKey = `neighborhood::${a.area}::${nb}`;
+                    const isEditing = editingLocation === neighborhoodKey;
+                    const isMoving = movingNeighborhood === neighborhoodKey;
+                    return (
+                      <span key={nb} style={{ ...compactPillStyle, position: "relative", overflow: "visible", padding: "7px 10px" }}>
+                        {isEditing ? (
+                          <>
+                            <input
+                              autoFocus
+                              value={editNeighborhoodInputs[`${a.area}::${nb}`] ?? nb}
+                              onChange={(e) => setEditNeighborhoodInputs({
+                                ...editNeighborhoodInputs,
+                                [`${a.area}::${nb}`]: e.target.value,
+                              })}
+                              style={{ border: 0, outline: 0, background: "transparent", width: 110, fontFamily: "inherit" }}
+                            />
+                            <button type="button" className="btn" onClick={() => requestRenameNeighborhood(a, nb)}>שמור</button>
+                            <button type="button" className="btn" onClick={() => setEditingLocation("")}>ביטול</button>
+                          </>
+                        ) : isMoving ? (
+                          <>
+                            <span>{nb}</span>
+                            <select
+                              autoFocus
+                              defaultValue=""
+                              onChange={(e) => e.target.value && requestMoveNeighborhood(a, nb, e.target.value)}
+                              aria-label={`העברת ${nb} לאזור אחר`}
+                              style={{ border: "1px solid #d8cbbc", borderRadius: 8, padding: "5px 7px", fontFamily: "inherit" }}
+                            >
+                              <option value="">בחר אזור...</option>
+                              {areas.filter((candidate) => candidate.area !== a.area).map((candidate) => (
+                                <option key={candidate.area} value={candidate.area}>{candidate.area}</option>
+                              ))}
+                            </select>
+                            <button type="button" className="btn" onClick={() => setMovingNeighborhood("")}>ביטול</button>
+                          </>
+                        ) : (
+                          <>
+                            <span>{nb}</span>
+                            <LocationMenuButton
+                              menuKey={neighborhoodKey}
+                              openKey={openLocationMenu}
+                              setOpenKey={setOpenLocationMenu}
+                              compact
+                              actions={[
+                                {
+                                  label: "עריכה",
+                                  onClick: () => {
+                                    setEditNeighborhoodInputs({
+                                      ...editNeighborhoodInputs,
+                                      [`${a.area}::${nb}`]: nb,
+                                    });
+                                    setEditingLocation(neighborhoodKey);
+                                  },
+                                },
+                                { label: "העברה", onClick: () => setMovingNeighborhood(neighborhoodKey) },
+                                { label: "מחיקה", danger: true, onClick: () => requestDeleteNeighborhood(i, j) },
+                              ]}
+                            />
+                          </>
+                        )}
+                      </span>
+                    );
+                  })}
+
+                  <form onSubmit={(e) => handleAddNeighborhood(e, i)} style={addPillFormStyle}>
+                    <input value={newNeighborhoodInputs[i] || ""} onChange={(e) => setNewNeighborhoodInputs({...newNeighborhoodInputs, [i]: e.target.value})} placeholder="הוסף שכונה" style={addPillInputStyle} />
+                    <button type="submit" style={addPillBtnStyle} title="הוסף">+</button>
+                  </form>
+                </div>
               </div>
-              
-              <div style={{ padding: "16px", display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
-                {(a?.neighborhoods || []).map((nb, j) => (
-                  <span key={j} style={compactPillStyle}>
-                    {nb}
-                    <button onClick={() => requestDeleteNeighborhood(i, j)} style={{ background: "none", border: "none", color: "#adb5bd", cursor: "pointer", padding: 0, fontSize: "12px", display: "flex" }} title="מחק שכונה">✕</button>
-                  </span>
-                ))}
-                
-                <form onSubmit={(e) => handleAddNeighborhood(e, i)} style={addPillFormStyle}>
-                  <input value={newNeighborhoodInputs[i] || ""} onChange={(e) => setNewNeighborhoodInputs({...newNeighborhoodInputs, [i]: e.target.value})} placeholder="הוסף שכונה" style={addPillInputStyle} />
-                  <button type="submit" style={addPillBtnStyle} title="הוסף">+</button>
-                </form>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </SectionCard>
 
@@ -851,7 +1111,7 @@ export default function Settings() {
             <p style={{ color: "#6c757d", marginBottom: "24px", fontSize: "15px", lineHeight: "1.5" }}>{genericConfirm.message}</p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
               <button style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#f8f9fa", color: "#495057", border: "1px solid #ced4da", fontWeight: "bold", cursor: "pointer" }} onClick={() => setGenericConfirm({ isOpen: false })}>ביטול</button>
-              <button style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#dc3545", color: "white", border: "none", fontWeight: "bold", cursor: "pointer" }} onClick={genericConfirm.onConfirm}>כן, למחוק</button>
+              <button style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#dc3545", color: "white", border: "none", fontWeight: "bold", cursor: "pointer" }} onClick={genericConfirm.onConfirm}>{genericConfirm.confirmLabel || "כן, המשך"}</button>
             </div>
           </div>
         </div>

@@ -46,10 +46,27 @@ import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import useFirestorePagination from "@/hooks/useFirestorePagination.js";
 import useDebouncedValue from "@/hooks/useDebouncedValue.js";
-import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
+import { validateName } from "@/utils/validation";
 import { sanitizeFormData } from "@/utils/sanitize";
-import { getEffectiveSearchTerm } from "@/utils/firestoreSearch";
+import {
+  getEffectiveSearchTerm,
+  normalizeSearchDigits,
+  normalizeSearchText,
+} from "@/utils/firestoreSearch";
 import { createOperationId } from "@/utils/operationId";
+import {
+  digitsInput,
+  normalizeLanguages,
+  sortElderlyRecords,
+  validateBirthDate,
+  validateElderlyNumbers,
+} from "@/utils/elderlyFormModel";
+import {
+  addCountry,
+  addLanguage,
+  getCountries,
+  getLanguages,
+} from "@/services/settingsService";
 
 /* ===== Options (shared with volunteers page) =====
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
@@ -58,6 +75,7 @@ const VOLUNTEER_STATUS_OPTIONS = ["כן", "לא", "קשר טלפוני"];
 const GENDER_OPTIONS = ["זכר", "נקבה"];
 const MARITAL_OPTIONS = ["רווק/ה", "נשוי/אה", "גרוש/ה", "אלמן/ה"];
 const LANGUAGE_OPTIONS = ["עברית", "ערבית", "אנגלית", "ספרדית", "צרפתית", "רוסית", "סינית", "יפנית"];
+const RECENT_ELDERLY_VIEWS_KEY = "mitchabrim.recentElderlyViews";
 const STATUS_OPTIONS = ["פעיל", "נפטר", "לא פעיל"];
 const ASSISTANCE_OPTIONS = [
   "קשר חברתי",
@@ -115,6 +133,16 @@ export default function Elderly() {
   const [filterNeighborhood, setFilterNeighborhood] = useState("");
   const [filterMarital, setFilterMarital] = useState("");
   const [filterVolStatus, setFilterVolStatus] = useState("");
+  const [sortMode, setSortMode] = useState("לפי האלף-בית");
+  const [sortedPage, setSortedPage] = useState(1);
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(RECENT_ELDERLY_VIEWS_KEY) || "[]");
+      return Array.isArray(stored) ? stored.map(String).slice(0, 100) : [];
+    } catch {
+      return [];
+    }
+  });
   const [search, setSearch] = useState("");
 
   // If the area changes and the previously-selected neighborhood is no longer
@@ -240,6 +268,11 @@ export default function Elderly() {
     return request;
   }, []);
 
+  useEffect(() => {
+    setSortedPage(1);
+    if (sortMode) ensureFullData().catch(() => {});
+  }, [sortMode, queryKey, ensureFullData]);
+
   // Only active seniors are shown in the table + stats + charts.
   const activeData = useMemo(
     () => (fullData || []).filter((e) => e.status === "פעיל"),
@@ -267,11 +300,48 @@ export default function Elderly() {
     return { barData, pieData };
   }, [activeData]);
 
-  const pageItems = paged.items;
-  const currentPage = paged.page;
-  const totalPages = paged.totalPages;
-  const paginationTotal = totalCount ?? 0;
-  const loading = paged.loading;
+  const sortedFilteredData = useMemo(() => {
+    if (!sortMode || !fullData) return [];
+    const searchTerm = effectiveSearch;
+    const filteredItems = fullData.filter((item) => {
+      if (item.status !== "פעיל") return false;
+      if (filterArea && item.area !== filterArea) return false;
+      if (filterNeighborhood && item.neighborhood !== filterNeighborhood) return false;
+      if (filterMarital && item.marital !== filterMarital) return false;
+      if (filterVolStatus && item.volStatus !== filterVolStatus) return false;
+      if (searchTerm) {
+        const nameSearch = normalizeSearchText(fullName(item));
+        const digitSearch = [
+          item.idNum,
+          item.mobile,
+          item.homePhone,
+        ].map(normalizeSearchDigits).join(" ");
+        if (!nameSearch.includes(searchTerm) && !digitSearch.includes(searchTerm)) return false;
+      }
+      return true;
+    });
+    return sortElderlyRecords(filteredItems, sortMode, recentlyViewedIds);
+  }, [
+    sortMode,
+    fullData,
+    effectiveSearch,
+    filterArea,
+    filterNeighborhood,
+    filterMarital,
+    filterVolStatus,
+    recentlyViewedIds,
+  ]);
+  // Keep the current server page visible until the full dataset needed for
+  // client-side sorting has loaded, instead of rendering an empty first page.
+  const usingClientSort = Boolean(sortMode && fullData);
+  const sortedTotalPages = Math.max(1, Math.ceil(sortedFilteredData.length / PAGE_SIZE));
+  const pageItems = usingClientSort
+    ? sortedFilteredData.slice((sortedPage - 1) * PAGE_SIZE, sortedPage * PAGE_SIZE)
+    : paged.items;
+  const currentPage = usingClientSort ? sortedPage : paged.page;
+  const totalPages = usingClientSort ? sortedTotalPages : paged.totalPages;
+  const paginationTotal = usingClientSort ? sortedFilteredData.length : (totalCount ?? 0);
+  const loading = usingClientSort ? fullLoading : paged.loading;
 
 
 
@@ -362,6 +432,19 @@ export default function Elderly() {
     } catch {
       // Keep charts closed and allow the next click to retry.
     }
+  };
+
+  const markElderlyViewed = (elderlyId) => {
+    const id = String(elderlyId);
+    setRecentlyViewedIds((current) => {
+      const next = [id, ...current.filter((item) => item !== id)].slice(0, 100);
+      try {
+        localStorage.setItem(RECENT_ELDERLY_VIEWS_KEY, JSON.stringify(next));
+      } catch {
+        // Keep the current-session ordering if browser storage is unavailable.
+      }
+      return next;
+    });
   };
 
   const totalStat = stats.total;
@@ -487,6 +570,12 @@ export default function Elderly() {
               onChange: (e) => setFilterVolStatus(e.target.value),
               options: ["", ...VOLUNTEER_STATUS_OPTIONS],
             },
+            {
+              label: "מיון",
+              value: sortMode,
+              onChange: (e) => setSortMode(e.target.value),
+              options: ["לפי האלף-בית", "לפי שכונות", "לפי קשר אחרון", "צפיות אחרונות"],
+            },
           ]}
         />
         {effectiveSearch && stats.total > stats.searchIndexed && (
@@ -510,6 +599,7 @@ export default function Elderly() {
               render: (r) => (
                 <button className="link-btn" onClick={() => {
                   editMutationIdRef.current = createOperationId();
+                  markElderlyViewed(r.id);
                   setOpenId(r.id);
                 }}>{fullName(r)}</button>
               ),
@@ -552,9 +642,13 @@ export default function Elderly() {
           totalCount={paginationTotal}
           pageSize={PAGE_SIZE}
           loading={loading}
-          onNext={paged.next}
-          onPrevious={paged.prev}
-          onPageChange={paged.goToPage}
+          onNext={usingClientSort
+            ? () => setSortedPage((page) => Math.min(sortedTotalPages, page + 1))
+            : paged.next}
+          onPrevious={usingClientSort
+            ? () => setSortedPage((page) => Math.max(1, page - 1))
+            : paged.prev}
+          onPageChange={usingClientSort ? setSortedPage : paged.goToPage}
         />
 
 
@@ -707,7 +801,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
           <h4>רקע</h4>
           <div className="detail-grid">
             <D label="ארץ לידה" value={entry.country} />
-            <D label="שפת דיבור" value={entry.language} />
+            <D label="שפות דיבור" value={normalizeLanguages(entry).join(", ")} />
             
             <D label="סטטוס" value={<span className={`badge ${statusBadge(entry.status)}`}>{entry.status}</span>} />
           </div>
@@ -747,8 +841,8 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
     isEmpty: areasEmpty,
   } = useAreasAndNeighborhoods();
 
-  const [f, setF] = useState(
-    initial || {
+  const [f, setF] = useState(() => {
+    const base = initial || {
       firstName: "", lastName: "", idNum: "", birth: "", gender: "",
       mobile: "", homePhone: "",
       area: "", neighborhood: "", address: "",
@@ -758,14 +852,27 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
       contactPersonStatus: "", contactPersonNotes: "",
       volStatus: "לא", volName: "",
       assistance: "", marital: MARITAL_OPTIONS[0],
-      country: "ישראל", language: "עברית",
+      country: "ישראל", language: "עברית", languages: ["עברית"],
       bio: "",
       status: "פעיל", notes: "",
-    },
-  );
+    };
+    const languages = normalizeLanguages(base);
+    return { ...base, languages, language: languages.join(", ") };
+  });
   const [numericWarn, setNumericWarn] = useState({});
   const [missing, setMissing] = useState([]);
   const [idDup, setIdDup] = useState(false);
+  const [countryOptions, setCountryOptions] = useState(
+    () => [...COUNTRY_OPTIONS].sort((a, b) => a.localeCompare(b, "he")),
+  );
+  const [newCountry, setNewCountry] = useState("");
+  const [countryError, setCountryError] = useState("");
+  const [languageOptions, setLanguageOptions] = useState(() => (
+    [...new Set([...LANGUAGE_OPTIONS, ...normalizeLanguages(initial || {})])]
+      .sort((a, b) => a.localeCompare(b, "he"))
+  ));
+  const [newLanguage, setNewLanguage] = useState("");
+  const [languageError, setLanguageError] = useState("");
 
   // Load volunteers from Firestore for the volunteer-select dropdown.
   const [volunteers, setVolunteers] = useState([]);
@@ -777,6 +884,25 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const [cpError, setCpError] = useState("");
   useEffect(() => {
     let mounted = true;
+    (async () => {
+      try {
+        const countries = await getCountries(COUNTRY_OPTIONS);
+        if (mounted) setCountryOptions(countries);
+      } catch (err) {
+        console.error("Failed to load countries:", err);
+      }
+    })();
+    (async () => {
+      try {
+        const languages = await getLanguages([
+          ...LANGUAGE_OPTIONS,
+          ...normalizeLanguages(initial || {}),
+        ]);
+        if (mounted) setLanguageOptions(languages);
+      } catch (err) {
+        console.error("Failed to load languages:", err);
+      }
+    })();
     (async () => {
       try {
         const list = await getVolunteers();
@@ -810,8 +936,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const setArea = (e) => setF({ ...f, area: e.target.value, neighborhood: "" });
   const setDigits = (k, maxLen) => (e) => {
     const raw = e.target.value;
-    let cleaned = raw.replace(/\D/g, "");
-    if (maxLen) cleaned = cleaned.slice(0, maxLen);
+    const cleaned = digitsInput(raw, maxLen);
     setNumericWarn((w) => ({ ...w, [k]: raw !== cleaned }));
     setF({ ...f, [k]: cleaned });
   };
@@ -835,20 +960,53 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
     const errs = {};
     const fn = validateName(f.firstName); if (fn) errs.firstName = fn;
     const ln = validateName(f.lastName); if (ln) errs.lastName = ln;
-    if (f.idNum) { const idErr = validateId(f.idNum); if (idErr) errs.idNum = idErr; }
-    if (f.mobile) {
-      const digits = String(f.mobile).replace(/\D/g, "");
-      if (digits.length !== 10) errs.mobile = "יש להזין 10 ספרות";
-    }
-    if (f.homePhone) {
-      const e2 = validatePhone(f.homePhone, { required: false });
-      if (e2) errs.homePhone = e2;
-    }
+    Object.assign(errs, validateElderlyNumbers(f));
+    const birthError = validateBirthDate(f.birth);
+    if (birthError) errs.birth = birthError;
     setFieldErrors(errs);
     setMissing(empty);
     setIdDup(dup);
     if (empty.length || dup || Object.keys(errs).length) return;
-    onSave(f);
+    const languages = normalizeLanguages(f);
+    onSave({ ...f, languages, language: languages.join(", ") });
+  };
+
+  const toggleLanguage = (language) => {
+    const current = normalizeLanguages(f);
+    const next = current.includes(language)
+      ? current.filter((item) => item !== language)
+      : [...current, language];
+    setF({ ...f, languages: next, language: next.join(", ") });
+  };
+
+  const handleAddCountry = async () => {
+    setCountryError("");
+    try {
+      const countries = await addCountry(newCountry, COUNTRY_OPTIONS);
+      const added = countries.find((country) => (
+        country.localeCompare(newCountry.trim(), "he", { sensitivity: "base" }) === 0
+      )) || newCountry.trim();
+      setCountryOptions(countries);
+      setF({ ...f, country: added });
+      setNewCountry("");
+    } catch (error) {
+      setCountryError(error?.message || "לא ניתן להוסיף את המדינה");
+    }
+  };
+
+  const handleAddLanguage = async () => {
+    setLanguageError("");
+    try {
+      const languages = await addLanguage(newLanguage, languageOptions);
+      const added = languages.find((language) => (
+        language.localeCompare(newLanguage.trim(), "he", { sensitivity: "base" }) === 0
+      )) || newLanguage.trim();
+      setLanguageOptions(languages);
+      if (!normalizeLanguages(f).includes(added)) toggleLanguage(added);
+      setNewLanguage("");
+    } catch (error) {
+      setLanguageError(error?.message || "לא ניתן להוסיף את השפה");
+    }
   };
 
   const NumericMsg = ({ k }) => numericWarn[k] ? (
@@ -886,7 +1044,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               <NumericMsg k="idNum" />
               {fieldErrors.idNum && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.idNum}</div>}
             </div>
-            <div className="field"><label>תאריך לידה</label><input className="input" type="date" value={f.birth} onChange={set("birth")} />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
+            <div className="field"><label>תאריך לידה</label><input className="input" type="date" max={new Date().toISOString().slice(0, 10)} value={f.birth} onChange={set("birth")} />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
             <div className="field">
               <label>מגדר</label>
               <select className="select" value={f.gender || ""} onChange={set("gender")}>
@@ -914,7 +1072,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
             </div>
             <div className="field">
               <label>טלפון בית</label>
-              <input className="input" value={f.homePhone} onChange={setDigits("homePhone", 10)} inputMode="numeric" maxLength={10} />
+              <input className="input" value={f.homePhone} onChange={setDigits("homePhone", 9)} inputMode="numeric" maxLength={9} />
               <NumericMsg k="homePhone" />
               {fieldErrors.homePhone && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.homePhone}</div>}
             </div>
@@ -1015,14 +1173,38 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
             <div className="field">
               <label>ארץ לידה</label>
               <select className="select" value={f.country} onChange={set("country")}>
-                {COUNTRY_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                {countryOptions.map((o) => <option key={o}>{o}</option>)}
               </select>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input className="input" value={newCountry} onChange={(e) => setNewCountry(e.target.value)} placeholder="מדינה חדשה" />
+                <button type="button" className="btn" onClick={handleAddCountry}>הוסף</button>
+              </div>
+              {countryError && <div style={{color:"#dc2626",fontSize:12}}>{countryError}</div>}
             </div>
             <div className="field">
-              <label>שפת דיבור</label>
-              <select className="select" value={f.language} onChange={set("language")}>
-                {LANGUAGE_OPTIONS.map((o) => <option key={o}>{o}</option>)}
-              </select>
+              <label>שפות דיבור</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {languageOptions.map((language) => (
+                  <label key={language} style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={normalizeLanguages(f).includes(language)}
+                      onChange={() => toggleLanguage(language)}
+                    />
+                    {language}
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <input
+                  className="input"
+                  value={newLanguage}
+                  onChange={(e) => setNewLanguage(e.target.value)}
+                  placeholder="שפה חדשה"
+                />
+                <button type="button" className="btn" onClick={handleAddLanguage}>הוסף</button>
+              </div>
+              {languageError && <div style={{color:"#dc2626",fontSize:12}}>{languageError}</div>}
             </div>
             <div className="field">
               <label>סטטוס</label>

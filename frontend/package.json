@@ -34,7 +34,8 @@
     "audit:db04:production": "node scripts/db-04-query-matrix.mjs",
     "test:categories": "node --test tests/category-settings.test.mjs",
     "test:smoke": "node tests/reliability.hosting.test.mjs",
-    "test:project-reports": "node --test tests/project-reports.test.mjs tests/media-public-copy.test.mjs"
+    "test:project-reports": "node --test tests/project-reports.test.mjs tests/media-public-copy.test.mjs",
+    "test:elderly-settings": "node --test tests/elderly-validation-location.test.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",
