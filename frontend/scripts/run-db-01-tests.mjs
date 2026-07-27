@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { delimiter, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -25,8 +25,14 @@ writeFileSync(resolve(workdir, "firebase.json"), JSON.stringify({
   },
 }));
 
-const bundledJava = process.env.USERPROFILE
-  ? resolve(process.env.USERPROFILE, ".jdks", "openjdk-25")
+const jdksDirectory = process.env.USERPROFILE
+  ? resolve(process.env.USERPROFILE, ".jdks")
+  : null;
+const bundledJava = jdksDirectory && existsSync(jdksDirectory)
+  ? readdirSync(jdksDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^openjdk-(?:2[1-9]|[3-9]\d)(?:[.-]|$)/.test(entry.name))
+    .map((entry) => resolve(jdksDirectory, entry.name))
+    .find((candidate) => existsSync(resolve(candidate, "bin", "java.exe")))
   : null;
 const javaHome = process.env.JAVA_HOME
   || (bundledJava && existsSync(resolve(bundledJava, "bin", "java.exe"))

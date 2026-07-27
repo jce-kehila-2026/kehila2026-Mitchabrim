@@ -11,6 +11,10 @@ import {
   validateElderlyNumbers,
 } from "../src/utils/elderlyFormModel.js";
 import { validateElderlyData } from "../functions/src/elderlyMutationCore.js";
+import {
+  normalizedInput,
+  updateAreas as updateServerAreas,
+} from "../functions/src/locationSettingsCore.js";
 
 test("elderly identifiers enforce exact lengths and preserve leading zeroes", () => {
   assert.deepEqual(validateElderlyNumbers({
@@ -129,12 +133,46 @@ test("neighborhood moves between areas and duplicates are rejected", () => {
   }));
 });
 
+test("location deletion updates the model and server validation supports the same actions", () => {
+  const withoutNeighborhood = updateAreasModel(areas, {
+    type: "deleteNeighborhood",
+    oldArea: "מרכז",
+    oldNeighborhood: "רחביה",
+  });
+  assert.deepEqual(
+    withoutNeighborhood.find((area) => area.area === "מרכז").neighborhoods,
+    ["קטמון"],
+  );
+  const withoutArea = updateAreasModel(areas, {
+    type: "deleteArea",
+    oldArea: "דרום",
+  });
+  assert.equal(withoutArea.some((area) => area.area === "דרום"), false);
+  assert.deepEqual(normalizedInput({
+    type: "deleteNeighborhood",
+    oldArea: " מרכז ",
+    oldNeighborhood: " רחביה ",
+  }), {
+    type: "deleteNeighborhood",
+    oldArea: "מרכז",
+    newArea: "",
+    oldNeighborhood: "רחביה",
+    newNeighborhood: "",
+    targetArea: "",
+  });
+  assert.equal(updateServerAreas(areas, {
+    type: "deleteArea",
+    oldArea: "דרום",
+  }).some((area) => area.area === "דרום"), false);
+});
+
 test("forms and callable use the shared validation and safe reference update flow", () => {
   const root = resolve(import.meta.dirname, "..");
   const elderly = readFileSync(resolve(root, "src/admin/Elderly.jsx"), "utf8");
   const settings = readFileSync(resolve(root, "src/admin/Settings.jsx"), "utf8");
   const settingsService = readFileSync(resolve(root, "src/services/settingsService.js"), "utf8");
   const functionsIndex = readFileSync(resolve(root, "functions/index.js"), "utf8");
+  const locationCore = readFileSync(resolve(root, "functions/src/locationSettingsCore.js"), "utf8");
   assert.match(elderly, /validateElderlyNumbers/);
   assert.match(elderly, /validateBirthDate/);
   assert.match(elderly, /languages\.join\(", "\)/);
@@ -148,16 +186,22 @@ test("forms and callable use the shared validation and safe reference update flo
   assert.doesNotMatch(elderlyForm, /const markElderlyViewed =/);
   assert.match(elderlyPage, /const usingClientSort = Boolean\(sortMode && fullData\)/);
   assert.match(settingsService, /transaction\.set\(ref, \{ languages: next \}/);
-  assert.match(settingsService, /if \(!import\.meta\.env\.DEV\)/);
-  assert.match(settingsService, /updateLocationSettingsLocally/);
-  assert.match(settingsService, /offset \+= 400/);
-  assert.doesNotMatch(
-    settingsService,
-    /collectionGroup\(db, "participants"\), where\("(?:area|neighborhood)"/,
-  );
+  assert.match(settingsService, /httpsCallable\(functions, "updateLocationSettings"\)/);
+  assert.doesNotMatch(settingsService, /import\.meta\.env\.DEV/);
+  assert.doesNotMatch(settingsService, /updateLocationSettingsLocally/);
+  assert.match(settingsService, /locationSettingsErrorMessage/);
   assert.match(settings, /updateLocationSettings/);
   assert.match(settings, /requestMoveNeighborhood/);
+  assert.match(settings, /type: "deleteArea"/);
+  assert.match(settings, /type: "deleteNeighborhood"/);
   assert.match(settings, /EllipsisVertical/);
   assert.match(settings, /label: "העברה"/);
-  assert.match(functionsIndex, /export const updateLocationSettings = onCall/);
+  assert.match(
+    functionsIndex,
+    /export const updateLocationSettings = onCall\(\{[\s\S]*region: "us-central1"[\s\S]*enforceAppCheck: true/,
+  );
+  assert.match(locationCore, /db\.runTransaction/);
+  assert.match(locationCore, /reason: "location-in-use"/);
+  assert.match(locationCore, /MAX_ATOMIC_REFERENCE_WRITES/);
+  assert.doesNotMatch(locationCore, /bulkWriter/);
 });

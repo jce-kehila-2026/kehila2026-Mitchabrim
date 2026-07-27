@@ -17,6 +17,7 @@ import {
 import { getVolunteers } from "@/services/volunteersService";
 import {
   getSettingsGeneral,
+  locationSettingsErrorMessage,
   saveSettingsGeneral,
   updateLocationSettings,
 } from "@/services/settingsService";
@@ -339,8 +340,12 @@ export default function Settings() {
           setOpenLocationMenu("");
           showToast(`השינוי נשמר ועודכנו ${result?.updatedReferences || 0} הפניות`);
         } catch (error) {
-          console.error("Location update failed:", error);
-          showToast("עדכון האזור או השכונה נכשל");
+          console.error("Location update failed", {
+            code: error?.code || "unknown",
+            message: error?.message || "Unknown location update error",
+            details: error?.details || null,
+          });
+          showToast(locationSettingsErrorMessage(error));
         } finally {
           setGenericConfirm({ isOpen: false });
         }
@@ -376,37 +381,24 @@ export default function Settings() {
   };
 
   const requestDeleteArea = (areaIndex) => {
-    setGenericConfirm({
-      isOpen: true,
-      title: "מחיקת אזור",
-      message: `האם אתה בטוח שברצונך למחוק את האזור "${areas[areaIndex]?.area}" וכל השכונות שבו?`,
-      confirmLabel: "כן, למחוק",
-      onConfirm: () => {
-        const updatedAreas = areas.filter((_, i) => i !== areaIndex);
-        setAreas(updatedAreas);
-        saveGlobalConfig(updatedAreas, null);
-        setGenericConfirm({ isOpen: false });
-      }
-    });
+    const area = areas[areaIndex];
+    if (!area) return;
+    requestLocationChange(
+      { type: "deleteArea", oldArea: area.area },
+      "מחיקת אזור",
+      `מחיקת "${area.area}" תתאפשר רק אם אין רשומות המקושרות לאזור או לשכונותיו. להמשיך?`,
+    );
   };
 
   const requestDeleteNeighborhood = (areaIndex, nbIndex) => {
-    const nbName = areas[areaIndex]?.neighborhoods[nbIndex];
-    setGenericConfirm({
-      isOpen: true,
-      title: "מחיקת שכונה",
-      message: `האם אתה בטוח שברצונך למחוק את השכונה "${nbName}"?`,
-      confirmLabel: "כן, למחוק",
-      onConfirm: () => {
-        const updatedAreas = [...areas];
-        const targetArea = { ...updatedAreas[areaIndex] };
-        targetArea.neighborhoods = targetArea.neighborhoods.filter((_, j) => j !== nbIndex);
-        updatedAreas[areaIndex] = targetArea;
-        setAreas(updatedAreas);
-        saveGlobalConfig(updatedAreas, null);
-        setGenericConfirm({ isOpen: false });
-      }
-    });
+    const area = areas[areaIndex];
+    const neighborhood = area?.neighborhoods[nbIndex];
+    if (!area || !neighborhood) return;
+    requestLocationChange(
+      { type: "deleteNeighborhood", oldArea: area.area, oldNeighborhood: neighborhood },
+      "מחיקת שכונה",
+      `מחיקת "${neighborhood}" תתאפשר רק אם אין רשומות המקושרות לשכונה. להמשיך?`,
+    );
   };
 
   // ==========================================

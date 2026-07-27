@@ -67,10 +67,16 @@ test("elderly relationship mutation is callable-only and no sequential status sy
 
   const elderlyService = source("src/services/elderlyService.js");
   assert.match(elderlyService, /httpsCallable\(functions, "mutateElderly"\)/);
+  assert.match(elderlyService, /await getSecureFunctions\(\)/);
   assert.doesNotMatch(elderlyService, /addDoc\(elderlyCollection/);
 
   const functionsIndex = source("functions/index.js");
-  assert.match(functionsIndex, /export const mutateElderly = onCall/);
+  assert.match(
+    functionsIndex,
+    /export const mutateElderly = onCall\(\{[\s\S]*?region: "us-central1"[\s\S]*?enforceAppCheck: true/,
+  );
+  const firebaseClient = source("src/firebase.js");
+  assert.match(firebaseClient, /getFunctions\(app, "us-central1"\)/);
   const core = source("functions/src/elderlyMutationCore.js");
   assert.match(core, /db\.runTransaction/);
   assert.match(core, /permission-denied/);

@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { elderlyMutationCore } from "../functions/src/elderlyMutationCore.js";
+import { locationSettingsCore } from "../functions/src/locationSettingsCore.js";
 
 const requireFromFunctions = createRequire(resolve(import.meta.dirname, "../functions/package.json"));
 const { initializeApp: initializeAdminApp, deleteApp: deleteAdminApp } = requireFromFunctions("firebase-admin/app");
@@ -200,6 +201,7 @@ try {
         firstName: "שרה",
         lastName: "כהן",
         idNum: "123456789",
+        mobile: "0501234567",
         volId: "vol-elderly",
         unrelated: "preserve",
       },
@@ -216,6 +218,7 @@ try {
         firstName: "שרה",
         lastName: "כהן",
         idNum: "123456789",
+        mobile: "0501234567",
         volId: "vol-elderly",
         unrelated: "preserve",
       },
@@ -235,6 +238,7 @@ try {
   await adminDb.collection("elderly").doc("legacy-elderly-id").set({
     firstName: "Legacy",
     lastName: "Record",
+    mobile: "0507654321",
     volId: "vol-elderly",
     legacyField: "keep",
   });
@@ -245,7 +249,7 @@ try {
       action: "update",
       elderlyId: "legacy-elderly-id",
       operationId: "legacy_update_operation",
-      data: { mobile: "050-123-4567" },
+      data: { mobile: "0501234567" },
     },
   });
   const legacy = await adminDb.collection("elderly").doc("legacy-elderly-id").get();
@@ -279,9 +283,120 @@ try {
     "ממתין לשיבוץ",
   );
 
+  // Location settings: all environments use the authenticated callable core.
+  // Reference changes and settings are atomic; linked locations cannot be deleted.
+  await adminDb.collection("settings").doc("general").set({
+    areas: [
+      { area: "Area A", neighborhoods: ["Linked", "Empty"] },
+      { area: "Area B", neighborhoods: [] },
+    ],
+  });
+  await adminDb.collection("elderly").doc("location-elderly").set({
+    firstName: "Location",
+    mobile: "0501234567",
+    area: "Area A",
+    neighborhood: "Linked",
+  });
+  await adminDb.collection("volunteers").doc("location-legacy").set({
+    name: "Legacy location without area",
+    neighborhood: "Linked",
+  });
+  await assert.rejects(
+    locationSettingsCore({
+      db: adminDb,
+      callerUid: volunteer.uid,
+      data: {
+        type: "renameNeighborhood",
+        oldArea: "Area A",
+        oldNeighborhood: "Linked",
+        newNeighborhood: "Denied",
+      },
+    }),
+    (error) => error.code === "permission-denied",
+  );
+  await locationSettingsCore({
+    db: adminDb,
+    callerUid: admin.uid,
+    data: {
+      type: "renameNeighborhood",
+      oldArea: "Area A",
+      oldNeighborhood: "Linked",
+      newNeighborhood: "Renamed",
+    },
+  });
+  assert.equal(
+    (await adminDb.collection("elderly").doc("location-elderly").get()).data().neighborhood,
+    "Renamed",
+  );
+  const renamedLegacyLocation = await adminDb.collection("volunteers").doc("location-legacy").get();
+  assert.equal(renamedLegacyLocation.data().area, "Area A");
+  assert.equal(renamedLegacyLocation.data().neighborhood, "Renamed");
+  await locationSettingsCore({
+    db: adminDb,
+    callerUid: admin.uid,
+    data: {
+      type: "moveNeighborhood",
+      oldArea: "Area A",
+      oldNeighborhood: "Renamed",
+      targetArea: "Area B",
+    },
+  });
+  const movedLocation = await adminDb.collection("elderly").doc("location-elderly").get();
+  assert.equal(movedLocation.data().area, "Area B");
+  assert.equal(movedLocation.data().neighborhood, "Renamed");
+  assert.equal(
+    (await adminDb.collection("volunteers").doc("location-legacy").get()).data().area,
+    "Area B",
+  );
+
+  await assert.rejects(
+    locationSettingsCore({
+      db: adminDb,
+      callerUid: admin.uid,
+      data: {
+        type: "deleteNeighborhood",
+        oldArea: "Area B",
+        oldNeighborhood: "Renamed",
+      },
+    }),
+    (error) => error.code === "failed-precondition"
+      && error.details?.reason === "location-in-use",
+  );
+  const afterBlockedDelete = await adminDb.collection("settings").doc("general").get();
+  assert.ok(
+    afterBlockedDelete.data().areas
+      .find((area) => area.area === "Area B")
+      .neighborhoods.includes("Renamed"),
+  );
+  await locationSettingsCore({
+    db: adminDb,
+    callerUid: admin.uid,
+    data: {
+      type: "deleteNeighborhood",
+      oldArea: "Area A",
+      oldNeighborhood: "Empty",
+    },
+  });
+  await locationSettingsCore({
+    db: adminDb,
+    callerUid: admin.uid,
+    data: { type: "deleteArea", oldArea: "Area A" },
+  });
+  const finalLocations = await adminDb.collection("settings").doc("general").get();
+  assert.equal(finalLocations.data().areas.some((area) => area.area === "Area A"), false);
+  await assert.rejects(
+    locationSettingsCore({
+      db: adminDb,
+      callerUid: admin.uid,
+      data: { type: "unsupported", oldArea: "Area B" },
+    }),
+    (error) => error.code === "invalid-argument",
+  );
+
   console.log(
     "DB-01 Emulator: rules rollback, deterministic replay, transactional counters, "
-    + "callable authorization, failure rollback, legacy data, and concurrency passed.",
+    + "callable authorization, failure rollback, legacy data, concurrency, and atomic "
+    + "location rename/move/delete passed.",
   );
 } finally {
   await Promise.all([deleteApp(admin.app), deleteApp(volunteer.app)]);
