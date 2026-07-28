@@ -1,4 +1,4 @@
-import { db, getJoinRequestFunctions, isJoinRequestAppCheckConfigured } from "../firebase";
+import { db, getJoinRequestFunctions } from "../firebase";
 import {
   collection,
   getDocs,
@@ -13,18 +13,8 @@ import { httpsCallable } from "firebase/functions";
 import { sanitizeText } from "../utils/sanitize";
 
 export async function createJoinRequest({ fullName, phone, type, message, email, idempotencyKey }) {
-  if (!isJoinRequestAppCheckConfigured) {
-    const error = new Error("Join-request verification is not configured.");
-    error.code = "app-check-not-configured";
-    throw error;
-  }
   const functions = await getJoinRequestFunctions();
-  if (!functions) {
-    const error = new Error("Join-request verification is unavailable.");
-    error.code = "app-check-unavailable";
-    throw error;
-  }
-  const submit = httpsCallable(functions, "submitJoinRequest", { limitedUseAppCheckTokens: true });
+  const submit = httpsCallable(functions, "submitJoinRequest");
   const result = await submit({
     fullName: sanitizeText(fullName, 100),
     phone: sanitizeText(phone, 40),

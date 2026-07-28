@@ -10,5 +10,5 @@ export default defineConfig({
   build: {
     sourcemap: false,
   },
-  server: { host: "::", port: 8080, strictPort: true },
+  server: { host: "0.0.0.0", port: 8080, strictPort: true },
 });

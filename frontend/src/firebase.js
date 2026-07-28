@@ -43,11 +43,23 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 export const storage = getStorage(app);
-export const isJoinRequestAppCheckConfigured = Boolean(appCheckSiteKey);
+let regionalFunctions = null;
 
-let joinRequestFunctions = null;
+function getRegionalFunctions() {
+  if (!regionalFunctions) {
+    regionalFunctions = getFunctions(app, "us-central1");
+    if (useFirebaseEmulators) {
+      connectFunctionsEmulator(regionalFunctions, "127.0.0.1", 5001);
+    }
+  }
+  return regionalFunctions;
+}
 
 export async function getJoinRequestFunctions() {
+  return getRegionalFunctions();
+}
+
+export async function getSecureFunctions() {
   if (appCheckDebugSetupError) {
     const error = new Error("This development origin cannot initialize App Check debug mode.");
     error.code = "join-request/app-check-debug-unsupported";
@@ -75,13 +87,7 @@ export async function getJoinRequestFunctions() {
     throw cause;
   }
 
-  if (!joinRequestFunctions) {
-    joinRequestFunctions = getFunctions(app, "us-central1");
-    if (useFirebaseEmulators) {
-      connectFunctionsEmulator(joinRequestFunctions, "127.0.0.1", 5001);
-    }
-  }
-  return joinRequestFunctions;
+  return getRegionalFunctions();
 }
 
 export default app;

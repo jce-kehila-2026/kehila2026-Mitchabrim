@@ -24,6 +24,7 @@ dist-ssr
 *.sw?
 backend/privateKey.json
 .env*
+!.env.example
 
 # Firebase
 .firebase/

@@ -35,17 +35,38 @@ import TablePagination from "@/components/admin/TablePagination.jsx";
 import {
   getElderly,
   getElderlyPage,
+  getElderlyQueryCount,
   getElderlyStatusCounts,
   createElderly,
   editElderly,
   deleteElderly,
 } from "@/services/elderlyService.js";
-import { getVolunteers, editVolunteer } from "@/services/volunteersService.js";
+import { getVolunteers } from "@/services/volunteersService.js";
 import { getElderlyContacts } from "@/services/elderlyContactsService.js";
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import useFirestorePagination from "@/hooks/useFirestorePagination.js";
-import { validatePhone, validateId, validateName, isValidDate } from "@/utils/validation";
+import useDebouncedValue from "@/hooks/useDebouncedValue.js";
+import { validateName } from "@/utils/validation";
 import { sanitizeFormData } from "@/utils/sanitize";
+import {
+  getEffectiveSearchTerm,
+  normalizeSearchDigits,
+  normalizeSearchText,
+} from "@/utils/firestoreSearch";
+import { createOperationId } from "@/utils/operationId";
+import {
+  digitsInput,
+  normalizeLanguages,
+  sortElderlyRecords,
+  validateBirthDate,
+  validateElderlyNumbers,
+} from "@/utils/elderlyFormModel";
+import {
+  addCountry,
+  addLanguage,
+  getCountries,
+  getLanguages,
+} from "@/services/settingsService";
 
 /* ===== Options (shared with volunteers page) =====
    Areas and neighborhoods are loaded from Firestore (settings/general) via the
@@ -54,6 +75,7 @@ const VOLUNTEER_STATUS_OPTIONS = ["כן", "לא", "קשר טלפוני"];
 const GENDER_OPTIONS = ["זכר", "נקבה"];
 const MARITAL_OPTIONS = ["רווק/ה", "נשוי/אה", "גרוש/ה", "אלמן/ה"];
 const LANGUAGE_OPTIONS = ["עברית", "ערבית", "אנגלית", "ספרדית", "צרפתית", "רוסית", "סינית", "יפנית"];
+const RECENT_ELDERLY_VIEWS_KEY = "mitchabrim.recentElderlyViews";
 const STATUS_OPTIONS = ["פעיל", "נפטר", "לא פעיל"];
 const ASSISTANCE_OPTIONS = [
   "קשר חברתי",
@@ -111,6 +133,16 @@ export default function Elderly() {
   const [filterNeighborhood, setFilterNeighborhood] = useState("");
   const [filterMarital, setFilterMarital] = useState("");
   const [filterVolStatus, setFilterVolStatus] = useState("");
+  const [sortMode, setSortMode] = useState("לפי האלף-בית");
+  const [sortedPage, setSortedPage] = useState(1);
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(RECENT_ELDERLY_VIEWS_KEY) || "[]");
+      return Array.isArray(stored) ? stored.map(String).slice(0, 100) : [];
+    } catch {
+      return [];
+    }
+  });
   const [search, setSearch] = useState("");
 
   // If the area changes and the previously-selected neighborhood is no longer
@@ -123,12 +155,18 @@ export default function Elderly() {
   }, [filterArea]);
 
   const PAGE_SIZE = 20;
-  const hasFiltersOrSearch = !!(
-    filterArea ||
-    filterNeighborhood ||
-    filterMarital ||
-    filterVolStatus ||
-    search.trim()
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const effectiveSearch = getEffectiveSearchTerm(debouncedSearch);
+  const queryCriteria = useMemo(() => ({
+    area: filterArea,
+    neighborhood: filterNeighborhood,
+    marital: filterMarital,
+    volStatus: filterVolStatus,
+    search: effectiveSearch,
+  }), [filterArea, filterNeighborhood, filterMarital, filterVolStatus, effectiveSearch]);
+  const queryKey = JSON.stringify(queryCriteria);
+  const hasActiveQuery = !!(
+    filterArea || filterNeighborhood || filterMarital || filterVolStatus || effectiveSearch
   );
 
   // Cache-invalidation counter (bumped after mutations to force refetch).
@@ -139,6 +177,7 @@ export default function Elderly() {
     connected: 0,
     without: 0,
     phoneContact: 0,
+    searchIndexed: 0,
   });
   const [totalCount, setTotalCount] = useState(null);
 
@@ -148,50 +187,91 @@ export default function Elderly() {
       .then((nextStats) => {
         if (cancelled) return;
         setStats(nextStats);
-        setTotalCount(nextStats.total);
+        if (!hasActiveQuery) setTotalCount(nextStats.total);
       })
       .catch((err) => {
         console.error("Failed to load elderly counts:", err);
         if (!cancelled) setLoadError("טעינת נתוני הסיכום נכשלה.");
       });
     return () => { cancelled = true; };
-  }, [statsVersion]);
+  }, [statsVersion, hasActiveQuery]);
 
   const fetchElderlyPage = useCallback(
-    ({ cursor }) => getElderlyPage({ pageSize: PAGE_SIZE, cursor }),
-    [],
+    ({ cursor }) => getElderlyPage({ pageSize: PAGE_SIZE, cursor, criteria: queryCriteria }),
+    [queryCriteria],
   );
   const paged = useFirestorePagination({
     fetchPage: fetchElderlyPage,
     totalCount,
     pageSize: PAGE_SIZE,
-    deps: [statsVersion],
+    deps: [statsVersion, queryKey],
   });
 
-  // ---- Full-collection cache. Loaded on mount so we can filter to מצב=פעיל
-  // and compute stats + charts client-side. ----
+  useEffect(() => {
+    if (!hasActiveQuery) return undefined;
+    let cancelled = false;
+    getElderlyQueryCount(queryCriteria)
+      .then((count) => {
+        if (!cancelled) setTotalCount(count);
+      })
+      .catch((err) => {
+        console.error("Failed to count filtered elderly:", err);
+        if (!cancelled) setLoadError("טעינת מספר תוצאות החיפוש נכשלה.");
+      });
+    return () => { cancelled = true; };
+  }, [queryKey, statsVersion, hasActiveQuery]);
+
+  // Full reads remain isolated behind explicit print/chart/form actions.
   const [fullData, setFullData] = useState(null);
   const [fullLoading, setFullLoading] = useState(false);
+  const fullDataCacheRef = useRef(null);
+  const fullDataRequestRef = useRef(null);
+  const fullDataVersionRef = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      fullDataVersionRef.current += 1;
+    };
+  }, []);
   const ensureFullData = useCallback(async () => {
-    setFullLoading(true);
-    try {
-      const items = await getElderly();
-      const data = items.length ? items : SEED;
-      setFullData(data);
-      return data;
-    } catch (err) {
-      console.error("Failed to load full elderly collection:", err);
-      setLoadError("טעינה מ-Firebase נכשלה — מוצגים נתוני דוגמה.");
-      setFullData(SEED);
-      return SEED;
-    } finally {
-      setFullLoading(false);
-    }
+    if (fullDataCacheRef.current) return fullDataCacheRef.current;
+    if (fullDataRequestRef.current) return fullDataRequestRef.current;
+    const version = fullDataVersionRef.current;
+    if (mountedRef.current) setFullLoading(true);
+    const request = getElderly()
+      .then((items) => {
+        const data = items.length ? items : SEED;
+        if (mountedRef.current && version === fullDataVersionRef.current) {
+          fullDataCacheRef.current = data;
+          setFullData(data);
+        }
+        return data;
+      })
+      .catch((err) => {
+        console.error("Failed to load full elderly collection:", err);
+        if (mountedRef.current && version === fullDataVersionRef.current) {
+          fullDataCacheRef.current = null;
+          setLoadError("טעינת הנתונים המלאים מ-Firebase נכשלה. ניתן לנסות שוב.");
+          setFullData(null);
+        }
+        throw err;
+      })
+      .finally(() => {
+        if (fullDataRequestRef.current === request) fullDataRequestRef.current = null;
+        if (mountedRef.current && version === fullDataVersionRef.current) {
+          setFullLoading(false);
+        }
+      });
+    fullDataRequestRef.current = request;
+    return request;
   }, []);
 
   useEffect(() => {
-    if (hasFiltersOrSearch && !fullData) ensureFullData();
-  }, [hasFiltersOrSearch, fullData, ensureFullData]);
+    setSortedPage(1);
+    if (sortMode) ensureFullData().catch(() => {});
+  }, [sortMode, queryKey, ensureFullData]);
 
   // Only active seniors are shown in the table + stats + charts.
   const activeData = useMemo(
@@ -220,39 +300,48 @@ export default function Elderly() {
     return { barData, pieData };
   }, [activeData]);
 
-  // Filtered + sorted view of the active seniors.
-  const filteredFull = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const sorted = [...activeData].sort((a, b) =>
-      fullName(a).localeCompare(fullName(b), "he"),
-    );
-    return sorted.filter((e) => {
-      if (filterArea && e.area !== filterArea) return false;
-      if (filterNeighborhood && e.neighborhood !== filterNeighborhood) return false;
-      if (filterMarital && e.marital !== filterMarital) return false;
-      if (filterVolStatus && e.volStatus !== filterVolStatus) return false;
-      if (q) {
-        const hay = [
-          fullName(e), e.idNum, e.mobile, e.homePhone, e.neighborhood,
-          e.area, e.address, e.notes, e.volName, e.contactPersonName,
-        ].filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
+  const sortedFilteredData = useMemo(() => {
+    if (!sortMode || !fullData) return [];
+    const searchTerm = effectiveSearch;
+    const filteredItems = fullData.filter((item) => {
+      if (item.status !== "פעיל") return false;
+      if (filterArea && item.area !== filterArea) return false;
+      if (filterNeighborhood && item.neighborhood !== filterNeighborhood) return false;
+      if (filterMarital && item.marital !== filterMarital) return false;
+      if (filterVolStatus && item.volStatus !== filterVolStatus) return false;
+      if (searchTerm) {
+        const nameSearch = normalizeSearchText(fullName(item));
+        const digitSearch = [
+          item.idNum,
+          item.mobile,
+          item.homePhone,
+        ].map(normalizeSearchDigits).join(" ");
+        if (!nameSearch.includes(searchTerm) && !digitSearch.includes(searchTerm)) return false;
       }
       return true;
     });
-  }, [activeData, filterArea, filterNeighborhood, filterMarital, filterVolStatus, search]);
-
-  const [filterPage, setFilterPage] = useState(1);
-  const filterTotalPages = Math.max(1, Math.ceil(filteredFull.length / PAGE_SIZE));
-  useEffect(() => { setFilterPage(1); }, [filterArea, filterNeighborhood, filterMarital, filterVolStatus, search]);
-  useEffect(() => { if (filterPage > filterTotalPages) setFilterPage(filterTotalPages); }, [filterPage, filterTotalPages]);
-  const filterPageStart = (filterPage - 1) * PAGE_SIZE;
-  const filteredPageItems = filteredFull.slice(filterPageStart, filterPageStart + PAGE_SIZE);
-  const pageItems = hasFiltersOrSearch ? filteredPageItems : paged.items;
-  const currentPage = hasFiltersOrSearch ? filterPage : paged.page;
-  const totalPages = hasFiltersOrSearch ? filterTotalPages : paged.totalPages;
-  const paginationTotal = hasFiltersOrSearch ? filteredFull.length : (totalCount ?? 0);
-  const loading = hasFiltersOrSearch ? fullLoading : paged.loading;
+    return sortElderlyRecords(filteredItems, sortMode, recentlyViewedIds);
+  }, [
+    sortMode,
+    fullData,
+    effectiveSearch,
+    filterArea,
+    filterNeighborhood,
+    filterMarital,
+    filterVolStatus,
+    recentlyViewedIds,
+  ]);
+  // Keep the current server page visible until the full dataset needed for
+  // client-side sorting has loaded, instead of rendering an empty first page.
+  const usingClientSort = Boolean(sortMode && fullData);
+  const sortedTotalPages = Math.max(1, Math.ceil(sortedFilteredData.length / PAGE_SIZE));
+  const pageItems = usingClientSort
+    ? sortedFilteredData.slice((sortedPage - 1) * PAGE_SIZE, sortedPage * PAGE_SIZE)
+    : paged.items;
+  const currentPage = usingClientSort ? sortedPage : paged.page;
+  const totalPages = usingClientSort ? sortedTotalPages : paged.totalPages;
+  const paginationTotal = usingClientSort ? sortedFilteredData.length : (totalCount ?? 0);
+  const loading = usingClientSort ? fullLoading : paged.loading;
 
 
 
@@ -262,89 +351,100 @@ export default function Elderly() {
     pageItems.find((e) => e.id === openId) ||
     null;
 
-  // Recompute a volunteer's status based on assignments. Uses a passed-in list.
-  const syncVolunteerStatus = async (volunteerId, elderlyList) => {
-    if (!volunteerId || typeof volunteerId !== "string") return;
-    const stillAssigned = elderlyList.some((e) => e.volId === volunteerId);
-    const newStatus = stillAssigned ? "משויך לאזרח ותיק" : "ממתין לשיבוץ";
-    try {
-      await editVolunteer(volunteerId, { status: newStatus });
-    } catch (err) {
-      console.error("syncVolunteerStatus failed:", err);
-    }
-  };
+  const createMutationIdRef = useRef(null);
+  const editMutationIdRef = useRef(null);
 
   // Invalidate paginated + count caches after any mutation.
   const invalidate = () => {
+    fullDataVersionRef.current += 1;
+    fullDataCacheRef.current = null;
+    fullDataRequestRef.current = null;
     setFullData(null);
     setStatsVersion((v) => v + 1);
   };
 
   const handleEditElderly = async (id, updated) => {
-    const prevVolId = openElderly?.volId || null;
+    editMutationIdRef.current ||= createOperationId();
     try {
       // eslint-disable-next-line no-unused-vars
       const { id: _omit, ...payload } = sanitizeFormData(updated);
-      await editElderly(id, payload);
+      await editElderly(id, payload, editMutationIdRef.current);
     } catch (err) {
       console.error("editElderly failed:", err);
-      alert("שמירה ל-Firebase נכשלה. השינוי נשמר מקומית בלבד.");
+      alert("שמירה ל-Firebase נכשלה. לא בוצע שינוי חלקי.");
+      return;
     }
-    if (fullData) {
-      const next = fullData.map((e) => (e.id === id ? { ...e, ...updated, id } : e));
-      setFullData(next);
-      const affected = new Set([prevVolId, updated.volId].filter(Boolean));
-      for (const vid of affected) await syncVolunteerStatus(vid, next);
-    } else if (prevVolId || updated.volId) {
-      const next = await ensureFullData();
-      const affected = new Set([prevVolId, updated.volId].filter(Boolean));
-      for (const vid of affected) await syncVolunteerStatus(vid, next);
-    }
+    editMutationIdRef.current = null;
     setOpenId(null);
     invalidate();
   };
 
   const handleCreateElderly = async (entry) => {
     const clean = sanitizeFormData(entry);
+    createMutationIdRef.current ||= createOperationId();
     try {
-      await createElderly(clean);
+      await createElderly(clean, createMutationIdRef.current);
     } catch (err) {
       console.error("createElderly failed:", err);
       alert("הוספה ל-Firebase נכשלה.");
+      return;
     }
+    createMutationIdRef.current = null;
     setShowAdd(false);
     invalidate();
-    if (entry.volId) {
-      const next = await ensureFullData();
-      await syncVolunteerStatus(entry.volId, next);
-    }
   };
 
   const handleDeleteElderly = async (elderly) => {
     if (!elderly) return;
     if (!window.confirm(`האם למחוק את ${fullName(elderly)}? פעולה זו אינה הפיכה.`)) return;
     try {
-      if (typeof elderly.id === "string") await deleteElderly(elderly.id);
+      if (typeof elderly.id === "string") await deleteElderly(elderly.id, createOperationId());
     } catch (err) {
       console.error("deleteElderly failed:", err);
       alert("מחיקה מ-Firebase נכשלה.");
+      return;
     }
-    if (fullData) setFullData(fullData.filter((e) => e.id !== elderly.id));
     setOpenId(null);
     invalidate();
-    if (elderly.volId) {
-      const next = await ensureFullData();
-      await syncVolunteerStatus(elderly.volId, next);
-    }
   };
 
   const handleOpenPrint = async () => {
-    await ensureFullData();
-    setShowPrint(true);
+    try {
+      await ensureFullData();
+      setShowPrint(true);
+    } catch {
+      // ensureFullData already exposes the actionable error in the page.
+    }
   };
   const handleOpenAdd = async () => {
-    ensureFullData();
+    ensureFullData().catch(() => {});
+    createMutationIdRef.current = createOperationId();
     setShowAdd(true);
+  };
+  const handleToggleCharts = async () => {
+    if (showCharts) {
+      setShowCharts(false);
+      return;
+    }
+    try {
+      await ensureFullData();
+      setShowCharts(true);
+    } catch {
+      // Keep charts closed and allow the next click to retry.
+    }
+  };
+
+  const markElderlyViewed = (elderlyId) => {
+    const id = String(elderlyId);
+    setRecentlyViewedIds((current) => {
+      const next = [id, ...current.filter((item) => item !== id)].slice(0, 100);
+      try {
+        localStorage.setItem(RECENT_ELDERLY_VIEWS_KEY, JSON.stringify(next));
+      } catch {
+        // Keep the current-session ordering if browser storage is unavailable.
+      }
+      return next;
+    });
   };
 
   const totalStat = stats.total;
@@ -367,10 +467,7 @@ export default function Elderly() {
           <button className="btn" onClick={handleOpenPrint}>הדפסת רשימה</button>
           <button
             className="btn btn-outline"
-            onClick={async () => {
-              if (!showCharts) await ensureFullData();
-              setShowCharts(!showCharts);
-            }}
+            onClick={handleToggleCharts}
           >
             {showCharts ? "📊 הסתר גרפים" : "📊 הצג גרפים"}
           </button>
@@ -445,7 +542,7 @@ export default function Elderly() {
           <div style={{ color: "#92400e", fontSize: 13, marginBottom: 8 }}>לא נמצאו אזורים ושכונות</div>
         )}
         <SearchFilters
-          searchPlaceholder="חיפוש לפי שם, טלפון, ת.ז, שכונה או הערות..."
+          searchPlaceholder="חיפוש מתחיל לפי שם, טלפון או ת.ז..."
           searchValue={search}
           onSearchChange={(e) => setSearch(e.target.value)}
           filters={[
@@ -473,8 +570,22 @@ export default function Elderly() {
               onChange: (e) => setFilterVolStatus(e.target.value),
               options: ["", ...VOLUNTEER_STATUS_OPTIONS],
             },
+            {
+              label: "מיון",
+              value: sortMode,
+              onChange: (e) => setSortMode(e.target.value),
+              options: ["לפי האלף-בית", "לפי שכונות", "לפי קשר אחרון", "צפיות אחרונות"],
+            },
           ]}
         />
+        {effectiveSearch && stats.total > stats.searchIndexed && (
+          <div style={{
+            background: "#fef3c7", border: "1px solid #fde68a", color: "#92400e",
+            borderRadius: 10, padding: "8px 12px", margin: "10px 0", fontSize: 13,
+          }}>
+            חלק מהרשומות הישנות טרם הוכנו לחיפוש. התוצאות עשויות להיות חלקיות עד להפעלת PERF-05 backfill.
+          </div>
+        )}
         <DataTable
           columns={[
             {
@@ -486,7 +597,11 @@ export default function Elderly() {
               key: "name",
               label: "שם",
               render: (r) => (
-                <button className="link-btn" onClick={() => setOpenId(r.id)}>{fullName(r)}</button>
+                <button className="link-btn" onClick={() => {
+                  editMutationIdRef.current = createOperationId();
+                  markElderlyViewed(r.id);
+                  setOpenId(r.id);
+                }}>{fullName(r)}</button>
               ),
             },
             { key: "idNum", label: "ת.ז.", render: (r) => r.idNum || "—" },
@@ -527,13 +642,13 @@ export default function Elderly() {
           totalCount={paginationTotal}
           pageSize={PAGE_SIZE}
           loading={loading}
-          onNext={() => hasFiltersOrSearch
-            ? setFilterPage((p) => Math.min(filterTotalPages, p + 1))
-            : paged.next()}
-          onPrevious={() => hasFiltersOrSearch
-            ? setFilterPage((p) => Math.max(1, p - 1))
-            : paged.prev()}
-          onPageChange={(p) => hasFiltersOrSearch ? setFilterPage(p) : paged.goToPage(p)}
+          onNext={usingClientSort
+            ? () => setSortedPage((page) => Math.min(sortedTotalPages, page + 1))
+            : paged.next}
+          onPrevious={usingClientSort
+            ? () => setSortedPage((page) => Math.max(1, page - 1))
+            : paged.prev}
+          onPageChange={usingClientSort ? setSortedPage : paged.goToPage}
         />
 
 
@@ -544,7 +659,10 @@ export default function Elderly() {
           title="הוספת אזרח ותיק"
           initial={null}
           existingIds={(fullData || pageItems).map((d) => ({ id: d.id, idNum: d.idNum }))}
-          onClose={() => setShowAdd(false)}
+          onClose={() => {
+            createMutationIdRef.current = null;
+            setShowAdd(false);
+          }}
           onSave={handleCreateElderly}
         />
       )}
@@ -552,7 +670,10 @@ export default function Elderly() {
         <ElderlyProfileModal
           entry={openElderly}
           existingIds={(fullData || pageItems).map((d) => ({ id: d.id, idNum: d.idNum }))}
-          onClose={() => setOpenId(null)}
+          onClose={() => {
+            editMutationIdRef.current = null;
+            setOpenId(null);
+          }}
           onSave={(updated) => handleEditElderly(openElderly.id, updated)}
           onDelete={() => handleDeleteElderly(openElderly)}
         />
@@ -680,7 +801,7 @@ function ElderlyProfileModal({ entry, existingIds, onClose, onSave, onDelete }) 
           <h4>רקע</h4>
           <div className="detail-grid">
             <D label="ארץ לידה" value={entry.country} />
-            <D label="שפת דיבור" value={entry.language} />
+            <D label="שפות דיבור" value={normalizeLanguages(entry).join(", ")} />
             
             <D label="סטטוס" value={<span className={`badge ${statusBadge(entry.status)}`}>{entry.status}</span>} />
           </div>
@@ -720,8 +841,8 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
     isEmpty: areasEmpty,
   } = useAreasAndNeighborhoods();
 
-  const [f, setF] = useState(
-    initial || {
+  const [f, setF] = useState(() => {
+    const base = initial || {
       firstName: "", lastName: "", idNum: "", birth: "", gender: "",
       mobile: "", homePhone: "",
       area: "", neighborhood: "", address: "",
@@ -731,14 +852,27 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
       contactPersonStatus: "", contactPersonNotes: "",
       volStatus: "לא", volName: "",
       assistance: "", marital: MARITAL_OPTIONS[0],
-      country: "ישראל", language: "עברית",
+      country: "ישראל", language: "עברית", languages: ["עברית"],
       bio: "",
       status: "פעיל", notes: "",
-    },
-  );
+    };
+    const languages = normalizeLanguages(base);
+    return { ...base, languages, language: languages.join(", ") };
+  });
   const [numericWarn, setNumericWarn] = useState({});
   const [missing, setMissing] = useState([]);
   const [idDup, setIdDup] = useState(false);
+  const [countryOptions, setCountryOptions] = useState(
+    () => [...COUNTRY_OPTIONS].sort((a, b) => a.localeCompare(b, "he")),
+  );
+  const [newCountry, setNewCountry] = useState("");
+  const [countryError, setCountryError] = useState("");
+  const [languageOptions, setLanguageOptions] = useState(() => (
+    [...new Set([...LANGUAGE_OPTIONS, ...normalizeLanguages(initial || {})])]
+      .sort((a, b) => a.localeCompare(b, "he"))
+  ));
+  const [newLanguage, setNewLanguage] = useState("");
+  const [languageError, setLanguageError] = useState("");
 
   // Load volunteers from Firestore for the volunteer-select dropdown.
   const [volunteers, setVolunteers] = useState([]);
@@ -750,6 +884,25 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const [cpError, setCpError] = useState("");
   useEffect(() => {
     let mounted = true;
+    (async () => {
+      try {
+        const countries = await getCountries(COUNTRY_OPTIONS);
+        if (mounted) setCountryOptions(countries);
+      } catch (err) {
+        console.error("Failed to load countries:", err);
+      }
+    })();
+    (async () => {
+      try {
+        const languages = await getLanguages([
+          ...LANGUAGE_OPTIONS,
+          ...normalizeLanguages(initial || {}),
+        ]);
+        if (mounted) setLanguageOptions(languages);
+      } catch (err) {
+        console.error("Failed to load languages:", err);
+      }
+    })();
     (async () => {
       try {
         const list = await getVolunteers();
@@ -783,8 +936,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
   const setArea = (e) => setF({ ...f, area: e.target.value, neighborhood: "" });
   const setDigits = (k, maxLen) => (e) => {
     const raw = e.target.value;
-    let cleaned = raw.replace(/\D/g, "");
-    if (maxLen) cleaned = cleaned.slice(0, maxLen);
+    const cleaned = digitsInput(raw, maxLen);
     setNumericWarn((w) => ({ ...w, [k]: raw !== cleaned }));
     setF({ ...f, [k]: cleaned });
   };
@@ -808,20 +960,53 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
     const errs = {};
     const fn = validateName(f.firstName); if (fn) errs.firstName = fn;
     const ln = validateName(f.lastName); if (ln) errs.lastName = ln;
-    if (f.idNum) { const idErr = validateId(f.idNum); if (idErr) errs.idNum = idErr; }
-    if (f.mobile) {
-      const digits = String(f.mobile).replace(/\D/g, "");
-      if (digits.length !== 10) errs.mobile = "יש להזין 10 ספרות";
-    }
-    if (f.homePhone) {
-      const e2 = validatePhone(f.homePhone, { required: false });
-      if (e2) errs.homePhone = e2;
-    }
+    Object.assign(errs, validateElderlyNumbers(f));
+    const birthError = validateBirthDate(f.birth);
+    if (birthError) errs.birth = birthError;
     setFieldErrors(errs);
     setMissing(empty);
     setIdDup(dup);
     if (empty.length || dup || Object.keys(errs).length) return;
-    onSave(f);
+    const languages = normalizeLanguages(f);
+    onSave({ ...f, languages, language: languages.join(", ") });
+  };
+
+  const toggleLanguage = (language) => {
+    const current = normalizeLanguages(f);
+    const next = current.includes(language)
+      ? current.filter((item) => item !== language)
+      : [...current, language];
+    setF({ ...f, languages: next, language: next.join(", ") });
+  };
+
+  const handleAddCountry = async () => {
+    setCountryError("");
+    try {
+      const countries = await addCountry(newCountry, COUNTRY_OPTIONS);
+      const added = countries.find((country) => (
+        country.localeCompare(newCountry.trim(), "he", { sensitivity: "base" }) === 0
+      )) || newCountry.trim();
+      setCountryOptions(countries);
+      setF({ ...f, country: added });
+      setNewCountry("");
+    } catch (error) {
+      setCountryError(error?.message || "לא ניתן להוסיף את המדינה");
+    }
+  };
+
+  const handleAddLanguage = async () => {
+    setLanguageError("");
+    try {
+      const languages = await addLanguage(newLanguage, languageOptions);
+      const added = languages.find((language) => (
+        language.localeCompare(newLanguage.trim(), "he", { sensitivity: "base" }) === 0
+      )) || newLanguage.trim();
+      setLanguageOptions(languages);
+      if (!normalizeLanguages(f).includes(added)) toggleLanguage(added);
+      setNewLanguage("");
+    } catch (error) {
+      setLanguageError(error?.message || "לא ניתן להוסיף את השפה");
+    }
   };
 
   const NumericMsg = ({ k }) => numericWarn[k] ? (
@@ -859,7 +1044,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
               <NumericMsg k="idNum" />
               {fieldErrors.idNum && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.idNum}</div>}
             </div>
-            <div className="field"><label>תאריך לידה</label><input className="input" type="date" value={f.birth} onChange={set("birth")} />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
+            <div className="field"><label>תאריך לידה</label><input className="input" type="date" max={new Date().toISOString().slice(0, 10)} value={f.birth} onChange={set("birth")} />{fieldErrors.birth && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.birth}</div>}</div>
             <div className="field">
               <label>מגדר</label>
               <select className="select" value={f.gender || ""} onChange={set("gender")}>
@@ -887,7 +1072,7 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
             </div>
             <div className="field">
               <label>טלפון בית</label>
-              <input className="input" value={f.homePhone} onChange={setDigits("homePhone", 10)} inputMode="numeric" maxLength={10} />
+              <input className="input" value={f.homePhone} onChange={setDigits("homePhone", 9)} inputMode="numeric" maxLength={9} />
               <NumericMsg k="homePhone" />
               {fieldErrors.homePhone && <div style={{color:"#dc2626",fontSize:12}}>{fieldErrors.homePhone}</div>}
             </div>
@@ -988,14 +1173,38 @@ function ElderlyFormModal({ title, initial, existingIds = [], onClose, onSave })
             <div className="field">
               <label>ארץ לידה</label>
               <select className="select" value={f.country} onChange={set("country")}>
-                {COUNTRY_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                {countryOptions.map((o) => <option key={o}>{o}</option>)}
               </select>
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input className="input" value={newCountry} onChange={(e) => setNewCountry(e.target.value)} placeholder="מדינה חדשה" />
+                <button type="button" className="btn" onClick={handleAddCountry}>הוסף</button>
+              </div>
+              {countryError && <div style={{color:"#dc2626",fontSize:12}}>{countryError}</div>}
             </div>
             <div className="field">
-              <label>שפת דיבור</label>
-              <select className="select" value={f.language} onChange={set("language")}>
-                {LANGUAGE_OPTIONS.map((o) => <option key={o}>{o}</option>)}
-              </select>
+              <label>שפות דיבור</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {languageOptions.map((language) => (
+                  <label key={language} style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={normalizeLanguages(f).includes(language)}
+                      onChange={() => toggleLanguage(language)}
+                    />
+                    {language}
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <input
+                  className="input"
+                  value={newLanguage}
+                  onChange={(e) => setNewLanguage(e.target.value)}
+                  placeholder="שפה חדשה"
+                />
+                <button type="button" className="btn" onClick={handleAddLanguage}>הוסף</button>
+              </div>
+              {languageError && <div style={{color:"#dc2626",fontSize:12}}>{languageError}</div>}
             </div>
             <div className="field">
               <label>סטטוס</label>

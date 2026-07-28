@@ -9,11 +9,16 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  collectionGroup,
+  documentId,
+  where,
   writeBatch,
 } from "firebase/firestore";
 
 import { db } from "../firebase";
 import { sanitizeFormData } from "../utils/sanitize";
+import { commitBatchOperations, deleteQueryInChunks } from "../utils/firestoreBulk";
+import { requireOperationId } from "../utils/operationId";
 
 const projectsCollection = collection(db, "projects");
 
@@ -50,6 +55,133 @@ export async function createProject(projectData) {
   };
 }
 
+export async function createProjectWithRelations({
+  projectData,
+  participants = [],
+  groupAssignments = [],
+  operationId,
+}) {
+  const safeOperationId = requireOperationId(operationId);
+  const projectId = `project_${safeOperationId}`;
+  const projectRef = doc(db, "projects", projectId);
+  const clean = sanitizeFormData(projectData);
+  const operations = [];
+
+  (participants || []).filter((participant) => participant?.elderlyId).forEach((participant) => {
+    const participantRef = doc(
+      db,
+      "projects",
+      projectId,
+      "elderlyParticipants",
+      participant.elderlyId,
+    );
+    operations.push((batch) => batch.set(participantRef, {
+      receives: "כן",
+      delivery: "ממתין למסירה",
+      notes: "",
+      ...participant,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  (groupAssignments || []).filter((assignment) => assignment?.groupId).forEach((assignment) => {
+    const groupRef = doc(
+      db,
+      "projects",
+      projectId,
+      "projectGroups",
+      assignment.groupId,
+    );
+    operations.push((batch) => batch.set(groupRef, {
+      volunteerIds: Array.from(new Set((assignment.volunteerIds || []).filter(Boolean))),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  // The parent is committed last. Small creations stay in one atomic batch;
+  // large creations are resumable and remain invisible to project queries
+  // until every deterministic child write has completed.
+  operations.push((batch) => batch.set(projectRef, {
+    ...clean,
+    operationId: safeOperationId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await commitBatchOperations(db, operations);
+  return { id: projectId, ...clean };
+}
+
+function assertAtomicProjectWriteLimit(writeCount) {
+  if (writeCount > 400) {
+    const error = new Error("This project change exceeds the 400-write atomic limit");
+    error.code = "db01/atomic-limit-exceeded";
+    throw error;
+  }
+}
+
+export async function updateProjectWithParticipantChanges({
+  projectId,
+  projectPatch,
+  participantsToUpsert = [],
+  participantPatches = [],
+  participantIdsToDelete = [],
+}) {
+  const upserts = (participantsToUpsert || []).filter((participant) => participant?.elderlyId);
+  const patches = (participantPatches || []).filter((participant) => participant?.elderlyId);
+  const deletes = Array.from(new Set((participantIdsToDelete || []).filter(Boolean)));
+  assertAtomicProjectWriteLimit(upserts.length + patches.length + deletes.length + 1);
+  const batch = writeBatch(db);
+  upserts.forEach((participant) => {
+    batch.set(
+      doc(db, "projects", projectId, "elderlyParticipants", participant.elderlyId),
+      {
+        receives: "כן",
+        delivery: "ממתין למסירה",
+        notes: "",
+        ...participant,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+  patches.forEach(({ elderlyId, ...patch }) => {
+    batch.set(
+      doc(db, "projects", projectId, "elderlyParticipants", elderlyId),
+      { ...sanitizeFormData(patch), updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+  });
+  deletes.forEach((elderlyId) => {
+    batch.delete(doc(db, "projects", projectId, "elderlyParticipants", elderlyId));
+  });
+  batch.update(doc(db, "projects", projectId), {
+    ...sanitizeFormData(projectPatch),
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+export async function addProjectGroupAssignments(projectId, assignments) {
+  const valid = (assignments || []).filter((assignment) => assignment?.groupId);
+  assertAtomicProjectWriteLimit(valid.length);
+  const batch = writeBatch(db);
+  valid.forEach((assignment) => {
+    batch.set(
+      doc(db, "projects", projectId, "projectGroups", assignment.groupId),
+      {
+        volunteerIds: Array.from(new Set((assignment.volunteerIds || []).filter(Boolean))),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+  await batch.commit();
+}
+
 export async function editProject(projectId, projectData) {
   const projectRef = doc(db, "projects", projectId);
   const clean = sanitizeFormData(projectData);
@@ -70,15 +202,9 @@ export async function editProject(projectId, projectData) {
    IMPORTANT: this does NOT delete elderly residents, neighborhoods, or
    volunteer groups from the main database. */
 export async function deleteProjectCascade(projectId) {
-  const [parts, groups] = await Promise.all([
-    getDocs(participantsCol(projectId)),
-    getDocs(projectGroupsCol(projectId)),
-  ]);
-  const batch = writeBatch(db);
-  parts.docs.forEach((d) => batch.delete(d.ref));
-  groups.docs.forEach((d) => batch.delete(d.ref));
-  batch.delete(doc(db, "projects", projectId));
-  await batch.commit();
+  await deleteQueryInChunks(db, participantsCol(projectId));
+  await deleteQueryInChunks(db, projectGroupsCol(projectId));
+  await deleteDoc(doc(db, "projects", projectId));
 }
 
 /* =========================
@@ -95,10 +221,21 @@ export async function getElderlyParticipants(projectId) {
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+export async function getElderlyParticipantsByProject() {
+  const snapshot = await getDocs(projectChildrenQuery("elderlyParticipants"));
+  const byProject = {};
+  snapshot.docs.forEach((d) => {
+    const projectId = d.ref.parent.parent?.id;
+    if (!projectId) return;
+    if (!byProject[projectId]) byProject[projectId] = [];
+    byProject[projectId].push({ id: d.id, ...d.data() });
+  });
+  return byProject;
+}
+
 export async function addElderlyParticipants(projectId, participants) {
-  // participants: array of plain objects, each MUST include elderlyId.
-  const batch = writeBatch(db);
-  participants.forEach((p) => {
+  const validParticipants = (participants || []).filter((p) => p?.elderlyId);
+  const operations = validParticipants.map((p) => (batch) => {
     const ref = doc(db, "projects", projectId, "elderlyParticipants", p.elderlyId);
     batch.set(
       ref,
@@ -113,7 +250,7 @@ export async function addElderlyParticipants(projectId, participants) {
       { merge: true }
     );
   });
-  await batch.commit();
+  return commitBatchOperations(db, operations);
 }
 
 export async function updateElderlyParticipant(projectId, elderlyId, patch) {
@@ -128,6 +265,14 @@ export async function updateElderlyParticipant(projectId, elderlyId, patch) {
 export async function removeElderlyParticipant(projectId, elderlyId) {
   const ref = doc(db, "projects", projectId, "elderlyParticipants", elderlyId);
   await deleteDoc(ref);
+}
+
+export async function removeElderlyParticipants(projectId, elderlyIds) {
+  const operations = Array.from(new Set((elderlyIds || []).filter(Boolean)))
+    .map((elderlyId) => (batch) => {
+      batch.delete(doc(db, "projects", projectId, "elderlyParticipants", elderlyId));
+    });
+  return commitBatchOperations(db, operations);
 }
 
 /* =========================
@@ -145,9 +290,30 @@ export async function getProjectGroups(projectId) {
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+export async function getProjectGroupsByProject() {
+  const snapshot = await getDocs(projectChildrenQuery("projectGroups"));
+  const byProject = {};
+  snapshot.docs.forEach((d) => {
+    const projectId = d.ref.parent.parent?.id;
+    if (!projectId) return;
+    if (!byProject[projectId]) byProject[projectId] = [];
+    byProject[projectId].push({ id: d.id, ...d.data() });
+  });
+  return byProject;
+}
+
+function projectChildrenQuery(collectionId) {
+  const low = "\u0000";
+  const high = "\uf8ff";
+  return query(
+    collectionGroup(db, collectionId),
+    where(documentId(), ">=", doc(db, "projects", low, collectionId, low)),
+    where(documentId(), "<=", doc(db, "projects", high, collectionId, high)),
+  );
+}
+
 export async function addProjectGroups(projectId, groupIds) {
-  const batch = writeBatch(db);
-  groupIds.forEach((gid) => {
+  const operations = Array.from(new Set((groupIds || []).filter(Boolean))).map((gid) => (batch) => {
     const ref = doc(db, "projects", projectId, "projectGroups", gid);
     batch.set(
       ref,
@@ -159,7 +325,7 @@ export async function addProjectGroups(projectId, groupIds) {
       { merge: true }
     );
   });
-  await batch.commit();
+  return commitBatchOperations(db, operations);
 }
 
 export async function removeProjectGroup(projectId, groupId) {

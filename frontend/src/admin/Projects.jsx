@@ -6,15 +6,16 @@ import SectionCard from "@/components/admin/SectionCard.jsx";
 import DataTable from "@/components/admin/DataTable.jsx";
 import {
   getProjects,
-  createProject,
+  createProjectWithRelations,
+  updateProjectWithParticipantChanges,
+  addProjectGroupAssignments,
   editProject,
   deleteProjectCascade,
   getElderlyParticipants,
-  addElderlyParticipants,
+  getElderlyParticipantsByProject,
   updateElderlyParticipant,
   removeElderlyParticipant,
   getProjectGroups,
-  addProjectGroups,
   removeProjectGroup,
   setProjectGroupVolunteers,
 } from "@/services/projectsService.js";
@@ -23,6 +24,12 @@ import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.
 import useAreasAndNeighborhoods from "@/hooks/useAreasAndNeighborhoods.js";
 import { sanitizeFormData } from "@/utils/sanitize";
 import { validateDate } from "@/utils/validation";
+import { createOperationId } from "@/utils/operationId";
+import { openSafePrintReport } from "@/utils/safePrint";
+import {
+  neighborhoodNoteEntries,
+  participantStats,
+} from "@/utils/projectParticipantStats";
 
 /* ============================================================
    Static reference data — only enums/options. All groups,
@@ -76,6 +83,7 @@ const deliveryBadge = (v) =>
 ============================================================ */
 
 export default function Projects() {
+  const createProjectOperationRef = useRef(null);
   const [projects, setProjects] = useState([]);
   const [projectStats, setProjectStats] = useState({}); // { [projectId]: { elderly, packages, delivered } }
   const [loading, setLoading] = useState(true);
@@ -102,23 +110,7 @@ export default function Projects() {
     return map;
   }, [allVolunteers]);
 
-  const computeStatsForProject = async (projectId) => {
-    const list = await getElderlyParticipants(projectId);
-    return {
-      elderly: list.length,
-      packages: list.filter((p) => p.receives === "כן").length,
-      delivered: list.filter((p) => p.delivery === "נמסר").length,
-    };
-  };
-
-  const refreshProjectStats = async (projectId) => {
-    try {
-      const stats = await computeStatsForProject(projectId);
-      setProjectStats((prev) => ({ ...prev, [projectId]: stats }));
-    } catch (err) {
-      console.error("Failed to refresh project stats", err);
-    }
-  };
+  const computeProjectStats = (list = []) => participantStats(list);
 
   const setProjectStatsDirect = (projectId, stats) => {
     setProjectStats((prev) => ({ ...prev, [projectId]: stats }));
@@ -128,23 +120,22 @@ export default function Projects() {
     let cancelled = false;
     (async () => {
       try {
-        const [list, groups, volunteers, elderly] = await Promise.all([
+        const [list, groups, volunteers, elderly, participantsByProject] = await Promise.all([
           getProjects(),
           getVolunteerGroups().catch(() => []),
           getVolunteers().catch(() => []),
           getElderly().catch(() => []),
+          getElderlyParticipantsByProject(),
         ]);
         if (cancelled) return;
         setProjects(list);
         setAllGroups(groups);
         setAllVolunteers(volunteers);
         setAllElderly(elderly);
-        const entries = await Promise.all(
-          list.map(async (p) => [p.id, await computeStatsForProject(p.id).catch(() => null)])
-        );
-        if (cancelled) return;
         const map = {};
-        entries.forEach(([id, s]) => { if (s) map[id] = s; });
+        list.forEach((p) => {
+          map[p.id] = computeProjectStats(participantsByProject[p.id] || []);
+        });
         setProjectStats(map);
       } catch (err) {
         console.error("Failed to load projects", err);
@@ -169,9 +160,6 @@ export default function Projects() {
    */
   const handleCreateProject = async (data) => {
     const clean = sanitizeFormData(data);
-    const created = await createProject(clean);
-    setProjects((prev) => [created, ...prev]);
-
     const targetNeighborhoods = Array.isArray(data.neighborhoods) ? data.neighborhoods : [];
     const neighSet = new Set(targetNeighborhoods);
 
@@ -190,32 +178,23 @@ export default function Projects() {
         notes: "",
       }));
 
-    if (participants.length > 0) {
-      try { await addElderlyParticipants(created.id, participants); }
-      catch (err) { console.error("Failed to seed elderly participants", err); }
-    }
-
-    // 2) Volunteer groups + their existing volunteers.
     const groupIds = Array.isArray(data.groupIds) ? data.groupIds : [];
-    if (groupIds.length > 0) {
-      try { await addProjectGroups(created.id, groupIds); }
-      catch (err) { console.error("Failed to attach groups", err); }
-      await Promise.all(
-        groupIds.map(async (gid) => {
-          const vIds = (volunteersByGroupId[gid] || []).map((v) => v.id);
-          if (vIds.length === 0) return;
-          try { await setProjectGroupVolunteers(created.id, gid, vIds); }
-          catch (err) { console.error("Failed to seed group volunteers", err); }
-        })
-      );
-    }
+    const groupAssignments = groupIds.map((groupId) => ({
+      groupId,
+      volunteerIds: (volunteersByGroupId[groupId] || []).map((volunteer) => volunteer.id),
+    }));
+    createProjectOperationRef.current ||= createOperationId();
+    const created = await createProjectWithRelations({
+      projectData: clean,
+      participants,
+      groupAssignments,
+      operationId: createProjectOperationRef.current,
+    });
+    createProjectOperationRef.current = null;
+    setProjects((prev) => [created, ...prev]);
 
-    // 3) Compute fresh stats for the new project.
-    const stats = {
-      elderly: participants.length,
-      packages: participants.filter((p) => p.receives === "כן").length,
-      delivered: participants.filter((p) => p.delivery === "נמסר").length,
-    };
+    // Compute fresh stats for the new project.
+    const stats = participantStats(participants);
     setProjectStats((prev) => ({ ...prev, [created.id]: stats }));
     return created;
   };
@@ -240,7 +219,14 @@ export default function Projects() {
     return projects.map((p) => {
       const s = projectStats[p.id];
       if (!s) return p;
-      return { ...p, elderly: s.elderly, packages: s.packages, delivered: s.delivered };
+      return {
+        ...p,
+        elderly: s.elderly,
+        packages: s.packages,
+        delivered: s.delivered,
+        assigned: s.assigned,
+        specialNotes: s.notes,
+      };
     });
   }, [projects, projectStats]);
 
@@ -263,8 +249,10 @@ export default function Projects() {
         elderly: acc.elderly + (s?.elderly || 0),
         packages: acc.packages + (s?.packages || 0),
         delivered: acc.delivered + (s?.delivered || 0),
+        assigned: acc.assigned + (s?.assigned || 0),
+        notes: acc.notes + (s?.notes || 0),
       }),
-      { elderly: 0, packages: 0, delivered: 0 }
+      { elderly: 0, packages: 0, delivered: 0, assigned: 0, notes: 0 }
     );
   }, [projectStats]);
 
@@ -276,14 +264,12 @@ export default function Projects() {
         allVolunteers={allVolunteers}
         volunteersByGroupId={volunteersByGroupId}
         allElderlyResidents={allElderly}
-        onBack={() => { refreshProjectStats(view.project.id); setView({ name: "list" }); }}
+        onBack={() => setView({ name: "list" })}
         onStatsChange={(stats) => setProjectStatsDirect(view.project.id, stats)}
-        onUpdate={async (updated) => {
+        onUpdate={async (updated, { persist = true } = {}) => {
           const { id, createdAt, updatedAt, ...rest } = updated;
-          try {
+          if (persist) {
             await editProject(id, rest);
-          } catch (err) {
-            console.error("Failed to update project", err);
           }
           setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
           setView({ name: "project", project: updated });
@@ -331,9 +317,9 @@ export default function Projects() {
     >
       <div className="stats-grid">
         <StatsCard icon="📅" title="פרויקט קרוב" value={upcoming?.name || "—"} subtitle={upcoming?.date || ""} />
-        <StatsCard icon="👵" title="אזרחים ותיקים בפרויקט" value={totals.elderly} />
         <StatsCard icon="🎁" title="כמות חבילות" value={totals.packages} />
         <StatsCard icon="📦" title="נמסרו" value={totals.delivered} />
+        <StatsCard icon="🤝" title="מספר חבילות ששובץ להן מתנדב" value={totals.assigned} />
       </div>
 
       <SectionCard>
@@ -364,6 +350,8 @@ export default function Projects() {
               { key: "elderly",   label: "מספר אזרחים ותיקים" },
               { key: "packages",  label: "כמות חבילות" },
               { key: "delivered", label: "נמסרו" },
+              { key: "assigned", label: "שובצו למתנדב / קבוצה" },
+              { key: "specialNotes", label: "הערות מיוחדות" },
               { key: "status",    label: "סטטוס", render: (r) => <span className={`badge ${projectStatusBadge(r.status)}`}>{r.status}</span> },
               { key: "delete",    label: "", render: (r) => (
                 <button className="btn-link btn-danger" onClick={() => handleDeleteProject(r.id, r.name)}>מחיקת פרויקט</button>
@@ -378,7 +366,10 @@ export default function Projects() {
         <AddProjectModal
           allGroups={allGroups}
           volunteersByGroupId={volunteersByGroupId}
-          onClose={() => setShowAdd(false)}
+          onClose={() => {
+            createProjectOperationRef.current = null;
+            setShowAdd(false);
+          }}
           onSave={handleCreateProject}
         />
       )}
@@ -390,7 +381,14 @@ export default function Projects() {
             { key: "type", label: "סוג פרויקט", options: ["הכול", ...PROJECT_TYPES] },
             { key: "status", label: "סטטוס", options: ["הכול", ...PROJECT_STATUSES] },
           ]}
-          data={projects}
+          data={filtered}
+          summary={(filteredProjects) => [[
+            "חבילות ששובצו למתנדב או קבוצה",
+            filteredProjects.reduce((sum, item) => sum + (item.assigned || 0), 0),
+          ], [
+            "הערות מיוחדות",
+            filteredProjects.reduce((sum, item) => sum + (item.specialNotes || 0), 0),
+          ]]}
           columns={[
             { key: "name", label: "שם פרויקט" },
             { key: "type", label: "סוג פרויקט" },
@@ -399,6 +397,7 @@ export default function Projects() {
             { key: "elderly", label: "אזרחים ותיקים" },
             { key: "assigned", label: "שובצו" },
             { key: "delivered", label: "נמסרו" },
+            { key: "specialNotes", label: "הערות מיוחדות" },
             { key: "status", label: "סטטוס" }
           ]}
           onClose={() => setShowPrint(false)}
@@ -631,6 +630,7 @@ function ProjectDetail({
   const [showEdit, setShowEdit] = useState(false);
   const [elderlyByNeighborhood, setElderlyByNeighborhood] = useState({});
   const [elderlyLoading, setElderlyLoading] = useState(true);
+  const [expandedNotesNeighborhood, setExpandedNotesNeighborhood] = useState("");
 
   // Real neighborhoods source — same data used by Elderly + Volunteers.
   const { allNeighborhoods } = useAreasAndNeighborhoods();
@@ -673,22 +673,19 @@ function ProjectDetail({
   const neighborhoodRows = useMemo(() => {
     return projectNeighborhoods.map((name) => {
       const rows = elderlyByNeighborhood[name] || [];
-      const packages = rows.filter((r) => r.receives === "כן").length;
-      const delivered = rows.filter((r) => r.delivery === "נמסר").length;
-      const notes = rows.filter((r) => r.notes && r.notes.trim()).length;
-      return { name, elderly: rows.length, packages, delivered, notes };
+      const stats = participantStats(rows);
+      return {
+        name,
+        ...stats,
+        noteEntries: neighborhoodNoteEntries(rows),
+      };
     });
   }, [projectNeighborhoods, elderlyByNeighborhood]);
 
   // Totals across all neighborhoods for THIS project — drive both the summary
   // cards in the detail view and the row in the main Projects table.
   const projectTotals = useMemo(() => {
-    const all = Object.values(elderlyByNeighborhood).flat();
-    return {
-      elderly: all.length,
-      packages: all.filter((r) => r.receives === "כן").length,
-      delivered: all.filter((r) => r.delivery === "נמסר").length,
-    };
+    return participantStats(Object.values(elderlyByNeighborhood).flat());
   }, [elderlyByNeighborhood]);
 
   useEffect(() => {
@@ -699,6 +696,7 @@ function ProjectDetail({
 
 
   const [showPrint, setShowPrint] = useState(false);
+  const [showPrintProject, setShowPrintProject] = useState(false);
   const [showAddElderly, setShowAddElderly] = useState(false);
   const [notesEditing, setNotesEditing] = useState(null); // { neighName, elderly }
   const [partnerGroup, setPartnerGroup] = useState(null); // existing group profile modal
@@ -773,11 +771,28 @@ function ProjectDetail({
     [allGroups, projectGroupIds, projectVolunteers, elderlyCountByProjectGroup]
   );
 
+  const assignmentLabel = (participant) => {
+    if (participant.assignedGroupId) {
+      return projectGroups.find((item) => item.id === participant.assignedGroupId)?.name
+        || "קבוצה";
+    }
+    if (participant.assignedVolunteerId) {
+      return participant.assignedVolunteerName
+        || volName(allVolunteers.find((item) => item.id === participant.assignedVolunteerId) || {})
+        || "עצמאיים";
+    }
+    return "—";
+  };
+
   const addGroupsToProject = async (ids) => {
     const newIds = ids.filter((id) => !projectGroupIds.includes(id));
     if (newIds.length === 0) return;
+    const assignments = newIds.map((groupId) => ({
+      groupId,
+      volunteerIds: (volunteersByGroupId[groupId] || []).map((volunteer) => volunteer.id),
+    }));
+    await addProjectGroupAssignments(project.id, assignments);
     setProjectGroupIds((prev) => Array.from(new Set([...prev, ...newIds])));
-    // Pre-fill with the volunteers that already belong to each group.
     setProjectVolunteers((prev) => {
       const next = { ...prev };
       newIds.forEach((id) => {
@@ -785,18 +800,6 @@ function ProjectDetail({
       });
       return next;
     });
-    try {
-      await addProjectGroups(project.id, newIds);
-      await Promise.all(
-        newIds.map((id) => {
-          const vIds = (volunteersByGroupId[id] || []).map((v) => v.id);
-          if (vIds.length === 0) return Promise.resolve();
-          return setProjectGroupVolunteers(project.id, id, vIds);
-        })
-      );
-    } catch (err) {
-      console.error("Failed to add project groups", err);
-    }
   };
   const removeGroupFromProject = async (id) => {
     if (!confirm("להסיר את הקבוצה מהפרויקט? (הקבוצה לא תימחק מהמערכת)")) return;
@@ -877,19 +880,18 @@ function ProjectDetail({
         receives: "כן",
         delivery: "ממתין למסירה",
         notes: "",
-      }));
+    }));
     if (newOnes.length === 0) return;
-    // Optimistic UI update.
+    await updateProjectWithParticipantChanges({
+      projectId: project.id,
+      projectPatch: {},
+      participantsToUpsert: newOnes,
+    });
     setElderlyByNeighborhood((prev) => {
       const startN = (prev[neighName] || []).length;
       const display = newOnes.map((p, i) => ({ ...p, id: p.elderlyId, n: startN + i + 1 }));
       return { ...prev, [neighName]: [...(prev[neighName] || []), ...display] };
     });
-    try {
-      await addElderlyParticipants(project.id, newOnes);
-    } catch (err) {
-      console.error("Failed to add elderly participants", err);
-    }
   };
 
   /* ---- Add / remove neighborhoods to this project (does not change the
@@ -901,9 +903,6 @@ function ProjectDetail({
     const adding = names.filter((n) => !current.includes(n));
     if (adding.length === 0) return;
     const newList = [...current, ...adding];
-
-    // Persist on the project doc (and stop treating it as "all elderly").
-    onUpdate({ ...project, neighborhoods: newList, allElderly: false });
 
     // Collect existing elderly residents who belong to those neighborhoods.
     const participants = [];
@@ -925,7 +924,14 @@ function ProjectDetail({
         });
     });
 
-    // Optimistic UI update.
+    const updatedProject = { ...project, neighborhoods: newList, allElderly: false };
+    await updateProjectWithParticipantChanges({
+      projectId: project.id,
+      projectPatch: { neighborhoods: newList, allElderly: false },
+      participantsToUpsert: participants,
+    });
+    await onUpdate(updatedProject, { persist: false });
+
     setElderlyByNeighborhood((prev) => {
       const next = { ...prev };
       adding.forEach((nbh) => { if (!next[nbh]) next[nbh] = []; });
@@ -937,29 +943,32 @@ function ProjectDetail({
       return next;
     });
 
-    if (participants.length > 0) {
-      try { await addElderlyParticipants(project.id, participants); }
-      catch (err) { console.error("Failed to seed elderly participants", err); }
-    }
   };
 
   const removeNeighborhoodFromProject = async (name) => {
     if (!confirm(`להסיר את השכונה "${name}" מהפרויקט?\n\nהאזרחים הוותיקים בשכונה זו יוסרו מהפרויקט בלבד ולא יימחקו מהמערכת.`)) return;
     const baseList = project.allElderly ? allNeighborhoods : projectNeighborhoods;
     const newList = baseList.filter((n) => n !== name);
-    onUpdate({ ...project, neighborhoods: newList, allElderly: false });
-
     const toRemove = elderlyByNeighborhood[name] || [];
+    try {
+      await updateProjectWithParticipantChanges({
+        projectId: project.id,
+        projectPatch: { neighborhoods: newList, allElderly: false },
+        participantIdsToDelete: toRemove.map((elderly) => elderly.id),
+      });
+      await onUpdate(
+        { ...project, neighborhoods: newList, allElderly: false },
+        { persist: false },
+      );
+    } catch (err) {
+      console.error("Failed to remove neighborhood participants", err);
+      return;
+    }
     setElderlyByNeighborhood((prev) => {
       const next = { ...prev };
       delete next[name];
       return next;
     });
-    try {
-      await Promise.all(toRemove.map((e) => removeElderlyParticipant(project.id, e.id)));
-    } catch (err) {
-      console.error("Failed to remove neighborhood participants", err);
-    }
   };
 
 
@@ -973,17 +982,44 @@ function ProjectDetail({
       actions={
         <>
           <button className="btn btn-primary" onClick={() => setShowEdit(true)}>עריכה</button>
+          <button className="btn" onClick={() => setShowPrintProject(true)}>הדפסת הפרויקט</button>
         </>
       }
     >
       <button className="back-link" onClick={onBack}>→ חזרה לפרויקטים</button>
 
-      <div className="stats-grid">
+      <div className="stats-grid stats-grid-5">
         <StatsCard icon="👵" title="אזרחים ותיקים" value={projectTotals.elderly} />
         <StatsCard icon="🎁" title="כמות חבילות"   value={projectTotals.packages} />
         <StatsCard icon="📦" title="נמסרו"          value={projectTotals.delivered} />
-        <StatsCard icon="📝" title="הערות מיוחדות" value={project.notes} />
+        <StatsCard icon="🤝" title="מספר חבילות ששובץ להן מתנדב" value={projectTotals.assigned} />
+        <StatsCard icon="📝" title="הערות מיוחדות" value={projectTotals.notes} />
       </div>
+
+      {showPrintProject && (
+        <PrintModal
+          title={`דוח פרויקט — ${project.name}`}
+          data={allParticipants}
+          summary={[
+            ["פרויקט", project.name],
+            ["אזרחים ותיקים", projectTotals.elderly],
+            ["כמות חבילות", projectTotals.packages],
+            ["חבילות ששובצו למתנדב או קבוצה", projectTotals.assigned],
+            ["הערות מיוחדות", projectTotals.notes],
+          ]}
+          columns={[
+            { key: "fullName", label: "שם מלא", render: (row) => `${row.first || ""} ${row.last || ""}`.trim() },
+            { key: "neighborhood", label: "שכונה" },
+            { key: "phone", label: "טלפון" },
+            { key: "address", label: "כתובת" },
+            { key: "assignment", label: "שיבוץ בפרויקט", render: assignmentLabel },
+            { key: "receives", label: "מקבל חבילה" },
+            { key: "delivery", label: "סטטוס מסירה" },
+            { key: "notes", label: "הערות מיוחדות" },
+          ]}
+          onClose={() => setShowPrintProject(false)}
+        />
+      )}
 
       <div className="tabs">
         <button className={tab === "dist" ? "active" : ""}     onClick={() => { setTab("dist");     setNeighborhood(null); }}>ניהול חלוקה</button>
@@ -1004,31 +1040,74 @@ function ProjectDetail({
               { key: "elderly",   label: "אזרחים ותיקים" },
               { key: "packages",  label: "כמות חבילות" },
               { key: "delivered", label: "נמסרו" },
-              { key: "notes",     label: "הערות מיוחדות" },
+              { key: "notes", label: "הערות מיוחדות", render: (r) => (
+                r.notes > 0 ? (
+                  <button
+                    className="cell-link"
+                    onClick={() => setExpandedNotesNeighborhood(
+                      expandedNotesNeighborhood === r.name ? "" : r.name,
+                    )}
+                  >
+                    {r.notes} — הצגת הערות
+                  </button>
+                ) : <span className="muted">אין הערות</span>
+              )},
               { key: "remove",    label: "", render: (r) => (
                 <button className="btn-link btn-danger" onClick={() => removeNeighborhoodFromProject(r.name)}>הסר שכונה מהפרויקט</button>
               )},
             ]}
             data={neighborhoodRows}
           />
+          {expandedNotesNeighborhood && (() => {
+            const selected = neighborhoodRows.find((row) => row.name === expandedNotesNeighborhood);
+            if (!selected) return null;
+            return (
+              <div style={{
+                marginTop: 16,
+                padding: 16,
+                border: "1px solid #eadfce",
+                borderRadius: 12,
+                background: "#fcfaf8",
+              }}>
+                <div style={{ fontWeight: 700, color: "#7b312d", marginBottom: 10 }}>
+                  הערות מיוחדות — {selected.name} ({selected.notes})
+                </div>
+                {selected.noteEntries.length === 0 ? (
+                  <div className="muted">אין הערות מיוחדות בשכונה זו.</div>
+                ) : selected.noteEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(120px, 0.3fr) 1fr",
+                      gap: 12,
+                      padding: "8px 0",
+                      borderBottom: "1px solid #eee5da",
+                    }}
+                  >
+                    <strong>{entry.name}</strong>
+                    <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{entry.note}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </SectionCard>
       )}
 
       {tab === "dist" && neighborhood && (() => {
         const rows = elderlyByNeighborhood[neighborhood.name] || [];
-        const neighStats = {
-          elderly: rows.length,
-          packages: rows.filter((r) => r.receives === "כן").length,
-          delivered: rows.filter((r) => r.delivery === "נמסר").length,
-        };
+        const neighStats = participantStats(rows);
         return (
         <>
           <button className="back-link" onClick={() => setNeighborhood(null)}>→ חזרה לרשימת השכונות</button>
 
-          <div className="stats-grid">
+          <div className="stats-grid stats-grid-5">
             <StatsCard icon="👵" title="אזרחים ותיקים בשכונה" value={neighStats.elderly} />
             <StatsCard icon="🎁" title="כמות חבילות" value={neighStats.packages} />
             <StatsCard icon="📦" title="נמסרו" value={neighStats.delivered} />
+            <StatsCard icon="🤝" title="שובצו למתנדב או קבוצה" value={neighStats.assigned} />
+            <StatsCard icon="📝" title="הערות מיוחדות" value={neighStats.notes} />
           </div>
 
           <SectionCard
@@ -1129,8 +1208,29 @@ function ProjectDetail({
             <PrintModal
               title={`הדפסת רשימת אזרחים ותיקים — ${neighborhood.name}`}
               filters={[
-                { label: "מקבל חבילה", options: ["הכול", "כן", "לא"] },
-                { label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
+                { key: "receives", label: "מקבל חבילה", options: ["הכול", "כן", "לא"] },
+                { key: "delivery", label: "סטטוס מסירה", options: ["הכול", "נמסר", "ממתין למסירה", "לא נמסר"] },
+              ]}
+              data={elderlyByNeighborhood[neighborhood.name] || []}
+              summary={(filteredRows) => {
+                const stats = participantStats(filteredRows);
+                return [
+                  ["פרויקט", project.name],
+                  ["שכונה", neighborhood.name],
+                  ["אזרחים ותיקים", stats.elderly],
+                  ["חבילות ששובצו למתנדב או קבוצה", stats.assigned],
+                  ["הערות מיוחדות", stats.notes],
+                ];
+              }}
+              columns={[
+                { key: "n", label: "מס׳" },
+                { key: "fullName", label: "שם מלא", render: (r) => `${r.first || ""} ${r.last || ""}`.trim() },
+                { key: "phone", label: "טלפון" },
+                { key: "address", label: "כתובת" },
+                { key: "assignment", label: "שיבוץ בפרויקט", render: assignmentLabel },
+                { key: "receives", label: "מקבל חבילה" },
+                { key: "delivery", label: "סטטוס מסירה" },
+                { key: "notes", label: "הערות" },
               ]}
               onClose={() => setShowPrint(false)}
             />
@@ -1141,7 +1241,15 @@ function ProjectDetail({
               allElderly={allElderlyResidents}
               excludeIds={(elderlyByNeighborhood[neighborhood.name] || []).map((e) => e.id)}
               onClose={() => setShowAddElderly(false)}
-              onAdd={(ids) => { addElderlyToProject(neighborhood.name, ids); setShowAddElderly(false); }}
+              onAdd={async (ids) => {
+                try {
+                  await addElderlyToProject(neighborhood.name, ids);
+                  setShowAddElderly(false);
+                } catch (err) {
+                  console.error("Failed to add elderly participants", err);
+                  alert("הוספת האזרחים הוותיקים לפרויקט נכשלה.");
+                }
+              }}
             />
           )}
           {notesEditing && notesEditing.neighName === neighborhood.name && (
@@ -1322,15 +1430,7 @@ function ProjectDetail({
                   const toAdd = ids.filter((id) => !inProjectIds.has(id));
 
                   // 1) Update existing participants — keep their neighborhood unchanged.
-                  toUpdate.forEach((id) => {
-                    const part = allParticipants.find((p) => p.id === id);
-                    if (!part) return;
-                    updateElderly(part.neighborhood, id, { assignedGroupId: group.id });
-                  });
-
-                  // 2) Add new participants for residents who aren't in this project yet.
-                  if (toAdd.length > 0) {
-                    const newOnes = allElderlyResidents
+                  const newOnes = allElderlyResidents
                       .filter((m) => toAdd.includes(m.id))
                       .map((m) => ({
                         elderlyId: m.id,
@@ -1344,18 +1444,43 @@ function ProjectDetail({
                         notes: "",
                         assignedGroupId: group.id,
                       }));
-                    setElderlyByNeighborhood((prev) => {
-                      const next = { ...prev };
-                      newOnes.forEach((p) => {
-                        const list = next[p.neighborhood] || [];
-                        list.push({ ...p, id: p.elderlyId, n: list.length + 1 });
-                        next[p.neighborhood] = list;
-                      });
-                      return next;
+                  try {
+                    await updateProjectWithParticipantChanges({
+                      projectId: project.id,
+                      projectPatch: {},
+                      participantsToUpsert: newOnes,
+                      participantPatches: toUpdate.map((elderlyId) => ({
+                        elderlyId,
+                        assignedGroupId: group.id,
+                      })),
                     });
-                    try { await addElderlyParticipants(project.id, newOnes); }
-                    catch (err) { console.error("Failed to add elderly to group", err); }
+                  } catch (err) {
+                    console.error("Failed to add elderly to group", err);
+                    alert("הוספת האזרחים הוותיקים לקבוצה נכשלה.");
+                    return;
                   }
+                  setElderlyByNeighborhood((prev) => {
+                    const next = Object.fromEntries(
+                      Object.entries(prev).map(([neighborhood, list]) => [
+                        neighborhood,
+                        list.map((participant) => (
+                          toUpdate.includes(participant.id)
+                            ? { ...participant, assignedGroupId: group.id }
+                            : participant
+                        )),
+                      ]),
+                    );
+                    newOnes.forEach((participant) => {
+                      const list = next[participant.neighborhood] || [];
+                      list.push({
+                        ...participant,
+                        id: participant.elderlyId,
+                        n: list.length + 1,
+                      });
+                      next[participant.neighborhood] = list;
+                    });
+                    return next;
+                  });
                   setShowAddElderlyToGroup(false);
                 }}
               />
@@ -1438,7 +1563,15 @@ function ProjectDetail({
           volunteersByGroupId={volunteersByGroupId}
           excludeIds={projectGroupIds}
           onClose={() => setShowAddGroup(false)}
-          onAdd={(ids) => { addGroupsToProject(ids); setShowAddGroup(false); }}
+          onAdd={async (ids) => {
+            try {
+              await addGroupsToProject(ids);
+              setShowAddGroup(false);
+            } catch (err) {
+              console.error("Failed to add project groups", err);
+              alert("הוספת הקבוצות לפרויקט נכשלה.");
+            }
+          }}
         />
       )}
 
@@ -1448,7 +1581,15 @@ function ProjectDetail({
           excludeNames={projectNeighborhoods}
           allElderlyResidents={allElderlyResidents}
           onClose={() => setShowAddNeighborhood(false)}
-          onAdd={(names) => { addNeighborhoodsToProject(names); setShowAddNeighborhood(false); }}
+          onAdd={async (names) => {
+            try {
+              await addNeighborhoodsToProject(names);
+              setShowAddNeighborhood(false);
+            } catch (err) {
+              console.error("Failed to add project neighborhoods", err);
+              alert("הוספת השכונות לפרויקט נכשלה.");
+            }
+          }}
         />
       )}
 
@@ -1456,7 +1597,15 @@ function ProjectDetail({
         <EditProjectModal
           project={project}
           onClose={() => setShowEdit(false)}
-          onSave={(updated) => { onUpdate(updated); setShowEdit(false); }}
+          onSave={async (updated) => {
+            try {
+              await onUpdate(updated);
+              setShowEdit(false);
+            } catch (err) {
+              console.error("Failed to update project", err);
+              alert("שמירת הפרויקט נכשלה.");
+            }
+          }}
         />
       )}
     </AdminPageLayout>
@@ -1522,7 +1671,14 @@ function EditProjectModal({ project, onClose, onSave }) {
   );
 }
 
-function PrintModal({ title, filters = [], onClose, data = [], columns = [] }) {
+function PrintModal({
+  title,
+  filters = [],
+  onClose,
+  data = [],
+  columns = [],
+  summary = [],
+}) {
   const [selectedFilters, setSelectedFilters] = useState(() => {
     const initial = {};
     filters.forEach((f) => {
@@ -1539,52 +1695,30 @@ function PrintModal({ title, filters = [], onClose, data = [], columns = [] }) {
       });
     });
 
-    const html = `<!doctype html>
-<html dir="rtl" lang="he">
-<head>
-  <meta charset="utf-8">
-  <title>${title}</title>
-  <style>
-    @page { size: A4 portrait; margin: 15mm 12mm; }
-    body { font-family: "Arial", sans-serif; color: #333; margin: 0; padding: 20px; }
-    h2 { text-align: center; color: #8B0000; margin-bottom: 20px; border-bottom: 2px solid #8B0000; padding-bottom: 10px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
-    th { background: #8B0000; color: #fff; padding: 10px; text-align: right; border: 1px solid #6b0000; }
-    td { padding: 8px; border: 1px solid #ddd; text-align: right; }
-    tbody tr:nth-child(even) { background: #f9f9f9; }
-    .summary { margin-top: 20px; font-weight: bold; font-size: 14px; text-align: right; }
-  </style>
-</head>
-<body>
-  <h2>${title}</h2>
-  <table>
-    <thead>
-      <tr>
-        ${columns.map(c => `<th>${c.label}</th>`).join('')}
-      </tr>
-    </thead>
-    <tbody>
-      ${filtered.map(row => `
-        <tr>
-          ${columns.map(c => `<td>${c.render ? c.render(row) : (row[c.key] == null ? '—' : String(row[c.key]))}</td>`).join('')}
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>
-  <div class="summary">סה"כ רשומות: ${filtered.length}</div>
-  <script>
-    window.onload = function() {
-      setTimeout(function() { window.print(); }, 500);
-    }
-  </script>
-</body>
-</html>`;
-
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write(html);
-      w.document.close();
-    } else {
+    const printableRows = filtered.map((row) => Object.fromEntries(
+      columns.map((column) => [
+        column.key,
+        column.render ? column.render(row) : row[column.key],
+      ]),
+    ));
+    const summaryEntries = typeof summary === "function" ? summary(filtered) : summary;
+    const opened = openSafePrintReport({
+      title,
+      resultCount: printableRows.length,
+      sections: [
+        ...(summaryEntries.length ? [{
+          title: "סיכום",
+          kind: "metadata",
+          entries: summaryEntries,
+        }] : []),
+        {
+          title: "רשימה",
+          columns: columns.map((column) => [column.key, column.label]),
+          rows: printableRows,
+        },
+      ],
+    });
+    if (!opened) {
       alert("נא לאפשר חלונות קופצים בדפדפן");
     }
   };

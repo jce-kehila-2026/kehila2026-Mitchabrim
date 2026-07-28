@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import LoadingLine from "@/components/common/LoadingLine.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer";
@@ -8,6 +8,7 @@ import {
   createProfileUpdateRequest,
 } from "@/services/profileUpdateRequestsService";
 import { sanitizeText } from "@/utils/sanitize";
+import { createOperationId } from "@/utils/operationId";
 import {
   User, Phone, Mail, MapPin, IdCard, Home, Users, Activity, Pencil, X, Send,
 } from "lucide-react";
@@ -133,6 +134,7 @@ function RequestModal({ volunteer, user, onClose }) {
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState("");
   const [sent, setSent] = useState(false);
+  const operationId = useRef(createOperationId());
 
   const volunteerName =
     volunteer.name ||
@@ -155,6 +157,7 @@ function RequestModal({ volunteer, user, onClose }) {
         volunteerAuthUid: user.uid,
         volunteerName,
         message,
+        operationId: operationId.current,
       });
       setSent(true);
       setTimeout(onClose, 1400);

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
-import { Search, Globe } from "lucide-react";
+import { Search, Globe, Copy } from "lucide-react";
 
 // Firestore + Storage access is encapsulated in the images service.
 import {
@@ -15,10 +15,15 @@ import {
 } from "@/services/imagesService";
 import { validateFile } from "@/utils/validation";
 import { sanitizeText } from "@/utils/sanitize";
-
-const CATEGORIES = ["פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"];
+import { GALLERY_IMAGE_MAX_MB } from "@/services/imageStoragePolicy";
+import useSettingsCategories from "@/hooks/useSettingsCategories";
+import {
+  IMAGE_CATEGORIES_TITLE,
+  PROMOTIONAL_IMAGE_CATEGORY,
+} from "@/utils/categorySettings";
 
 export default function Media() {
+  const { categories } = useSettingsCategories(IMAGE_CATEGORIES_TITLE);
   const [imagesList, setImagesList] = useState([]);
   const fileInputRef = useRef(null);
   const previewGenerationRef = useRef(0);
@@ -104,7 +109,7 @@ export default function Media() {
     const file = event.target.files[0];
     if (!file) return;
 
-    const fileErr = validateFile(file, { maxMB: 10, types: ["image/"] });
+    const fileErr = validateFile(file, { maxMB: GALLERY_IMAGE_MAX_MB, types: ["image/"] });
     if (fileErr) {
       showToast(fileErr);
       event.target.value = "";
@@ -131,7 +136,7 @@ export default function Media() {
       showToast("אנא בחר קובץ תמונה");
       return;
     }
-    const fileErr = validateFile(selectedFile, { maxMB: 10, types: ["image/"] });
+    const fileErr = validateFile(selectedFile, { maxMB: GALLERY_IMAGE_MAX_MB, types: ["image/"] });
     if (fileErr) { showToast(fileErr); return; }
     const cleanTitle = sanitizeText(formData.title, 200);
     if (!cleanTitle) {
@@ -196,6 +201,10 @@ export default function Media() {
 
   const toggleIsPublic = async (e, img) => {
     e.stopPropagation();
+    if (img.category === PROMOTIONAL_IMAGE_CATEGORY && img.isPublic) {
+      showToast("תמונות אתר פרסומי חייבות להישאר ציבוריות");
+      return;
+    }
     try {
       const newStatus = !img.isPublic;
       const updated = await toggleImagePublic(img, newStatus);
@@ -207,6 +216,21 @@ export default function Media() {
     } catch (error) {
       console.error("Error updating image public status:", error);
       showToast("שגיאה בעדכון סטטוס התמונה.");
+    }
+  };
+
+  const copyPublicImageUrl = async (e, image) => {
+    e.stopPropagation();
+    if (!image?.isPublic || !image.url) {
+      showToast("אין קישור ציבורי זמין לתמונה זו");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(image.url);
+      showToast("קישור התמונה הועתק");
+    } catch (error) {
+      console.error("Unable to copy public image URL:", error);
+      showToast("לא ניתן להעתיק את הקישור בדפדפן זה");
     }
   };
 
@@ -304,8 +328,9 @@ export default function Media() {
 
     try {
       const addedDocs = [];
-      for (const category of CATEGORIES) {
+      for (const category of categories) {
         const urls = mock_urls[category];
+        if (!Array.isArray(urls)) continue;
         for (let i = 0; i < urls.length; i++) {
           const url = urls[i];
           const today = new Date();
@@ -536,7 +561,7 @@ export default function Media() {
                 }}
               >
                 <option value="">קטגוריה: הכל</option>
-                {CATEGORIES.map((category) => (
+                {categories.map((category) => (
                   <option key={category} value={category}>
                     {category}
                   </option>
@@ -673,6 +698,34 @@ export default function Media() {
                   </svg>
                 )}
               </button>
+
+              {img.isPublic && img.url && (
+                <button
+                  type="button"
+                  onClick={(e) => copyPublicImageUrl(e, img)}
+                  title="העתקת קישור התמונה"
+                  aria-label={`העתקת קישור: ${img.title || "תמונה"}`}
+                  style={{
+                    position: "absolute",
+                    top: 46,
+                    right: 8,
+                    background: "rgba(255, 255, 255, 0.94)",
+                    color: "#8b2c2c",
+                    border: "1px solid #d9c5bd",
+                    borderRadius: "50%",
+                    width: 30,
+                    height: 30,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    zIndex: 5,
+                  }}
+                >
+                  <Copy size={15} />
+                </button>
+              )}
 
               <div
                 style={{
@@ -971,11 +1024,15 @@ export default function Media() {
                     <select
                       className="modal-form-select"
                       value={formData.category}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
+                      onChange={(e) => setFormData((prev) => ({
+                        ...prev,
+                        category: e.target.value,
+                        isPublic: e.target.value === PROMOTIONAL_IMAGE_CATEGORY ? true : prev.isPublic,
+                      }))}
                       style={{ backgroundColor: "#fff" }}
                     >
                       <option value="">-- בחר נושא --</option>
-                      {CATEGORIES.map((cat) => (
+                      {categories.map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
                         </option>
@@ -1019,6 +1076,7 @@ export default function Media() {
   <input
     type="checkbox"
     checked={formData.isPublic || false}
+    disabled={formData.category === PROMOTIONAL_IMAGE_CATEGORY}
     onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
     style={{ width: "20px", height: "20px", accentColor: "#8B0000", cursor: "pointer" }}
   />
@@ -1290,7 +1348,13 @@ export default function Media() {
                         onChange={(e) =>
                           setDetailsModal((prev) => ({
                             isOpen: true,
-                            image: { ...prev.image, category: e.target.value },
+                            image: {
+                              ...prev.image,
+                              category: e.target.value,
+                              isPublic: e.target.value === PROMOTIONAL_IMAGE_CATEGORY
+                                ? true
+                                : prev.image.isPublic,
+                            },
                           }))
                         }
                         style={{
@@ -1310,7 +1374,12 @@ export default function Media() {
                         }}
                       >
                         <option value="">בחר נושא</option>
-                        {CATEGORIES.map((cat) => (
+                        {[
+                          ...categories,
+                          ...(detailsModal.image.category && !categories.includes(detailsModal.image.category)
+                            ? [detailsModal.image.category]
+                            : []),
+                        ].map((cat) => (
                           <option key={cat} value={cat}>
                             {cat}
                           </option>
@@ -1362,6 +1431,7 @@ export default function Media() {
                       type="checkbox"
                       id="modal-is-public"
                       checked={detailsModal.image.isPublic || false}
+                      disabled={detailsModal.image.category === PROMOTIONAL_IMAGE_CATEGORY}
                       onChange={(e) =>
                         setDetailsModal((prev) => ({
                           isOpen: true,

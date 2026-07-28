@@ -40,11 +40,14 @@ export default function useFirestorePagination({
   const cursorsCache = useRef([null]);
   const pagesCache = useRef(new Map()); // page number -> items[]
   const hasNextRef = useRef(false);
+  const requestVersion = useRef(0);
 
   const load = useCallback(
     async (targetPage) => {
+      const version = requestVersion.current;
       // Serve from cache when possible.
       if (pagesCache.current.has(targetPage)) {
+        if (version !== requestVersion.current) return;
         setItems(pagesCache.current.get(targetPage));
         setPage(targetPage);
         return;
@@ -65,6 +68,7 @@ export default function useFirestorePagination({
               if (pagesCache.current.has(q)) continue;
               // eslint-disable-next-line no-await-in-loop
               const res = await fetchPage({ cursor });
+              if (version !== requestVersion.current) return;
               pagesCache.current.set(q, res.items);
               cursorsCache.current[q] = res.lastVisible || null;
               hasNextRef.current = res.hasNextPage;
@@ -76,22 +80,25 @@ export default function useFirestorePagination({
         }
 
         const res = await fetchPage({ cursor });
+        if (version !== requestVersion.current) return;
         pagesCache.current.set(targetPage, res.items);
         cursorsCache.current[targetPage] = res.lastVisible || null;
         hasNextRef.current = res.hasNextPage;
         setItems(res.items);
         setPage(targetPage);
       } catch (err) {
+        if (version !== requestVersion.current) return;
         console.error("useFirestorePagination fetchPage failed:", err);
         setError(err?.message || "שגיאה בטעינת עמוד");
       } finally {
-        setLoading(false);
+        if (version === requestVersion.current) setLoading(false);
       }
     },
     [fetchPage],
   );
 
   const reset = useCallback(() => {
+    requestVersion.current += 1;
     cursorsCache.current = [null];
     pagesCache.current = new Map();
     hasNextRef.current = false;
@@ -102,10 +109,14 @@ export default function useFirestorePagination({
 
   // Reload from page 1 whenever any dep changes (filters, totalCount identity, etc.)
   useEffect(() => {
+    requestVersion.current += 1;
     cursorsCache.current = [null];
     pagesCache.current = new Map();
     hasNextRef.current = false;
     load(1);
+    return () => {
+      requestVersion.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 

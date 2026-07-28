@@ -2,23 +2,38 @@
 import { useState, useEffect, useMemo } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
-import { getElderly } from "@/services/elderlyService.js";
-import { getVolunteers, getVolunteerGroups } from "@/services/volunteersService.js";
+import { getElderly, getElderlyByIds } from "@/services/elderlyService.js";
+import {
+  getVolunteers,
+  getVolunteerGroups,
+  getVolunteersByIds,
+  getVolunteerGroupsByIds,
+} from "@/services/volunteersService.js";
 import { getParliaments } from "@/services/parliamentsService.js";
-import { getProjects, getProjectGroups, getElderlyParticipants } from "@/services/projectsService.js";
-import { getFinancialRecords, seedFinancialDummyData } from "@/services/financialService.js";
-import VolunteerCharts, { getVolunteerChartData } from "@/components/admin/VolunteerCharts.jsx";
-import { 
-  HeartHandshake, 
-  Handshake, 
-  Gift, 
-  Landmark, 
-  Coins, 
-  FileText, 
-  Printer, 
-  Search, 
-  BarChart3, 
-  Puzzle 
+import {
+  getProjects,
+  getProjectGroupsByProject,
+  getElderlyParticipantsByProject,
+} from "@/services/projectsService.js";
+import { getFinancialRecords } from "@/services/financialService.js";
+import {
+  buildProjectReports,
+  filterProjectReports,
+  projectPrintSections,
+  sortProjectReportsChronologically,
+} from "@/utils/projectReportModel.js";
+import { openSafePrintReport } from "@/utils/safePrint.js";
+import {
+  HeartHandshake,
+  Handshake,
+  Gift,
+  Landmark,
+  Coins,
+  FileText,
+  Printer,
+  Search,
+  BarChart3,
+  Puzzle,
 } from "lucide-react";
 
 const ICON_MAP = {
@@ -169,7 +184,7 @@ const REPORT_TYPES = {
           return {
             ...v,
             volunteerType: isGroup ? "קבוצה" : "עצמאי",
-            groupType: isGroup ? (groupTypeMap[v.group] || "אחר") : "עצמאי",
+            groupType: isGroup ? groupTypeMap[v.group] || "אחר" : "עצמאי",
           };
         });
       } catch (error) {
@@ -199,7 +214,12 @@ const REPORT_TYPES = {
       { key: "gender", label: "מגדר", type: "select", options: ["זכר", "נקבה"] },
       { key: "volunteerType", label: "סוג מתנדב", type: "select", options: ["עצמאי", "קבוצה"] },
       { key: "group", label: "קבוצה", type: "select" },
-      { key: "groupType", label: "סוג קבוצה", type: "select", options: ["סטודנטים", "בית ספר", "חברה", "עמותה", "עצמאי", "אחר"] },
+      {
+        key: "groupType",
+        label: "סוג קבוצה",
+        type: "select",
+        options: ["סטודנטים", "בית ספר", "חברה", "עמותה", "עצמאי", "אחר"],
+      },
       { key: "status", label: "סטטוס", type: "select", options: ["פעיל", "ממתין לשיבוץ", "לא פעיל"] },
       { key: "area", label: "אזור", type: "select" },
       { key: "neighborhood", label: "שכונה", type: "select" },
@@ -248,24 +268,37 @@ const REPORT_TYPES = {
     collection: "projects",
     loadData: async () => {
       try {
-        const [projs, volGroups] = await Promise.all([getProjects(), getVolunteerGroups()]);
-        const groupMap = {};
-        volGroups.forEach((g) => {
-          groupMap[g.id] = g.name;
+        const [projs, groupsByProject, participantsByProject] = await Promise.all([
+          getProjects(),
+          getProjectGroupsByProject(),
+          getElderlyParticipantsByProject(),
+        ]);
+        const participants = Object.values(participantsByProject).flat();
+        const groupAssignments = Object.values(groupsByProject).flat();
+        const elderlyIds = participants.map((item) => item.elderlyId || item.id);
+        const groupIds = [
+          ...groupAssignments.map((item) => item.id),
+          ...participants.map((item) => item.assignedGroupId),
+        ];
+        const [elderly, volGroups] = await Promise.all([
+          getElderlyByIds(elderlyIds),
+          getVolunteerGroupsByIds(groupIds),
+        ]);
+        const volunteerIds = [
+          ...groupAssignments.flatMap((item) => item.volunteerIds || []),
+          ...participants.map((item) => item.assignedVolunteerId),
+          ...participants.map((item) => item.volId),
+          ...elderly.map((item) => item.volId),
+        ];
+        const volunteers = await getVolunteersByIds(volunteerIds);
+        return buildProjectReports({
+          projects: projs,
+          participantsByProject,
+          groupsByProject,
+          elderly,
+          groups: volGroups,
+          volunteers,
         });
-
-        const resolved = await Promise.all(
-          projs.map(async (p) => {
-            const grps = await getProjectGroups(p.id);
-            const groupNames = grps.map((g) => groupMap[g.id]).filter(Boolean);
-            return {
-              ...p,
-              groupNames: groupNames.join(", "),
-              groupList: groupNames,
-            };
-          })
-        );
-        return resolved || [];
       } catch (error) {
         console.error("Failed to load projects from Firestore:", error);
         return [];
@@ -273,19 +306,25 @@ const REPORT_TYPES = {
     },
     fields: [
       { key: "name", label: "שם הפרויקט" },
-      { key: "holiday", label: "חג" },
+      { key: "type", label: "סוג / אירוע" },
+      { key: "holiday", label: "פרויקט" },
       { key: "year", label: "שנה" },
+      { key: "startDate", label: "תאריך התחלה" },
       { key: "date", label: "תאריך חלוקה" },
       { key: "elderly", label: "אזרחים ותיקים" },
+      { key: "packages", label: "חבילות" },
       { key: "assigned", label: "שובצו" },
       { key: "delivered", label: "נמסרו" },
+      { key: "progress", label: "התקדמות %" },
       { key: "groupNames", label: "קבוצות שותפות" },
+      { key: "volunteerNamesText", label: "מתנדבים משתתפים" },
+      { key: "neighborhoodsText", label: "שכונות" },
       { key: "issues", label: "בעיות" },
       { key: "status", label: "סטטוס" },
     ],
-    defaults: ["name", "year", "status", "elderly", "delivered", "groupNames"],
+    defaults: ["name", "type", "year", "status", "elderly", "delivered", "groupNames"],
     filters: [
-      { key: "name", label: "פרויקט", type: "select" },
+      { key: "projectId", label: "פרויקט", type: "select" },
       { key: "status", label: "סטטוס", type: "select", options: ["מתוכנן", "בהכנה", "פעיל", "הסתיים"] },
       { key: "year", label: "שנה", type: "select" },
       { key: "projectGroup", label: "קבוצה שותפה", type: "select" },
@@ -297,20 +336,14 @@ const REPORT_TYPES = {
     ],
     // ===== CHART DATA =====
     getChartData: (data) => {
-      const barData = data
+      const barData = sortProjectReportsChronologically(data)
         .map((item) => ({
           name: item.name || "ללא שם",
           delivered: Number(item.delivered) || 0,
           total: Number(item.elderly) || 0,
           year: item.year || "",
           date: item.date || "",
-        }))
-        .sort((a, b) => {
-          if (a.year !== b.year) {
-            return String(a.year).localeCompare(String(b.year));
-          }
-          return String(a.date).localeCompare(String(b.date));
-        });
+        }));
 
       return { barData };
     },
@@ -439,7 +472,6 @@ const REPORT_TYPES = {
     },
     transform: (item) => item,
   },
-
 };
 
 /* ============================================================
@@ -454,7 +486,9 @@ const exportToPDF = (report, rows, fields, filters, sort) => {
   const fsInput = prompt("נא להזין גודל גופן לטבלה ב-PDF (ברירת מחדל 14):", "14") || "14";
   const fontSize = parseInt(fsInput) && !isNaN(fsInput) ? Number(fsInput) : 14;
 
-  const isLandscape = confirm("האם ברצונך להפיק את ה-PDF לרוחב (Landscape)?\nלחץ על 'אישור' עבור לרוחב, או 'ביטול' עבור לאורך (Portrait).");
+  const isLandscape = confirm(
+    "האם ברצונך להפיק את ה-PDF לרוחב (Landscape)?\nלחץ על 'אישור' עבור לרוחב, או 'ביטול' עבור לאורך (Portrait).",
+  );
   const pageSize = isLandscape ? "A4 landscape" : "A4 portrait";
 
   const cols = fields.map((k) => report.fields.find((f) => f.key === k)).filter(Boolean);
@@ -840,7 +874,7 @@ const renderProjectCharts = (data) => {
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={barData}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
+            <XAxis dataKey="name" interval={0} angle={-20} textAnchor="end" height={70} />
             <YAxis allowDecimals={false} />
             <Tooltip />
             <Legend />
@@ -872,8 +906,6 @@ const renderParliamentCharts = (data) => {
     </div>
   );
 };
-
-
 
 const renderFinancialCharts = (data) => {
   const { barData, pieData } = REPORT_TYPES.financial.getChartData(data);
@@ -920,11 +952,137 @@ const renderFinancialCharts = (data) => {
   );
 };
 
-
-
 /* ============================================================
    Report Builder Component with Enhanced Filters + CHARTS
    ============================================================ */
+const printProject = (project, sections = projectPrintSections(project)) => {
+  const opened = openSafePrintReport({
+    title: `דוח פרויקט — ${project.name || "ללא שם"}`,
+    subtitle: [project.type || project.holiday, project.year, project.status].filter(Boolean).join(" • "),
+    resultCount: project.participants.length,
+    sections,
+  });
+  if (!opened) alert("נא לאפשר חלונות קופצים בדפדפן");
+};
+
+function ProjectReportDetails({ project, expanded, onToggle, selectedFields, fieldDefinitions }) {
+  const elderlySections = projectPrintSections(project);
+  const groupsSection = elderlySections[2];
+  return (
+    <article style={{ border: "1px solid #eadbd5", borderRadius: 12, background: "#fff", marginBottom: 12 }}>
+      <div style={{ padding: 14, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="cell-link"
+          aria-expanded={expanded}
+          onClick={onToggle}
+          style={{ fontSize: 16, fontWeight: 700 }}
+        >
+          {expanded ? "▾" : "◂"} {project.name || "פרויקט ללא שם"}
+        </button>
+        <span className="badge badge-gray">{project.status || "ללא סטטוס"}</span>
+        <span style={{ color: "#666", fontSize: 13 }}>
+          {project.elderly} אזרחים ותיקים • {project.projectGroups.length} קבוצות • {project.delivered} נמסרו • {project.notDelivered} לא נמסרו
+        </span>
+        <div style={{ marginInlineStart: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn" onClick={() => printProject(project)}>הדפסת דוח מלא</button>
+          <button
+            className="btn"
+            onClick={() => printProject(project, [elderlySections[0], elderlySections[1]])}
+          >
+            הדפסת אזרחים ותיקים
+          </button>
+          <button
+            className="btn"
+            onClick={() => printProject(project, [elderlySections[0], groupsSection])}
+          >
+            הדפסת קבוצות
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ padding: "0 14px 16px" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            {selectedFields.map((key) => {
+              const field = fieldDefinitions.find((item) => item.key === key);
+              const value = project[key];
+              return (
+              <div key={key} style={{ background: "#faf7f5", borderRadius: 8, padding: 9 }}>
+                <div style={{ color: "#777", fontSize: 11 }}>{field?.label || key}</div>
+                <div style={{ fontWeight: 600, overflowWrap: "anywhere" }}>
+                  {value == null || value === "" ? "—" : String(value)}
+                </div>
+              </div>
+              );
+            })}
+          </div>
+
+          <h4 style={{ color: "#8B0000" }}>אזרחים ותיקים משתתפים ({project.participants.length})</h4>
+          <div style={{ overflowX: "auto", maxHeight: 360 }}>
+            <table className="data-table" style={{ width: "100%" }}>
+              <thead><tr>
+                {["שם", "טלפון", "כתובת", "שכונה", "חבילה", "מסירה", "קבוצה / גורם אחראי", "מתנדב עצמאי", "מתנדב קבוע", "הערות"].map(
+                  (label) => <th key={label}>{label}</th>,
+                )}
+              </tr></thead>
+              <tbody>
+                {project.participants.map((participant) => (
+                  <tr key={participant.elderlyId}>
+                    <td>{participant.fullName || "—"}</td>
+                    <td>{participant.phone || "—"}</td>
+                    <td>{participant.address || "—"}</td>
+                    <td>{participant.neighborhood || "—"}</td>
+                    <td>{participant.receives || "—"}</td>
+                    <td>{participant.delivery || "—"}</td>
+                    <td>{participant.assignmentLabel || "—"}</td>
+                    <td>{participant.assignedVolunteerName || "—"}</td>
+                    <td>{participant.regularVolunteer || "—"}</td>
+                    <td>{participant.notes || "—"}</td>
+                  </tr>
+                ))}
+                {!project.participants.length && <tr><td colSpan={10}>אין משתתפים בפרויקט</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          <h4 style={{ color: "#8B0000", marginTop: 18 }}>
+            קבוצות ומתנדבים משתתפים ({project.projectGroups.length})
+          </h4>
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table" style={{ width: "100%" }}>
+              <thead><tr>
+                {["קבוצה", "איש קשר", "טלפון", "מתנדבים", "אזרחים משויכים", "חבילות"].map(
+                  (label) => <th key={label}>{label}</th>,
+                )}
+              </tr></thead>
+              <tbody>
+                {project.projectGroups.map((group) => (
+                  <tr key={group.id}>
+                    <td>{group.name || "—"}</td>
+                    <td>{group.contact || "—"}</td>
+                    <td>{group.phone || "—"}</td>
+                    <td>{group.volunteers.map((item) => item.fullName).filter(Boolean).join(", ") || "—"}</td>
+                    <td>{group.assignedElderly}</td>
+                    <td>{group.assignedPackages}</td>
+                  </tr>
+                ))}
+                {!project.projectGroups.length && <tr><td colSpan={6}>אין קבוצות בפרויקט</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
 const ReportBuilder = ({ reportKey, onBack }) => {
   const report = REPORT_TYPES[reportKey];
   const [loading, setLoading] = useState(true);
@@ -933,6 +1091,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
   const [filters, setFilters] = useState({});
   const [sort, setSort] = useState("");
   const [showFields, setShowFields] = useState(false);
+  const [expandedProjects, setExpandedProjects] = useState(() => new Set());
 
   useEffect(() => {
     let alive = true;
@@ -965,9 +1124,14 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         if (f.key === "projectGroup") {
           const allGroups = [];
           allData.forEach((r) => {
-            if (r.groupList) allGroups.push(...r.groupList);
+            if (r.groupOptions) allGroups.push(...r.groupOptions);
           });
-          opts[f.key] = [...new Set(allGroups)].filter(Boolean);
+          opts[f.key] = [...new Map(allGroups.map((option) => [option.value, option])).values()];
+        } else if (f.key === "projectId") {
+          opts[f.key] = allData.map((project) => ({
+            value: project.id,
+            label: project.name || "פרויקט ללא שם",
+          }));
         } else {
           opts[f.key] = [...new Set(allData.map((r) => r[f.key]).filter(Boolean))];
         }
@@ -977,7 +1141,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
   }, [allData, report]);
 
   const filteredData = useMemo(() => {
-    let result = allData.filter((row) => {
+    let result = (reportKey === "projects" ? filterProjectReports(allData, filters) : allData.filter((row) => {
       return Object.entries(filters).every(([k, v]) => {
         if (!v || v === "") return true;
         if (k.endsWith("From") || k.endsWith("To")) {
@@ -988,12 +1152,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           if (k.endsWith("From")) return rowDate >= filterDate;
           if (k.endsWith("To")) return rowDate <= filterDate;
         }
-        if (k === "projectGroup") {
-          return row.groupList && row.groupList.includes(v);
-        }
         return row[k] === v;
       });
-    });
+    }));
 
     if (sort) {
       const [key, direction] = sort.startsWith("-") ? [sort.slice(1), -1] : [sort, 1];
@@ -1008,6 +1169,24 @@ const ReportBuilder = ({ reportKey, onBack }) => {
   }, [allData, filters, sort]);
 
   const toggleField = (k) => setSelectedFields((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
+  const projectSelected = reportKey !== "projects" || Boolean(filters.projectId);
+
+  const selectedProjectPrintSections = (project) => {
+    const selectedEntries = selectedFields
+      .map((key) => {
+        const field = report.fields.find((item) => item.key === key);
+        return field ? [field.label, project[field.key]] : null;
+      })
+      .filter(Boolean);
+    return [
+      {
+        title: "פרטי הפרויקט שנבחרו",
+        kind: "metadata",
+        entries: selectedEntries,
+      },
+      ...projectPrintSections(project).slice(1),
+    ];
+  };
 
   const renderFilterInput = (filter) => {
     const value = filters[filter.key] || "";
@@ -1035,8 +1214,8 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         >
           <option value="">{`כל ${filter.label}`}</option>
           {options.map((o) => (
-            <option key={o} value={o}>
-              {o}
+            <option key={typeof o === "object" ? o.value : o} value={typeof o === "object" ? o.value : o}>
+              {typeof o === "object" ? o.label : o}
             </option>
           ))}
         </select>
@@ -1085,7 +1264,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         >
           → חזרה לדוחות
         </button>
-        <h2 style={{ margin: 0, color: "#8B0000", fontSize: "22px", display: "flex", alignItems: "center", gap: "8px" }}>
+        <h2
+          style={{ margin: 0, color: "#8B0000", fontSize: "22px", display: "flex", alignItems: "center", gap: "8px" }}
+        >
           {getReportIcon(report.icon, 24)} {report.label}
         </h2>
       </div>
@@ -1269,17 +1450,33 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           className="btn btn-primary"
           onClick={() => {
             const sortLabel = sort ? report.sortOptions?.find((o) => o.value === sort)?.label || sort : "";
-            exportToPDF(report, filteredData, selectedFields, filters, sortLabel);
+            if (reportKey === "projects") {
+              const project = filteredData[0];
+              if (!filters.projectId || !project) {
+                alert("יש לבחור פרויקט לפני הפקת הדוח");
+                return;
+              }
+              const sections = selectedProjectPrintSections(project);
+              const opened = openSafePrintReport({
+                title: `דוח פרויקט — ${project.name || "ללא שם"}`,
+                subtitle: sortLabel ? `מיון: ${sortLabel}` : "",
+                resultCount: project.participants.length,
+                sections,
+              });
+              if (!opened) alert("נא לאפשר חלונות קופצים בדפדפן");
+            } else {
+              exportToPDF(report, filteredData, selectedFields, filters, sortLabel);
+            }
           }}
-          disabled={!filteredData.length || !selectedFields.length}
+          disabled={!filteredData.length || !selectedFields.length || !projectSelected}
           style={{
             padding: "10px 20px",
             background: "#8B0000",
             color: "white",
             border: "none",
             borderRadius: "8px",
-            cursor: filteredData.length && selectedFields.length ? "pointer" : "not-allowed",
-            opacity: filteredData.length && selectedFields.length ? 1 : 0.6,
+            cursor: filteredData.length && selectedFields.length && projectSelected ? "pointer" : "not-allowed",
+            opacity: filteredData.length && selectedFields.length && projectSelected ? 1 : 0.6,
             fontSize: "14px",
           }}
         >
@@ -1333,6 +1530,34 @@ const ReportBuilder = ({ reportKey, onBack }) => {
           </div>
         )}
       </SectionCard>
+
+      {reportKey === "projects" && !loading && !filters.projectId && (
+        <SectionCard title="פירוט מלא לפי פרויקט">
+          <div style={{ padding: 20, textAlign: "center", color: "#666" }}>
+            יש לבחור פרויקט כדי להציג או להפיק דוח. לא מופק דוח משולב לכל הפרויקטים.
+          </div>
+        </SectionCard>
+      )}
+
+      {reportKey === "projects" && !loading && filters.projectId && filteredData.length > 0 && (
+        <SectionCard title="פירוט מלא לפי פרויקט">
+          {filteredData.map((project) => (
+            <ProjectReportDetails
+              key={project.id}
+              project={project}
+              selectedFields={selectedFields}
+              fieldDefinitions={report.fields}
+              expanded={expandedProjects.has(project.id)}
+              onToggle={() => setExpandedProjects((current) => {
+                const next = new Set(current);
+                if (next.has(project.id)) next.delete(project.id);
+                else next.add(project.id);
+                return next;
+              })}
+            />
+          ))}
+        </SectionCard>
+      )}
     </>
   );
 };

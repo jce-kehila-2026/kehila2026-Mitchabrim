@@ -51,6 +51,7 @@ export default function Dashboard() {
   const [weather, setWeather] = useState({ temp: "--", text: "טוען...", emoji: <Loader2 size={16} className="animate-spin" /> });
 
   useEffect(() => {
+    let cancelled = false;
     const fetchDashboardData = async () => {
       try {
         const [elderlyCount, volunteersCount, allProjects, requestsCount, joinReqList] =
@@ -61,6 +62,7 @@ export default function Dashboard() {
             getJoinRequestsCount(),
             getRecentJoinRequests(50),
           ]);
+        if (cancelled) return;
 
         setStats({
           elderly: elderlyCount,
@@ -117,6 +119,7 @@ export default function Dashboard() {
     };
 
     fetchDashboardData();
+    return () => { cancelled = true; };
   }, []);
 
   // Live subscription to profile update requests

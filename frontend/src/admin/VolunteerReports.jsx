@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
@@ -18,6 +18,7 @@ import {
 import { getVolunteers } from "@/services/volunteersService.js";
 import { getElderly, getElderlyForVolunteerIds } from "@/services/elderlyService.js";
 import { useAuth } from "@/context/AuthContext.jsx";
+import { createOperationId } from "@/utils/operationId";
 
 const fmt = (val) => {
   if (!val) return "—";
@@ -266,6 +267,7 @@ function VolunteerFileView({
   const [openTaskId, setOpenTaskId] = useState(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [editTask, setEditTask] = useState(null);
+  const taskOperationId = useRef(null);
 
   const sortedReports = useMemo(
     () => [...reports].sort((a, b) => (ts(b.reportDate) || ts(b.createdAt)) - (ts(a.reportDate) || ts(a.createdAt))),
@@ -291,8 +293,10 @@ function VolunteerFileView({
 
   const handleCreateTask = async (data) => {
     try {
-      const saved = await createTask(data, user?.uid || user?.email || null);
+      taskOperationId.current ||= createOperationId();
+      const saved = await createTask(data, user?.uid || user?.email || null, taskOperationId.current);
       onTasksChange((prev) => [saved, ...prev]);
+      taskOperationId.current = null;
       setShowTaskForm(false);
     } catch (err) {
       console.error(err); alert("שגיאה ביצירת משימה");
@@ -379,7 +383,10 @@ function VolunteerFileView({
       ) : (
         <SectionCard>
           <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
-            <button className="btn btn-primary" onClick={() => setShowTaskForm(true)}>הוספת משימה למתנדב</button>
+            <button className="btn btn-primary" onClick={() => {
+              taskOperationId.current = createOperationId();
+              setShowTaskForm(true);
+            }}>הוספת משימה למתנדב</button>
           </div>
           <DataTable
             columns={[
@@ -419,7 +426,10 @@ function VolunteerFileView({
         <TaskFormModal
           volunteer={volunteer}
           elderly={elderlyForForm}
-          onClose={() => setShowTaskForm(false)}
+          onClose={() => {
+            taskOperationId.current = null;
+            setShowTaskForm(false);
+          }}
           onSave={handleCreateTask}
         />
       )}
@@ -623,6 +633,7 @@ function BulkAssignTaskModal({ user, volunteers, elderlyByVol, onClose, onCreate
   const [selected, setSelected] = useState(() => new Set());
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const bulkOperationId = useRef(createOperationId());
 
   const [form, setForm] = useState({
     title: "",
@@ -708,7 +719,11 @@ function BulkAssignTaskModal({ user, volunteers, elderlyByVol, onClose, onCreate
           priority: form.priority,
           status: "open",
         };
-        return createTask(payload, user?.uid || user?.email || null);
+        return createTask(
+          payload,
+          user?.uid || user?.email || null,
+          `${bulkOperationId.current}_${v.id}`.slice(0, 128),
+        );
       })
     );
     setSubmitting(false);

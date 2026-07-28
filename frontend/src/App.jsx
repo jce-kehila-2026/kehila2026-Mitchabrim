@@ -1,5 +1,10 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import "./App.css";
 import "./styles/public.css";
 import "./styles/admin.css";
@@ -9,6 +14,8 @@ import "./styles/Login.css";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import RequireReauth from "./components/RequireReauth.jsx";
 import PublicAutoLogout from "./components/PublicAutoLogout.jsx";
+import ErrorBoundary from "./components/common/ErrorBoundary.jsx";
+import OfflineBanner from "./components/common/OfflineBanner.jsx";
 
 const SITE_CONTENT_DESC = "אזור זה שולט בתוכן האתר הציבורי — טקסטים בדף הבית, שותפים, כותרות גלריה, תוכן יצירת קשר ומידע הפוטר. שינויים כאן עלולים להשפיע על מה שהמבקרים רואים באתר הציבורי.";
 const SETTINGS_DESC = "אזור זה שולט בהגדרות המערכת, משתמשים, הרשאות ונתוני ניהול חשובים. שינויים כאן עלולים להשפיע על גישה ועל התנהגות המערכת.";
@@ -65,6 +72,15 @@ const RouteFallback = () => (
   </div>
 );
 
+function RouteBoundary({ children }) {
+  const location = useLocation();
+  return (
+    <ErrorBoundary key={location.pathname} scope="route">
+      {children}
+    </ErrorBoundary>
+  );
+}
+
 export default function App() {
   useEffect(() => {
     // حقن أيقونة إمكانية الوصول (UserWay) 
@@ -89,9 +105,11 @@ export default function App() {
   }, []);
   return (
     <>
+    <OfflineBanner />
     <PublicAutoLogout />
-    <Suspense fallback={<RouteFallback />}>
-      <Routes>
+    <RouteBoundary>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/our-work/:slug" element={<ActivityDetail />} />
       <Route path="/login" element={<Login />} />
@@ -126,8 +144,9 @@ export default function App() {
       <Route path="/volunteer/reports" element={<Vol><VolunteerReportsHistory /></Vol>} />
       <Route path="/volunteer/tasks" element={<Vol><VolunteerTasks /></Vol>} />
       <Route path="/volunteer/profile" element={<Vol><VolunteerProfile /></Vol>} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </RouteBoundary>
     </>
   );
 }

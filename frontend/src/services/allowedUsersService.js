@@ -7,9 +7,10 @@
 //  - The client sends the standard password-reset email only after the
 //    backend operation succeeds. No password is stored in Firestore.
 
-import { auth, db, getJoinRequestFunctions } from "../firebase";
+import { auth, db, getSecureFunctions } from "../firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
+import { devLog as telemetryDevLog } from "./telemetry";
 import {
   collection,
   doc,
@@ -21,6 +22,7 @@ import {
   query,
   where,
   serverTimestamp,
+  runTransaction,
 } from "firebase/firestore";
 
 const COLLECTION = "users";
@@ -56,7 +58,7 @@ const withCanonicalAccountStatus = (data) => {
   return { ...data };
 };
 
-const devLog = (...args) => console.info("[auth-debug]", ...args);
+const devLog = (event, context) => telemetryDevLog(event, context);
 
 const bootstrapFields = (source, email) => {
   const data = {
@@ -214,7 +216,7 @@ export const inviteUser = async ({ email, displayName, role, active = true, link
   }
 
   try {
-    const functions = await getJoinRequestFunctions();
+    const functions = await getSecureFunctions();
     if (!functions) throw new Error("Application verification is not configured.");
     const createInvitation = httpsCallable(functions, "inviteUser");
     const response = await createInvitation({
@@ -285,10 +287,40 @@ export const updateAllowedUser = async (id, patch) => {
   }
 };
 
-export const deleteAllowedUser = async (id) => {
+export const deleteAllowedUser = async (id, linkedVolunteerId = null) => {
   try {
-    await deleteDoc(doc(db, COLLECTION, id));
-    return { success: true };
+    const userRef = doc(db, COLLECTION, id);
+    const volunteerRef = linkedVolunteerId
+      ? doc(db, "volunteers", linkedVolunteerId)
+      : null;
+    const result = await runTransaction(db, async (transaction) => {
+      const [userSnap, volunteerSnap] = await Promise.all([
+        transaction.get(userRef),
+        volunteerRef ? transaction.get(volunteerRef) : Promise.resolve(null),
+      ]);
+      if (!userSnap.exists()) {
+        return { deleted: false, idempotentReplay: true };
+      }
+      const canonicalVolunteerId = userSnap.data().linkedVolunteerId || linkedVolunteerId;
+      if (canonicalVolunteerId && canonicalVolunteerId !== linkedVolunteerId) {
+        const error = new Error("Linked volunteer changed concurrently");
+        error.code = "db01/linked-volunteer-conflict";
+        throw error;
+      }
+      if (
+        volunteerRef
+        && volunteerSnap?.exists()
+        && volunteerSnap.data().authUid === id
+      ) {
+        transaction.update(volunteerRef, {
+          authUid: null,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      transaction.delete(userRef);
+      return { deleted: true, idempotentReplay: false };
+    });
+    return { success: true, ...result };
   } catch (error) {
     console.error("deleteAllowedUser error:", error);
     return { success: false, error: error.message };
