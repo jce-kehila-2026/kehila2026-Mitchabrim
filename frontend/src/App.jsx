@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import "./App.css";
 import "./styles/public.css";
@@ -66,6 +66,27 @@ const RouteFallback = () => (
 );
 
 export default function App() {
+  useEffect(() => {
+    // حقن أيقونة إمكانية الوصول (UserWay) 
+    // تأخير التحميل لثانية ونصف لتحسين أداء الموقع
+    const timer = setTimeout(() => {
+      if (!document.getElementById("userway-script")) {
+        const script = document.createElement("script");
+        script.id = "userway-script";
+        script.src = "https://cdn.userway.org/widget.js";
+        
+        // الحساب الفعال للأيقونة
+        script.setAttribute("data-account", "v82XqLOMxV");
+        // تغيير اللون للعنابي الخاص بمنظمة متحبريم
+        script.setAttribute("data-color", "#8b2c2c"); 
+        
+        script.async = true;
+        document.body.appendChild(script);
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, []);
   return (
     <>
     <PublicAutoLogout />

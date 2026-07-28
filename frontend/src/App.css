@@ -54,3 +54,12 @@
 @media (max-width: 900px) {
   .row-2, .row-3, .row-4 { grid-template-columns: 1fr; }
 }
+/* إجبار أيقونة الوصول (UserWay) للظهور في أسفل اليسار بأمان */
+div[id^="userwayWrap"] {
+  position: fixed !important;
+  top: auto !important;
+  bottom: 25px !important;
+  left: 25px !important;
+  right: auto !important;
+  z-index: 999999 !important;
+}
