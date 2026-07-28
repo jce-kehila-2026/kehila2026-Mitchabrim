@@ -697,6 +697,30 @@ function ParliamentDetail({ parl, allParliaments, participants, meetings, setMee
       );
       participantOperationId.current = null;
       setParticipants((prev) => [...prev, ...saved]);
+      // Only snapshot the new participants into meetings that haven't happened
+      // yet. Past/today meetings keep their original attendance list unchanged.
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const futureMeetings = (meetings || []).filter(
+        (m) => m?.id && m.date && m.date > todayIso,
+      );
+      await Promise.all(
+        futureMeetings.flatMap((m) =>
+          saved.map((p) =>
+            upsertMeetingAttendance(parl.id, m.id, p.id, {
+              firstName: p.firstName || "",
+              lastName: p.lastName || "",
+              elderlyId: p.elderlyId || "",
+              phone: p.phone || "",
+              homePhone: p.homePhone || "",
+              address: p.address || "",
+              called: "לא",
+              confirmed: "ממתין",
+              arrived: "—",
+              notes: "",
+            }).catch((e) => console.warn("attendance snapshot failed", e)),
+          ),
+        ),
+      );
       setShowAddParticipant(false);
     } catch (err) {
       console.warn("addParticipants failed:", err);
@@ -970,62 +994,39 @@ function MeetingDetailView({ parl, meeting, meetingNumber, participants, phoneFo
     );
   };
 
-  // Immutable snapshot logic:
-  //  - Past meetings: show ONLY participants who already have an attendance
-  //    record for this meeting (i.e. were present in the parliament at the
-  //    time of the meeting). Late joiners never appear here, and removed
-  //    participants remain visible with their historical statuses.
-  //  - Today/future meetings: reflect the CURRENT list of active participants
-  //    (Rule 3). We still include any records for participants that were later
-  //    removed but had an attendance record saved.
-  const todayIsoStr = new Date().toISOString().slice(0, 10);
-  const isPastMeeting = !!(meeting.date && meeting.date < todayIsoStr);
+  // Immutable snapshot logic: every meeting is displayed strictly from its
+  // own attendance snapshot, so participants added later never leak into
+  // meetings that already happened.
+
+
 
   const displayParticipants = useMemo(() => {
-    if (isPastMeeting) {
-      return Object.keys(attendance).map((id) => {
-        const a = attendance[id] || {};
-        const activeMatch = participants.find((p) => p.id === id);
-        return {
-          id,
-          firstName: a.firstName || activeMatch?.firstName || "",
-          lastName: a.lastName || activeMatch?.lastName || "",
-          elderlyId: a.elderlyId || activeMatch?.elderlyId || "",
-          phone: a.phone || activeMatch?.phone || "",
-          homePhone: a.homePhone || activeMatch?.homePhone || "",
-          address: a.address || activeMatch?.address || "",
-          isActive: !!activeMatch,
-        };
-      });
-    }
-
-    const active = participants.map((p) => ({ ...p, isActive: true }));
-    const historical = [];
-    Object.keys(attendance).forEach((id) => {
-      if (!active.some((p) => p.id === id)) {
-        const a = attendance[id];
-        if (a.called === "כן" || a.confirmed === "כן" || a.confirmed === "לא" || a.arrived === "כן" || a.arrived === "לא" || (a.notes && a.notes.trim())) {
-          historical.push({
-            id,
-            firstName: a.firstName || "",
-            lastName: a.lastName || "",
-            elderlyId: a.elderlyId || "",
-            phone: a.phone || "",
-            homePhone: a.homePhone || "",
-            address: a.address || "",
-            isActive: false,
-          });
-        }
-      }
+    // Every meeting displays exactly the participants captured in its own
+    // attendance snapshot: created when the meeting was added, plus any
+    // participants explicitly added to future meetings later. Participants
+    // added to the parliament after a meeting has already happened never
+    // appear in that meeting.
+    return Object.keys(attendance).map((id) => {
+      const a = attendance[id] || {};
+      const activeMatch = participants.find((p) => p.id === id);
+      return {
+        id,
+        firstName: a.firstName || activeMatch?.firstName || "",
+        lastName: a.lastName || activeMatch?.lastName || "",
+        elderlyId: a.elderlyId || activeMatch?.elderlyId || "",
+        phone: a.phone || activeMatch?.phone || "",
+        homePhone: a.homePhone || activeMatch?.homePhone || "",
+        address: a.address || activeMatch?.address || "",
+        isActive: !!activeMatch,
+      };
     });
-    return [...active, ...historical];
-  }, [participants, attendance, isPastMeeting]);
+  }, [participants, attendance]);
 
   const confirmed = displayParticipants.filter((p) => attFor(p.id).confirmed === "כן").length;
   const notComing = displayParticipants.filter((p) => attFor(p.id).confirmed === "לא").length;
   const activeConfirmed = displayParticipants.filter((p) => p.isActive && attFor(p.id).confirmed === "כן").length;
   const activeNotComing = displayParticipants.filter((p) => p.isActive && attFor(p.id).confirmed === "לא").length;
-  const waiting = participants.length - activeConfirmed - activeNotComing;
+  const waiting = displayParticipants.filter((p) => p.isActive).length - activeConfirmed - activeNotComing;
   const arrivedCount = displayParticipants.filter((p) => attFor(p.id).arrived === "כן").length;
   const expensesTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
