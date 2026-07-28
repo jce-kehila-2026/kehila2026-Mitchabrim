@@ -93,6 +93,7 @@ export default function App() {
         
         // الحساب الفعال للأيقونة
         script.setAttribute("data-account", "v82XqLOMxV");
+        script.setAttribute("data-position", "5");
         // تغيير اللون للعنابي الخاص بمنظمة متحبريم
         script.setAttribute("data-color", "#8b2c2c"); 
         
