@@ -877,7 +877,9 @@
 .hero-dropdown {
   position: absolute;
   top: calc(100% + 8px);
-  left: 0;
+  right: 0;
+  left: auto;
+  max-width: calc(100vw - 24px);
   background: #fff;
   border: 1px solid #e2d8c9;
   border-radius: 14px;

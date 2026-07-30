@@ -116,14 +116,31 @@
   border-radius: 16px;
   padding: 22px;
   border: 1px solid var(--color-border);
+  width: 100%;
+  min-height: 108px;
+  box-sizing: border-box;
   display: flex; align-items: center; gap: 16px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
   transition: all .2s;
   flex-direction: row-reverse; /* icon at the left (RTL end) */
+  -webkit-tap-highlight-color: rgba(111, 29, 58, 0.14);
 }
 .vol-nav-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px -8px rgba(110, 30, 40, .18);
   border-color: var(--color-orange);
+}
+.vol-nav-card:focus-visible {
+  outline: 3px solid rgba(111, 29, 58, 0.35);
+  outline-offset: 3px;
+  border-color: var(--color-burgundy);
+  box-shadow: 0 8px 20px -8px rgba(110, 30, 40, .18);
+}
+.vol-nav-card:active { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .vol-nav-card { transition: none; }
 }
 .vol-nav-card .icon {
   width: 60px; height: 60px; border-radius: 14px;

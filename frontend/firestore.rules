@@ -313,6 +313,33 @@ service cloud.firestore {
       }
     }
 
+    // Collection-group reads used by the Projects and Parliaments list pages.
+    // Direct nested-path rules above/fallback do not authorize collectionGroup
+    // queries; keep these read-only and restricted to an active Admin.
+    match /{path=**}/elderlyParticipants/{participantId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/projectGroups/{groupId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/participants/{participantId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/meetings/{meetingId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/attendance/{attendanceId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/expenses/{expenseId} {
+      allow read: if isAdmin();
+    }
+
     // =========================
     // Volunteers
     // =========================

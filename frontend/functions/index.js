@@ -12,9 +12,23 @@ import { locationSettingsCore } from "./src/locationSettingsCore.js";
 import { profileUpdateCleanupCore } from "./src/profileUpdateCleanupCore.js";
 import { mutateImageCore } from "./src/imageMutationCore.js";
 import { saveSiteContentSectionCore } from "./src/siteContentImageCore.js";
+import { backupStatusCore } from "./src/backupStatusCore.js";
+import { GoogleAuth } from "google-auth-library";
 
 initializeApp();
 const hashPepper = defineSecret("JOIN_REQUEST_HASH_PEPPER");
+const googleAuth = new GoogleAuth({
+  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+});
+
+async function firestoreAdminGet(path) {
+  const client = await googleAuth.getClient();
+  const response = await client.request({
+    method: "GET",
+    url: `https://firestore.googleapis.com${path}`,
+  });
+  return response.data;
+}
 
 export const submitJoinRequest = onCall({
   secrets: [hashPepper],
@@ -49,6 +63,16 @@ export const updateLocationSettings = onCall({
   db: getFirestore(),
   callerUid: request.auth?.uid,
   data: request.data,
+}));
+
+export const getBackupStatus = onCall({
+  region: "us-central1",
+  enforceAppCheck: true,
+}, async (request) => backupStatusCore({
+  db: getFirestore(),
+  callerUid: request.auth?.uid,
+  projectId: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT,
+  requestJson: firestoreAdminGet,
 }));
 
 export const cleanupDeletedProfileUpdateRequest = onDocumentDeleted({

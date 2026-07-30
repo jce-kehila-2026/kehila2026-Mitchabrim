@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -13,6 +13,18 @@ const LINKS = [
   { to: "/volunteer/tasks", label: "המשימות שלי" },
   { to: "/volunteer/profile", label: "הפרטים שלי" },
 ];
+const VIEWPORT_GUTTER = 12;
+
+function notificationPosition(trigger) {
+  const rect = trigger.getBoundingClientRect();
+  const width = Math.min(320, Math.max(0, window.innerWidth - (VIEWPORT_GUTTER * 2)));
+  const idealRight = window.innerWidth - rect.right;
+  const maximumRight = Math.max(VIEWPORT_GUTTER, window.innerWidth - width - VIEWPORT_GUTTER);
+  return {
+    top: rect.bottom + 8,
+    right: Math.min(Math.max(idealRight, VIEWPORT_GUTTER), maximumRight),
+  };
+}
 
 export default function VolunteerHeader() {
   const { user, logout } = useAuth();
@@ -23,7 +35,10 @@ export default function VolunteerHeader() {
   const [notifications, setNotifications] = useState([]);
   const [unread, setUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifPos, setNotifPos] = useState({ top: 0, right: VIEWPORT_GUTTER });
   const notifRef = useRef(null);
+  const notifBtnRef = useRef(null);
+  const notifDropdownRef = useRef(null);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -40,11 +55,28 @@ export default function VolunteerHeader() {
 
   useEffect(() => {
     const onDoc = (e) => {
-      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+      if (
+        notifRef.current && !notifRef.current.contains(e.target)
+        && !(notifDropdownRef.current && notifDropdownRef.current.contains(e.target))
+      ) setNotifOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!notifOpen) return;
+    const update = () => {
+      if (notifBtnRef.current) setNotifPos(notificationPosition(notifBtnRef.current));
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [notifOpen]);
 
   const markRead = async (n) => {
     if (n.read) return;
@@ -77,6 +109,7 @@ export default function VolunteerHeader() {
         <div className="vol-user" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div ref={notifRef} style={{ position: "relative" }}>
             <button
+              ref={notifBtnRef}
               onClick={() => setNotifOpen((v) => !v)}
               aria-label="התראות"
               style={{
@@ -106,9 +139,9 @@ export default function VolunteerHeader() {
               )}
             </button>
             {notifOpen && (
-              <div style={{
-                position: "absolute", top: "calc(100% + 8px)", insetInlineStart: 0,
-                width: 320, maxHeight: 420, overflowY: "auto",
+              <div ref={notifDropdownRef} style={{
+                position: "fixed", top: notifPos.top, right: notifPos.right, left: "auto",
+                width: "min(320px, calc(100vw - 24px))", maxHeight: 420, overflowY: "auto",
                 background: "#fff", border: "1px solid #e2d8c9", borderRadius: 14,
                 boxShadow: "0 10px 30px rgba(0,0,0,0.12)", zIndex: 1000,
               }}>

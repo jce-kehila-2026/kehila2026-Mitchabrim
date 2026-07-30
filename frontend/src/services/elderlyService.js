@@ -10,6 +10,7 @@ import {
   startAfter,
   getCountFromServer,
   documentId,
+  onSnapshot,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
@@ -228,4 +229,38 @@ export async function getElderlyForVolunteerIds(volunteerIds = []) {
     (chunk) => getDocs(query(elderlyCollection, where("volId", "in", chunk))),
   );
   return results.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+}
+
+/**
+ * Keeps the volunteers table synchronized with the authoritative elderly.volId
+ * relationships for the currently visible volunteer page.
+ */
+export function subscribeElderlyForVolunteerIds(volunteerIds = [], onData, onError) {
+  const ids = Array.from(new Set(volunteerIds.map(String).filter(Boolean)));
+  if (ids.length === 0) {
+    onData?.([]);
+    return () => {};
+  }
+
+  const chunks = [];
+  for (let index = 0; index < ids.length; index += 30) chunks.push(ids.slice(index, index + 30));
+  const rowsByChunk = new Map();
+  const initializedChunks = new Set();
+
+  const unsubscribers = chunks.map((chunk, index) => onSnapshot(
+    query(elderlyCollection, where("volId", "in", chunk)),
+    (snapshot) => {
+      rowsByChunk.set(index, snapshot.docs.map((item) => ({
+        ...item.data(),
+        id: item.id,
+      })));
+      initializedChunks.add(index);
+      if (initializedChunks.size === chunks.length) {
+        onData?.(chunks.flatMap((_, chunkIndex) => rowsByChunk.get(chunkIndex) || []));
+      }
+    },
+    onError,
+  ));
+
+  return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 }
