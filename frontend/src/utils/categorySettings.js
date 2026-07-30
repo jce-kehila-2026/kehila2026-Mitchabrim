@@ -70,9 +70,20 @@ export function isProtectedCategory(groupTitle, item) {
 }
 
 export function isPublicGalleryImage(image) {
-  return image?.isPublic === true && image?.category !== PROMOTIONAL_IMAGE_CATEGORY;
+  if (image?.isPublic !== true) return false;
+  if (typeof image?.showInGallery === "boolean") return image.showInGallery;
+  // Compatibility for documents created before showInGallery existed.
+  return image?.category !== PROMOTIONAL_IMAGE_CATEGORY;
 }
 
-export function shouldImageBePublic(category, requestedPublic) {
-  return requestedPublic === true || category === PROMOTIONAL_IMAGE_CATEGORY;
+export function hasExplicitGalleryVisibility(image) {
+  return typeof image?.showInGallery === "boolean";
+}
+
+export function normalizeImageVisibility(image) {
+  return {
+    ...image,
+    showInGallery: isPublicGalleryImage(image),
+    galleryVisibilityLegacy: !hasExplicitGalleryVisibility(image),
+  };
 }

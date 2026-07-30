@@ -63,16 +63,24 @@ service firebase.storage {
     // flat images/ path require an active admin. The legacy path remains
     // writable/readable by admins only during the controlled migration.
 
-    match /images/public/{allPaths=**} {
+    match /images/public/{imageId}/{fileName} {
       allow read: if true;
-      allow write: if isAdmin() && validImageUpload5MB();
+      allow create: if isAdmin() && validImageUpload5MB();
+      allow update: if false;
+      // Client-side cleanup is allowed only when metadata creation failed.
+      // Existing managed images are deleted/moved by the protected Function.
+      allow delete: if isAdmin()
+        && !firestore.exists(/databases/(default)/documents/images/$(imageId));
     }
 
-    match /images/private/{allPaths=**} {
+    match /images/private/{imageId}/{fileName} {
       // Reads have no upload payload. Keep upload validation exclusively on
       // writes so authenticated Admin reads do not depend on request.resource.
       allow read: if isAdmin();
-      allow write: if isAdmin() && validImageUpload5MB();
+      allow create: if isAdmin() && validImageUpload5MB();
+      allow update: if false;
+      allow delete: if isAdmin()
+        && !firestore.exists(/databases/(default)/documents/images/$(imageId));
     }
 
     match /images/{legacyFile} {

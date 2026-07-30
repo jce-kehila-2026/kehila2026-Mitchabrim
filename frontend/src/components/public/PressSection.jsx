@@ -1,5 +1,6 @@
 import { Play, Heart } from "lucide-react";
 import useSiteContent from "@/hooks/useSiteContent";
+import { resolveSiteImageUrl } from "@/utils/siteImageReferences";
 
 function FacebookIcon({ size = 20, className }) {
   return (
@@ -33,7 +34,7 @@ export default function PressSection() {
       <div className="press-grid">
         <article className="press-card press-card-small">
           <div className="press-thumb">
-            {fb.image && <img src={fb.image} alt={fb.title} loading="lazy" />}
+            {resolveSiteImageUrl(fb.image) && <img src={resolveSiteImageUrl(fb.image)} alt={fb.title} loading="lazy" />}
             <a href={fb.url} target="_blank" rel="noopener noreferrer" className="press-play" aria-label="צפייה בסרטון">
               <Play size={28} fill="#fff" />
             </a>
@@ -68,7 +69,7 @@ export default function PressSection() {
             </a>
           </div>
           <div className="press-feature-image">
-            {yn.image && <img src={yn.image} alt={yn.titleLine1} loading="lazy" />}
+            {resolveSiteImageUrl(yn.image) && <img src={resolveSiteImageUrl(yn.image)} alt={yn.titleLine1} loading="lazy" />}
           </div>
         </article>
       </div>

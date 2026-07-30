@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getDownloadURL, getStorage } from "firebase-admin/storage";
 import { defineSecret } from "firebase-functions/params";
 import { onCall } from "firebase-functions/v2/https";
 import { onDocumentDeleted } from "firebase-functions/v2/firestore";
@@ -9,6 +10,8 @@ import { elderlyMutationCore } from "./src/elderlyMutationCore.js";
 import { getAuth } from "firebase-admin/auth";
 import { locationSettingsCore } from "./src/locationSettingsCore.js";
 import { profileUpdateCleanupCore } from "./src/profileUpdateCleanupCore.js";
+import { mutateImageCore } from "./src/imageMutationCore.js";
+import { saveSiteContentSectionCore } from "./src/siteContentImageCore.js";
 
 initializeApp();
 const hashPepper = defineSecret("JOIN_REQUEST_HASH_PEPPER");
@@ -55,4 +58,26 @@ export const cleanupDeletedProfileUpdateRequest = onDocumentDeleted({
   db: getFirestore(),
   requestId: event.params.requestId,
   data: event.data?.data() || {},
+}));
+
+export const saveSiteContentSection = onCall({
+  region: "us-central1",
+  enforceAppCheck: true,
+}, async (request) => saveSiteContentSectionCore({
+  db: getFirestore(),
+  callerUid: request.auth?.uid,
+  data: request.data,
+}));
+
+export const mutateImage = onCall({
+  region: "us-central1",
+  enforceAppCheck: true,
+  timeoutSeconds: 120,
+  memory: "512MiB",
+}, async (request) => mutateImageCore({
+  db: getFirestore(),
+  bucket: getStorage().bucket(),
+  getDownloadUrl: getDownloadURL,
+  callerUid: request.auth?.uid,
+  data: request.data,
 }));

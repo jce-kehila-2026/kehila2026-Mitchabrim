@@ -2,7 +2,7 @@
 // SEC-03: managed files are separated into public/private paths. Private
 // metadata never persists a Firebase download-token URL.
 
-import { db, storage } from "../firebase";
+import { db, storage, getSecureFunctions } from "../firebase";
 import {
   collection,
   getDocs,
@@ -10,43 +10,34 @@ import {
   query,
   where,
   limit,
+  orderBy,
+  documentId,
+  startAfter,
   setDoc,
   updateDoc,
-  deleteDoc,
-  deleteField,
   doc,
   serverTimestamp,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import {
   ref,
   uploadBytes,
   getDownloadURL,
   getBlob,
-  getMetadata,
   deleteObject,
 } from "firebase/storage";
 import {
   imageStoragePath,
-  isPathPrivate,
-  isPathPublic,
   resolveManagedImagePath,
   validateGalleryImage,
 } from "./imageStoragePolicy";
 import { retrySafeRead } from "../utils/errorPolicy";
 import {
   isPublicGalleryImage,
-  PROMOTIONAL_IMAGE_CATEGORY,
-  shouldImageBePublic,
+  normalizeImageVisibility,
 } from "../utils/categorySettings";
 
 const IMAGES_COLLECTION = "images";
-
-const objectMetadata = (metadata = {}) => ({
-  contentType: metadata.contentType || undefined,
-  cacheControl: metadata.cacheControl || undefined,
-  contentDisposition: metadata.contentDisposition || undefined,
-  customMetadata: metadata.customMetadata || undefined,
-});
 
 const runtimePreviewUrl = (blob) => (
   typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
@@ -54,9 +45,16 @@ const runtimePreviewUrl = (blob) => (
     : ""
 );
 
-function fileNameFromPath(path) {
-  return String(path || "image").split("/").at(-1) || "image";
-}
+const normalizeManagedImage = (image) => normalizeImageVisibility({
+  ...image,
+  status: image?.status || "active",
+  siteAsset: image?.siteAsset === true,
+  siteAssetLegacy: typeof image?.siteAsset !== "boolean",
+  usageRefs: Array.isArray(image?.usageRefs) ? image.usageRefs : [],
+  usageCount: Number.isInteger(image?.usageCount)
+    ? image.usageCount
+    : (Array.isArray(image?.usageRefs) ? image.usageRefs.length : 0),
+});
 
 export async function loadAdminImagePreview(image) {
   if (image.isPublic) return image;
@@ -75,7 +73,10 @@ export async function getPublicImages({ max = 500 } = {}) {
   const q = query(collection(db, IMAGES_COLLECTION), where("isPublic", "==", true), limit(max));
   const snap = await retrySafeRead(() => getDocs(q));
   const items = [];
-  snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
+  snap.forEach((d) => {
+    const image = normalizeManagedImage({ id: d.id, ...d.data() });
+    if (image.status === "active") items.push(image);
+  });
   items.sort((a, b) => {
     const timeA = a.uploadedAt?.seconds || a.uploadedAt?.toMillis?.() || 0;
     const timeB = b.uploadedAt?.seconds || b.uploadedAt?.toMillis?.() || 0;
@@ -85,9 +86,9 @@ export async function getPublicImages({ max = 500 } = {}) {
 }
 
 export async function getPublicGalleryImages({ max = 200 } = {}) {
-  // Firestore cannot express "public AND category != X" without changing the
-  // query/index contract. Keep the read bounded, then exclude the reserved
-  // promotional category from gallery presentation.
+  // Keep one bounded public query during the migration window. The visibility
+  // normalizer honors explicit showInGallery and preserves the previous
+  // category-based behavior only for documents that have not been backfilled.
   const fetchMax = max <= 10 ? Math.min(50, max * 5) : max;
   const items = await getPublicImages({ max: fetchMax });
   return items.filter(isPublicGalleryImage).slice(0, max);
@@ -95,10 +96,39 @@ export async function getPublicGalleryImages({ max = 200 } = {}) {
 
 export async function getAllImages() {
   const snap = await retrySafeRead(() => getDocs(collection(db, IMAGES_COLLECTION)));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs
+    .map((d) => normalizeManagedImage({ id: d.id, ...d.data() }))
+    .filter((image) => image.status === "active");
 }
 
-export async function uploadImage({ file, title, category, notes, isPublic }) {
+export async function getImagesPage({ pageSize = 24, cursor = null, tab = "all" } = {}) {
+  const constraints = [];
+  if (tab === "gallery") constraints.push(where("showInGallery", "==", true));
+  if (tab === "site") constraints.push(where("siteAsset", "==", true));
+  constraints.push(orderBy(documentId()));
+  if (cursor) constraints.push(startAfter(cursor));
+  constraints.push(limit(pageSize));
+  const snap = await retrySafeRead(() => getDocs(query(
+    collection(db, IMAGES_COLLECTION),
+    ...constraints,
+  )));
+  return {
+    images: snap.docs
+      .map((d) => normalizeManagedImage({ id: d.id, ...d.data() }))
+      .filter((image) => image.status === "active"),
+    cursor: snap.docs.at(-1) || null,
+    hasMore: snap.size === pageSize,
+  };
+}
+
+export async function uploadImage({
+  file,
+  title,
+  category,
+  notes,
+  isPublic,
+  showInGallery,
+}) {
   const validation = validateGalleryImage(file);
   if (!validation.valid) {
     const error = new Error(validation.reason === "size"
@@ -108,7 +138,8 @@ export async function uploadImage({ file, title, category, notes, isPublic }) {
     throw error;
   }
   const imageRef = doc(collection(db, IMAGES_COLLECTION));
-  const publicFlag = shouldImageBePublic(category, isPublic);
+  const publicFlag = isPublic === true;
+  const galleryFlag = publicFlag && showInGallery === true;
   const storagePath = imageStoragePath({ imageId: imageRef.id, fileName: file.name, isPublic: publicFlag });
   const storageRef = ref(storage, storagePath);
   await uploadBytes(storageRef, file);
@@ -124,105 +155,106 @@ export async function uploadImage({ file, title, category, notes, isPublic }) {
       uploadedAt: serverTimestamp(),
       displayDate: new Date().toLocaleDateString("he-IL"),
       isPublic: publicFlag,
+      showInGallery: galleryFlag,
+      siteAsset: false,
+      usageRefs: [],
+      usageCount: 0,
+      status: "active",
     };
     await setDoc(imageRef, newImageDoc);
-    return { id: imageRef.id, ...newImageDoc };
+    return normalizeManagedImage({ id: imageRef.id, ...newImageDoc });
   } catch (error) {
     await deleteObject(storageRef).catch(() => {});
     throw error;
   }
 }
 
-async function moveManagedImage(image, nextIsPublic) {
-  const sourcePath = resolveManagedImagePath(image);
-  if (!sourcePath) {
-    throw new Error("External image visibility cannot be made private by Firebase Storage");
-  }
-
-  const alreadyCorrect = nextIsPublic ? isPathPublic(sourcePath) : isPathPrivate(sourcePath);
-  if (alreadyCorrect) {
-    const url = nextIsPublic ? (image.url || await getDownloadURL(ref(storage, sourcePath))) : "";
-    await updateDoc(doc(db, IMAGES_COLLECTION, image.id), {
-      isPublic: nextIsPublic,
-      storagePath: sourcePath,
-      url,
-    });
-    return { ...image, isPublic: nextIsPublic, storagePath: sourcePath, url };
-  }
-
-  const sourceRef = ref(storage, sourcePath);
-  const [blob, metadata] = await Promise.all([getBlob(sourceRef), getMetadata(sourceRef)]);
-  const targetPath = imageStoragePath({
-    imageId: image.id,
-    fileName: fileNameFromPath(sourcePath),
-    isPublic: nextIsPublic,
-  });
-  const targetRef = ref(storage, targetPath);
-  await uploadBytes(targetRef, blob, objectMetadata(metadata));
-
-  const nextUrl = nextIsPublic ? await getDownloadURL(targetRef) : "";
-  const originalHadStoragePath = typeof image.storagePath === "string" && image.storagePath.length > 0;
-  const rollbackPatch = {
-    isPublic: image.isPublic === true,
-    url: image.url || "",
-    storagePath: originalHadStoragePath ? image.storagePath : deleteField(),
-  };
-
-  try {
-    await updateDoc(doc(db, IMAGES_COLLECTION, image.id), {
-      isPublic: nextIsPublic,
-      storagePath: targetPath,
-      url: nextUrl,
-    });
-    await deleteObject(sourceRef);
-  } catch (error) {
-    await updateDoc(doc(db, IMAGES_COLLECTION, image.id), rollbackPatch).catch(() => {});
-    await deleteObject(targetRef).catch(() => {});
-    throw error;
-  }
-
-  return {
-    ...image,
-    isPublic: nextIsPublic,
-    storagePath: targetPath,
-    url: nextUrl,
-  };
-}
-
-export async function updateImage(imageId, { title, category, notes, isPublic }) {
+export async function updateImage(imageId, { title, category, notes }) {
   const imageSnap = await getDoc(doc(db, IMAGES_COLLECTION, imageId));
   if (!imageSnap.exists()) throw new Error("Image metadata not found");
-  let image = { id: imageSnap.id, ...imageSnap.data() };
-  const nextIsPublic = shouldImageBePublic(category, isPublic);
-  if (image.isPublic !== nextIsPublic) {
-    image = await moveManagedImage(image, nextIsPublic);
-  }
+  const image = { id: imageSnap.id, ...imageSnap.data() };
   await updateDoc(doc(db, IMAGES_COLLECTION, imageId), { title, category, notes: notes || "" });
-  return { ...image, title, category, notes: notes || "" };
+  return normalizeManagedImage({ ...image, title, category, notes: notes || "" });
+}
+
+async function callImageMutation(imageOrId, operation) {
+  const imageId = typeof imageOrId === "string" ? imageOrId : imageOrId?.id;
+  if (!imageId) {
+    const error = new Error("Image id is required");
+    error.code = "images/id-required";
+    throw error;
+  }
+  const functions = await getSecureFunctions();
+  const callable = httpsCallable(functions, "mutateImage");
+  const response = await callable({ imageId, operation });
+  if (!response?.data?.image) {
+    const error = new Error("The image operation returned an invalid response");
+    error.code = "images/invalid-callable-response";
+    throw error;
+  }
+  return normalizeManagedImage(response.data.image);
 }
 
 export async function toggleImagePublic(imageOrId, isPublic) {
+  return callImageMutation(
+    imageOrId,
+    isPublic === true ? "make-public" : "make-private",
+  );
+}
+
+export async function publishImageToGallery(imageOrId) {
+  return callImageMutation(imageOrId, "publish-and-add-gallery");
+}
+
+export async function setImageSiteAsset(imageOrId, siteAsset) {
+  return callImageMutation(
+    imageOrId,
+    siteAsset === true ? "add-site-asset" : "remove-site-asset",
+  );
+}
+
+export async function setImageGalleryVisibility(imageOrId, showInGallery) {
   const imageId = typeof imageOrId === "string" ? imageOrId : imageOrId?.id;
   const snap = await getDoc(doc(db, IMAGES_COLLECTION, imageId));
   if (!snap.exists()) throw new Error("Image metadata not found");
   const image = { id: snap.id, ...snap.data() };
-  if (image.category === PROMOTIONAL_IMAGE_CATEGORY && isPublic !== true) {
-    return image;
+  if (showInGallery === true && image.isPublic !== true) {
+    const error = new Error("A private image cannot be shown in the public gallery");
+    error.code = "images/private-gallery-conflict";
+    throw error;
   }
-  return moveManagedImage(image, isPublic === true);
+  await updateDoc(doc(db, IMAGES_COLLECTION, imageId), {
+    showInGallery: showInGallery === true,
+  });
+  return normalizeManagedImage({ ...image, showInGallery: showInGallery === true });
 }
 
 export async function deleteImage(image) {
-  const storagePath = resolveManagedImagePath(image);
-  if (storagePath) {
-    await deleteObject(ref(storage, storagePath)).catch((error) => {
-      if (error?.code !== "storage/object-not-found") throw error;
-    });
+  const imageId = typeof image === "string" ? image : image?.id;
+  if (!imageId) {
+    const error = new Error("Image id is required");
+    error.code = "images/id-required";
+    throw error;
   }
-  await deleteDoc(doc(db, IMAGES_COLLECTION, image.id));
+  const functions = await getSecureFunctions();
+  const callable = httpsCallable(functions, "mutateImage");
+  const response = await callable({ imageId, operation: "delete" });
+  if (response?.data?.deleted !== true) {
+    const error = new Error("The image deletion returned an invalid response");
+    error.code = "images/invalid-callable-response";
+    throw error;
+  }
 }
 
-export async function createImageDoc({ title, category, notes, url, displayDate, isPublic }) {
+export async function createImageDoc({
+  title,
+  category,
+  notes,
+  url,
+  displayDate,
+  isPublic,
+  showInGallery = false,
+}) {
   if (isPublic !== true) {
     throw new Error("External image URLs cannot be protected as private Firebase images");
   }
@@ -234,8 +266,13 @@ export async function createImageDoc({ title, category, notes, url, displayDate,
     uploadedAt: serverTimestamp(),
     displayDate,
     isPublic: true,
+    showInGallery: showInGallery === true,
+    siteAsset: false,
+    usageRefs: [],
+    usageCount: 0,
+    status: "active",
   };
   const imageRef = doc(collection(db, IMAGES_COLLECTION));
   await setDoc(imageRef, newDoc);
-  return { id: imageRef.id, ...newDoc };
+  return normalizeManagedImage({ id: imageRef.id, ...newDoc });
 }

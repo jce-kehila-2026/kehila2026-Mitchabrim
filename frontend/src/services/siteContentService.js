@@ -1,5 +1,6 @@
-import { db } from "../firebase";
+import { db, getSecureFunctions } from "../firebase";
 import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 
 const SITE_DOC = doc(db, "siteContent", "home");
 
@@ -143,15 +144,19 @@ export async function getSiteContent() {
 }
 
 export async function saveSection(sectionKey, data) {
-  await setDoc(
-    SITE_DOC,
-    { [sectionKey]: data, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
+  const functions = await getSecureFunctions();
+  const callable = httpsCallable(functions, "saveSiteContentSection");
+  const response = await callable({ sectionKey, sectionData: data });
+  return response.data;
 }
 
 export async function saveAll(content) {
-  await setDoc(SITE_DOC, { ...content, updatedAt: serverTimestamp() }, { merge: true });
+  const saved = {};
+  for (const [sectionKey, sectionData] of Object.entries(content || {})) {
+    if (sectionKey === "updatedAt") continue;
+    saved[sectionKey] = await saveSection(sectionKey, sectionData);
+  }
+  return saved;
 }
 
 export async function ensureSeeded() {

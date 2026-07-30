@@ -63,6 +63,24 @@ async function seedMigrationAdmin(host, projectId, uid) {
   if (!response.ok) throw new Error(`Failed to seed emulator migration admin: ${response.status}`);
 }
 
+async function patchImageMetadata(host, projectId, imageId, patch) {
+  const url = new URL(
+    `http://${host}/v1/projects/${projectId}/databases/(default)/documents/images/${imageId}`,
+  );
+  Object.keys(patch).forEach((field) => url.searchParams.append("updateMask.fieldPaths", field));
+  const fields = {};
+  for (const [field, value] of Object.entries(patch)) {
+    if (typeof value === "string") fields[field] = { stringValue: value };
+    else if (typeof value === "boolean") fields[field] = { booleanValue: value };
+  }
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!response.ok) throw new Error(`Failed to patch image metadata: HTTP ${response.status}`);
+}
+
 const uploadMetadata = (metadata = {}) => ({
   contentType: metadata.contentType || undefined,
   cacheControl: metadata.cacheControl || undefined,
@@ -70,7 +88,7 @@ const uploadMetadata = (metadata = {}) => ({
   customMetadata: metadata.customMetadata || undefined,
 });
 
-async function moveImage({ db, storage, image }) {
+async function moveImage({ firestoreHost, projectId, storage, image }) {
   const sourcePath = resolveManagedImagePath(image);
   const sourceRef = ref(storage, sourcePath);
   const [bytes, metadata] = await Promise.all([getBytes(sourceRef), getMetadata(sourceRef)]);
@@ -84,10 +102,10 @@ async function moveImage({ db, storage, image }) {
   const url = image.isPublic === true ? await getDownloadURL(targetRef) : "";
 
   try {
-    await updateDoc(doc(db, "images", image.id), { storagePath: targetPath, url });
+    await patchImageMetadata(firestoreHost, projectId, image.id, { storagePath: targetPath, url });
     await deleteObject(sourceRef);
   } catch (error) {
-    await updateDoc(doc(db, "images", image.id), {
+    await patchImageMetadata(firestoreHost, projectId, image.id, {
       storagePath: image.storagePath || deleteField(),
       url: image.url || "",
     }).catch(() => {});
@@ -135,8 +153,12 @@ export async function runImageMigration({ apply = false } = {}) {
       summary[key] += 1;
       console.log(JSON.stringify({ id: image.id, ...plan }));
       if (!apply) continue;
-      if (plan.action === "move") await moveImage({ db, storage, image });
-      if (plan.action === "metadata") await updateDoc(doc(db, "images", image.id), plan.patch);
+      if (plan.action === "move") {
+        await moveImage({ firestoreHost, projectId, storage, image });
+      }
+      if (plan.action === "metadata") {
+        await patchImageMetadata(firestoreHost, projectId, image.id, plan.patch);
+      }
     }
   } finally {
     if (app) await deleteApp(app);

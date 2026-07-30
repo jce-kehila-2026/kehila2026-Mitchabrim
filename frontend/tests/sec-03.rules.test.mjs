@@ -2,7 +2,23 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { initializeApp, deleteApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth } from "firebase/auth";
-import { connectFirestoreEmulator, doc, getDoc, getFirestore, setDoc } from "firebase/firestore";
+import {
+  connectFirestoreEmulator,
+  collection,
+  deleteDoc,
+  doc,
+  documentId,
+  getDoc,
+  getDocs,
+  getFirestore,
+  limit,
+  orderBy,
+  query,
+  setDoc,
+  startAfter,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import {
   connectStorageEmulator,
   getBytes,
@@ -10,9 +26,13 @@ import {
   getMetadata,
   getStorage,
   ref,
+  deleteObject,
   uploadBytes,
 } from "firebase/storage";
 import { runImageMigration } from "../scripts/sec-03-migrate-images.mjs";
+import { runImageGalleryVisibilityBackfill } from "../scripts/image-gallery-visibility-backfill.mjs";
+import { runImageSiteAssetBackfill } from "../scripts/image-site-asset-backfill.mjs";
+import { runSiteImageReferenceMigration } from "../scripts/site-image-reference-migration.mjs";
 import { planImageMigration } from "../src/services/imageStoragePolicy.js";
 
 const projectId = process.env.GCLOUD_PROJECT || "demo-sec03";
@@ -107,8 +127,189 @@ try {
     storagePath: "images/private/consistent-private/image.png",
     url: "",
   }));
+  await expectAllowed("new image may explicitly start outside site images", () => setDoc(
+    doc(admin.db, "images", "explicit-not-site-asset"),
+    {
+      isPublic: false,
+      showInGallery: false,
+      siteAsset: false,
+      usageRefs: [],
+      usageCount: 0,
+      status: "active",
+      storagePath: "images/private/explicit-not-site-asset/image.png",
+      url: "",
+    },
+  ));
+  const protectedManagedRef = ref(admin.storage, "images/public/consistent-public/image.png");
+  await uploadBytes(protectedManagedRef, bytes, { contentType: "image/png" });
+  await expectDenied("admin client cannot delete a managed image file", () => deleteObject(protectedManagedRef));
+  await expectAllowed("admin can clean an upload whose metadata was never created", async () => {
+    const orphanRef = ref(admin.storage, "images/private/orphan-upload/image.png");
+    await uploadBytes(orphanRef, bytes, { contentType: "image/png" });
+    await deleteObject(orphanRef);
+  });
+  await expectAllowed("explicit public gallery metadata", () => setDoc(doc(admin.db, "images", "explicit-gallery"), {
+    isPublic: true,
+    showInGallery: true,
+    storagePath: "images/public/explicit-gallery/image.png",
+    url: "explicit-public-url",
+  }));
+  await expectDenied("private image cannot be marked for gallery", () => setDoc(doc(admin.db, "images", "invalid-private-gallery"), {
+    isPublic: false,
+    showInGallery: true,
+    storagePath: "images/private/invalid-private-gallery/image.png",
+    url: "",
+  }));
+  await expectDenied("volunteer cannot create image metadata", () => setDoc(doc(volunteer.db, "images", "volunteer-create"), {
+    isPublic: false,
+    showInGallery: false,
+  }));
+  await expectDenied("anonymous cannot create image metadata", () => setDoc(doc(anonymous.db, "images", "anonymous-create"), {
+    isPublic: true,
+    showInGallery: true,
+  }));
+  await expectDenied("admin client cannot inject reverse usages", () => setDoc(
+    doc(admin.db, "images", "invalid-usage-injection"),
+    {
+      isPublic: true,
+      showInGallery: false,
+      usageRefs: [{ key: "forged" }],
+      usageCount: 1,
+      status: "active",
+    },
+  ));
+  await expectDenied("admin client cannot create a protected site asset directly", () => setDoc(
+    doc(admin.db, "images", "invalid-site-asset-create"),
+    {
+      isPublic: true,
+      showInGallery: false,
+      siteAsset: true,
+      usageRefs: [],
+      usageCount: 0,
+      status: "active",
+    },
+  ));
+  await expectDenied("volunteer cannot update image metadata", () => updateDoc(
+    doc(volunteer.db, "images", "consistent-public"),
+    { showInGallery: false },
+  ));
+  await expectDenied("volunteer cannot delete image metadata", () => deleteDoc(
+    doc(volunteer.db, "images", "consistent-public"),
+  ));
+  await expectDenied("admin client cannot change reverse usage fields", () => updateDoc(
+    doc(admin.db, "images", "consistent-public"),
+    { usageRefs: [{ key: "forged" }], usageCount: 1 },
+  ));
+  await expectDenied("admin client cannot forge site asset classification", () => updateDoc(
+    doc(admin.db, "images", "consistent-public"),
+    { siteAsset: true },
+  ));
+  await expectDenied("admin cannot make gallery image private without removing it", () => updateDoc(
+    doc(admin.db, "images", "explicit-gallery"),
+    { isPublic: false },
+  ));
+  await expectDenied("admin client cannot change privacy even after gallery removal", async () => {
+    await updateDoc(doc(admin.db, "images", "explicit-gallery"), { showInGallery: false });
+    await updateDoc(
+    doc(admin.db, "images", "explicit-gallery"),
+      { isPublic: false },
+    );
+  });
   await expectAllowed("anonymous public metadata read", () => getDoc(doc(anonymous.db, "images", "consistent-public")));
   await expectDenied("anonymous private metadata read", () => getDoc(doc(anonymous.db, "images", "consistent-private")));
+
+  const firstAdminPage = await getDocs(query(
+    collection(admin.db, "images"),
+    orderBy(documentId()),
+    limit(2),
+  ));
+  assert.equal(firstAdminPage.size, 2);
+  const secondAdminPage = await getDocs(query(
+    collection(admin.db, "images"),
+    orderBy(documentId()),
+    startAfter(firstAdminPage.docs.at(-1)),
+    limit(2),
+  ));
+  assert.equal(secondAdminPage.docs.some((item) => firstAdminPage.docs.some((first) => first.id === item.id)), false);
+  const publicGalleryCandidates = await getDocs(query(
+    collection(anonymous.db, "images"),
+    where("isPublic", "==", true),
+    limit(20),
+  ));
+  assert.equal(publicGalleryCandidates.docs.every((item) => item.data().isPublic === true), true);
+
+  const galleryDryRun = await runImageGalleryVisibilityBackfill();
+  assert.equal(galleryDryRun.mode, "dry-run");
+  assert.equal(galleryDryRun.writesOccurred, false);
+  assert.equal(galleryDryRun.planned >= 2, true);
+  const galleryApply = await runImageGalleryVisibilityBackfill({ apply: true });
+  assert.equal(galleryApply.mode, "apply-emulator");
+  assert.equal(galleryApply.writesOccurred, true);
+  const backfilledPublic = await readDocument("images/consistent-public");
+  const backfilledPrivate = await readDocument("images/consistent-private");
+  assert.equal(backfilledPublic.fields.showInGallery.booleanValue, true);
+  assert.equal(backfilledPrivate.fields.showInGallery.booleanValue, false);
+  await expectDenied("admin client cannot delete managed image metadata", () => deleteDoc(
+    doc(admin.db, "images", "explicit-gallery"),
+  ));
+
+  await expectAllowed("admin can create initial site content seed", () => setDoc(
+    doc(admin.db, "siteContent", "home"),
+    { hero: { imageMain: "public-url", imageTopLeft: "https://external.test/logo.png", imageBottom: "" } },
+  ));
+  await expectDenied("volunteer cannot create site content", () => setDoc(
+    doc(volunteer.db, "siteContent", "volunteer-seed"),
+    { hero: {} },
+  ));
+  await expectDenied("anonymous cannot create site content", () => setDoc(
+    doc(anonymous.db, "siteContent", "anonymous-seed"),
+    { hero: {} },
+  ));
+  await expectDenied("admin client cannot bypass protected site content update", () => updateDoc(
+    doc(admin.db, "siteContent", "home"),
+    { "hero.imageBottom": "public-url" },
+  ));
+  const referenceDryRun = await runSiteImageReferenceMigration();
+  assert.equal(referenceDryRun.mode, "dry-run");
+  assert.equal(referenceDryRun.writesOccurred, false);
+  assert.equal(referenceDryRun.matched, 1);
+  assert.equal(referenceDryRun.external, 1);
+  const referenceApply = await runSiteImageReferenceMigration({ apply: true });
+  assert.equal(referenceApply.mode, "apply-emulator");
+  assert.equal(referenceApply.writesOccurred, true);
+  const referencedImage = await readDocument("images/consistent-public");
+  assert.equal(referencedImage.fields.usageCount.integerValue, "1");
+  const referenceVerify = await runSiteImageReferenceMigration();
+  assert.equal(referenceVerify.siteSectionsPlanned, 0);
+  assert.equal(referenceVerify.imagesPlanned, 0);
+
+  const siteAssetDryRun = await runImageSiteAssetBackfill();
+  assert.equal(siteAssetDryRun.mode, "dry-run");
+  assert.equal(siteAssetDryRun.writesOccurred, false);
+  assert.equal(siteAssetDryRun.planned > 0, true);
+  const siteAssetApply = await runImageSiteAssetBackfill({ apply: true });
+  assert.equal(siteAssetApply.mode, "apply-emulator");
+  assert.equal(siteAssetApply.writesOccurred, true);
+  const siteAssetReferencedImage = await readDocument("images/consistent-public");
+  const siteAssetPrivateImage = await readDocument("images/consistent-private");
+  assert.equal(siteAssetReferencedImage.fields.siteAsset.booleanValue, true);
+  assert.equal(siteAssetPrivateImage.fields.siteAsset.booleanValue, false);
+  const siteAssetVerify = await runImageSiteAssetBackfill();
+  assert.equal(siteAssetVerify.planned, 0);
+  const siteAssetPage = await getDocs(query(
+    collection(admin.db, "images"),
+    where("siteAsset", "==", true),
+    orderBy(documentId()),
+    limit(2),
+  ));
+  assert.equal(siteAssetPage.docs.every((item) => item.data().siteAsset === true), true);
+  const galleryPage = await getDocs(query(
+    collection(admin.db, "images"),
+    where("showInGallery", "==", true),
+    orderBy(documentId()),
+    limit(2),
+  ));
+  assert.equal(galleryPage.docs.every((item) => item.data().showInGallery === true), true);
 
   assert.equal(planImageMigration({ id: "a", isPublic: true, storagePath: "images/old.png" }).action, "move");
   assert.equal(planImageMigration({ id: "b", isPublic: false, storagePath: "images/old.png" }).action, "move");
@@ -155,7 +356,7 @@ try {
   assert.equal(getAllImagesBody.includes("loadAdminImagePreview"), false, "admin list must not wait for private previews");
   assert.equal(imagesServiceSource.includes("export async function loadAdminImagePreview"), true);
 
-  console.log("SEC-03: 39 assertions passed (non-blocking admin list, Storage reads, CORS config, Firestore metadata, legacy migration, and dry-run).");
+  console.log("SEC-03 image visibility, authorization, Storage lifecycle, migration, and dry-run assertions passed.");
 } finally {
   await Promise.all([deleteApp(admin.app), deleteApp(volunteer.app), deleteApp(anonymous.app)]);
 }

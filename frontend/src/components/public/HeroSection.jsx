@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import useSiteContent from "@/hooks/useSiteContent";
+import { resolveSiteImageUrl } from "@/utils/siteImageReferences";
 
 function HeroCircleImage({ src, alt, className, priority }) {
   const [loaded, setLoaded] = useState(false);
@@ -77,13 +78,13 @@ export default function HeroSection() {
             <div className="hero-collage-ring" />
 
             <div className="circle-img circle-img-lg">
-              <HeroCircleImage src={h.imageMain} priority />
+              <HeroCircleImage src={resolveSiteImageUrl(h.imageMain)} priority />
             </div>
             <div className="circle-img circle-img-sm circle-img-sm-tl">
-              <HeroCircleImage src={h.imageTopLeft} />
+              <HeroCircleImage src={resolveSiteImageUrl(h.imageTopLeft)} />
             </div>
             <div className="circle-img circle-img-md circle-img-md-br">
-              <HeroCircleImage src={h.imageBottom} />
+              <HeroCircleImage src={resolveSiteImageUrl(h.imageBottom)} />
             </div>
           </div>
         </div>
