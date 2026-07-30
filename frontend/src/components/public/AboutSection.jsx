@@ -1,14 +1,16 @@
 import useSiteContent from "@/hooks/useSiteContent";
+import { resolveSiteImageUrl } from "@/utils/siteImageReferences";
 
 export default function AboutSection() {
   const { content } = useSiteContent();
   const a = content.about;
+  const imageUrl = resolveSiteImageUrl(a.image);
   return (
     <section id="about" className="pub-section about-section">
       <div className="container about-grid-clean">
         <div className="about-visual">
           <div className="about-main-img">
-            {a.image && <img src={a.image} alt={a.headlineLine1 || "אודות"} loading="lazy" decoding="async" />}
+            {imageUrl && <img src={imageUrl} alt={a.headlineLine1 || "אודות"} loading="lazy" decoding="async" />}
           </div>
           <div className="about-img-badge">
             <span className="badge-num">{a.badgeNum}</span>

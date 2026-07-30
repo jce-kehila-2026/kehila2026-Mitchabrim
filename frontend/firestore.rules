@@ -39,6 +39,56 @@ service cloud.firestore {
         && userDoc().data.role == 'volunteer';
     }
 
+    function imageVisibilityIsValid(data) {
+      return ((
+          !('isPublic' in data)
+          && (
+            !('showInGallery' in data)
+            || (data.showInGallery is bool && data.showInGallery == false)
+          )
+        )
+        || (
+          data.isPublic is bool
+          && (
+            !('showInGallery' in data)
+            || (
+              data.showInGallery is bool
+              && (data.showInGallery == false || data.isPublic == true)
+            )
+          )
+        ))
+        && (
+          !('siteAsset' in data)
+          || (
+            data.siteAsset is bool
+            && (data.siteAsset == false || data.isPublic == true)
+          )
+        );
+    }
+
+    function imageCreateIsValid(data) {
+      return imageVisibilityIsValid(data)
+        && (!('status' in data) || data.status == 'active')
+        && (!('usageRefs' in data) || (data.usageRefs is list && data.usageRefs.size() == 0))
+        && (!('usageCount' in data) || data.usageCount == 0)
+        && (!('siteAsset' in data) || data.siteAsset == false)
+        && !('mutationLock' in data)
+        && !('cleanupSourcePath' in data);
+    }
+
+    function imageClientUpdateIsValid() {
+      return imageVisibilityIsValid(request.resource.data)
+        && (!('status' in request.resource.data) || request.resource.data.status == 'active')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'category',
+          'notes',
+          'displayDate',
+          'showInGallery',
+          'updatedAt'
+        ]);
+    }
+
     function linkedVolunteerId() {
       return userDoc().data.linkedVolunteerId;
     }
@@ -514,7 +564,11 @@ service cloud.firestore {
 
     match /siteContent/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      // Existing installations may still need to create the single seed
+      // document. All subsequent updates go through the App Check protected
+      // callable so image references and reverse usages change atomically.
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // =========================
@@ -566,12 +620,24 @@ service cloud.firestore {
 
     match /images/{imageId} {
       allow get: if isAdmin()
-        || (resource.data.isPublic == true);
+        || (
+          resource.data.isPublic == true
+          && (!('status' in resource.data) || resource.data.status == 'active')
+        );
 
       allow list: if isAdmin()
-        || (resource.data.isPublic == true);
+        || (
+          resource.data.isPublic == true
+          && (!('status' in resource.data) || resource.data.status == 'active')
+        );
 
-      allow create, update, delete: if isAdmin();
+      allow create: if isAdmin()
+        && imageCreateIsValid(request.resource.data);
+      allow update: if isAdmin()
+        && imageClientUpdateIsValid();
+      // Deletion and visibility/path changes are server-only. The callable
+      // validates reverse usages and uses Admin SDK, which bypasses rules.
+      allow delete: if false;
     }
 
 
@@ -586,8 +652,12 @@ service cloud.firestore {
     // Public users and volunteers are blocked unless a collection has
     // an explicit rule above.
 
-    match /{document=**} {
-      allow read, write: if isAdmin();
+    match /{collection}/{document=**} {
+      // Images have stricter visibility invariants above. Excluding them here
+      // prevents this fallback from bypassing those checks for Admin writes.
+      allow read, write: if isAdmin()
+        && collection != 'images'
+        && collection != 'siteContent';
     }
   }
 }

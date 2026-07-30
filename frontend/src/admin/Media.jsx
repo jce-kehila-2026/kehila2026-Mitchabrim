@@ -5,12 +5,15 @@ import { Search, Globe, Copy } from "lucide-react";
 
 // Firestore + Storage access is encapsulated in the images service.
 import {
-  getAllImages,
+  getImagesPage,
   loadAdminImagePreview,
   uploadImage,
   updateImage,
   deleteImage as deleteImageService,
   toggleImagePublic,
+  publishImageToGallery,
+  setImageSiteAsset,
+  setImageGalleryVisibility,
   createImageDoc,
 } from "@/services/imagesService";
 import { validateFile } from "@/utils/validation";
@@ -18,9 +21,93 @@ import { sanitizeText } from "@/utils/sanitize";
 import { GALLERY_IMAGE_MAX_MB } from "@/services/imageStoragePolicy";
 import useSettingsCategories from "@/hooks/useSettingsCategories";
 import {
+  imageMatchesLibraryTab,
+  imageMatchesVisibilityFilter,
+} from "@/utils/imageLibraryFilters";
+import {
   IMAGE_CATEGORIES_TITLE,
-  PROMOTIONAL_IMAGE_CATEGORY,
 } from "@/utils/categorySettings";
+
+const IMAGE_PAGE_SIZE = 24;
+const imageMutationErrorMessage = (error, fallback) => {
+  const reason = error?.details?.reason || error?.customData?.details?.reason;
+  const details = error?.details || error?.customData?.details || {};
+  if (reason === "image-in-use") {
+    return `לא ניתן לבצע את הפעולה: התמונה בשימוש ב-${details.usageCount || 1} מקומות באתר.`;
+  }
+  if (reason === "image-in-gallery") {
+    return "יש להסיר את התמונה מהגלריה לפני הפעולה.";
+  }
+  if (reason === "image-is-site-asset") {
+    return "יש להסיר תחילה את התמונה מרשימת תמונות האתר. הסיווג מגן עליה ממחיקה ומהפיכה לפרטית.";
+  }
+  if (reason === "image-not-found") {
+    return "התמונה כבר אינה קיימת במאגר. יש לרענן את הרשימה.";
+  }
+  if (reason === "external-image") {
+    return "לא ניתן להפוך קישור חיצוני לתמונה פרטית מנוהלת.";
+  }
+  if (reason === "image-reference-migration-required") {
+    return "פעולות מחיקה והפיכה לפרטית יופעלו לאחר השלמת מיפוי תמונות האתר.";
+  }
+  const code = String(error?.code || "");
+  if (code === "app-check/config-missing") {
+    return "App Check אינו מוגדר בבנייה הנוכחית. יש לבנות מחדש עם הגדרת ה-Production המתאימה.";
+  }
+  if (code.includes("app-check") || code.includes("appCheck")) {
+    return "אימות App Check נכשל. יש לרענן את הדף ולוודא שהדומיין וההגדרה של הסביבה מאושרים.";
+  }
+  if (code.includes("unauthenticated") || code.includes("permission-denied")) {
+    return "הפעולה נדחתה. יש לוודא שהחשבון מחובר כמנהל פעיל.";
+  }
+  if (code.includes("not-found")) {
+    return "שירות ניהול התמונות mutateImage אינו זמין בסביבה זו. יש לפרסם את ה-Function לפני שימוש בפעולה.";
+  }
+  if (code.includes("unavailable") || code.includes("network")) {
+    return "לא ניתן להגיע כעת לשירות ניהול התמונות. בדקו את החיבור ונסו שוב.";
+  }
+  if (code === "images/invalid-callable-response") {
+    return "שירות ניהול התמונות החזיר תשובה לא תקינה. יש לוודא שגרסת ה-Function תואמת ל-Hosting.";
+  }
+  return fallback;
+};
+const IMAGE_ACTION_COPY = {
+  "make-public": {
+    title: "הפיכת תמונה לציבורית",
+    message: "התמונה תהיה זמינה בקישור ציבורי, אך לא תתווסף לגלריה עד לבחירה נפרדת.",
+    confirm: "כן, הפוך לציבורית",
+  },
+  "make-private": {
+    title: "הפיכת תמונה לפרטית",
+    message: "התמונה תוסר גם מהגלריה. קישורים קיימים או שימוש ידני בתמונה באתר עלולים להפסיק לעבוד.",
+    confirm: "כן, הפוך לפרטית",
+  },
+  "add-gallery": {
+    title: "הוספה לגלריה הציבורית",
+    message: "התמונה תופיע בעמוד הבית ובעמוד הגלריה הציבורית.",
+    confirm: "כן, הוסף לגלריה",
+  },
+  "remove-gallery": {
+    title: "הסרה מהגלריה",
+    message: "התמונה תישאר ציבורית והקישור שלה ימשיך לעבוד, אך היא לא תוצג בגלריה.",
+    confirm: "כן, הסר מהגלריה",
+  },
+  "publish-and-add-gallery": {
+    title: "פרסום והוספה לגלריה",
+    message: "התמונה פרטית. פעולה זו תהפוך אותה לציבורית ותוסיף אותה לגלריה בפעולה מוגנת אחת.",
+    confirm: "כן, פרסם והוסף",
+  },
+  "add-site-asset": {
+    title: "הוספה לתמונות האתר",
+    message: "התמונה תסומן כתמונה שמורה לאתר הציבורי. אם היא פרטית, היא תהפוך לציבורית. היא לא תתווסף לגלריה.",
+    confirm: "כן, הוסף לתמונות האתר",
+  },
+  "remove-site-asset": {
+    title: "הסרה מתמונות האתר",
+    message: "הסיווג יוסר בלבד. התמונה לא תימחק, פרטיותה לא תשתנה והיא לא תתווסף לגלריה.",
+    confirm: "כן, הסר מתמונות האתר",
+  },
+};
 
 export default function Media() {
   const { categories } = useSettingsCategories(IMAGE_CATEGORIES_TITLE);
@@ -30,7 +117,14 @@ export default function Media() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [visibilityFilter, setVisibilityFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState("all");
   const [dateSort, setDateSort] = useState("newest");
+  const [pageCursor, setPageCursor] = useState(null);
+  const [hasMoreImages, setHasMoreImages] = useState(false);
+  const [isLoadingImages, setIsLoadingImages] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [pendingImageIds, setPendingImageIds] = useState(() => new Set());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -38,14 +132,16 @@ export default function Media() {
   const [filePreview, setFilePreview] = useState(null);
 
   const [formData, setFormData] = useState({
-  title: "",
-  category: "",
-  notes: "",
-  isPublic: false,
-});
+    title: "",
+    category: "",
+    notes: "",
+    isPublic: false,
+    showInGallery: false,
+  });
 
   const [toastMessage, setToastMessage] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, image: null });
+  const [actionConfirm, setActionConfirm] = useState({ isOpen: false, type: "", image: null });
 
   // State for Image Details/Edit Modal
   const [detailsModal, setDetailsModal] = useState({ isOpen: false, image: null });
@@ -53,6 +149,10 @@ export default function Media() {
 
   useEffect(() => {
     const generation = ++previewGenerationRef.current;
+    setIsLoadingImages(true);
+    setImagesList([]);
+    setPageCursor(null);
+    setHasMoreImages(false);
 
     const loadPreview = async (image) => {
       if (image.isPublic) return;
@@ -67,19 +167,27 @@ export default function Media() {
 
     const fetchImages = async () => {
       try {
-        const fetchedImages = await getAllImages();
+        const page = await getImagesPage({
+          pageSize: IMAGE_PAGE_SIZE,
+          tab: activeTab,
+        });
         if (generation !== previewGenerationRef.current) return;
-        setImagesList(fetchedImages);
-        fetchedImages.forEach((image) => { void loadPreview(image); });
+        setImagesList(page.images);
+        setPageCursor(page.cursor);
+        setHasMoreImages(page.hasMore);
+        page.images.forEach((image) => { void loadPreview(image); });
       } catch (error) {
         console.error("Error fetching images:", error);
+        showToast("לא ניתן לטעון את מאגר התמונות.");
+      } finally {
+        if (generation === previewGenerationRef.current) setIsLoadingImages(false);
       }
     };
     fetchImages();
     return () => {
       if (generation === previewGenerationRef.current) previewGenerationRef.current += 1;
     };
-  }, []);
+  }, [activeTab]);
 
   const loadPreviewIntoList = async (image) => {
     if (image.isPublic) return image;
@@ -98,12 +206,51 @@ export default function Media() {
     setTimeout(() => setToastMessage(""), 3500);
   };
 
+  const setImagePending = (imageId, pending) => {
+    setPendingImageIds((current) => {
+      const next = new Set(current);
+      if (pending) next.add(imageId);
+      else next.delete(imageId);
+      return next;
+    });
+  };
+
+  const loadMoreImages = async () => {
+    if (!hasMoreImages || isLoadingMore || !pageCursor) return;
+    setIsLoadingMore(true);
+    try {
+      const page = await getImagesPage({
+        pageSize: IMAGE_PAGE_SIZE,
+        cursor: pageCursor,
+        tab: activeTab,
+      });
+      setImagesList((current) => {
+        const knownIds = new Set(current.map((image) => image.id));
+        return [...current, ...page.images.filter((image) => !knownIds.has(image.id))];
+      });
+      setPageCursor(page.cursor);
+      setHasMoreImages(page.hasMore);
+      page.images.forEach((image) => { void loadPreviewIntoList(image); });
+    } catch (error) {
+      console.error("Error loading more images:", error);
+      showToast("לא ניתן לטעון תמונות נוספות.");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   const handleOpenModal = () => {
-  setSelectedFile(null);
-  setFilePreview(null);
-  setFormData({ title: "", category: "", notes: "", isPublic: false });
-  setIsModalOpen(true);
-};
+    setSelectedFile(null);
+    setFilePreview(null);
+    setFormData({
+      title: "",
+      category: "",
+      notes: "",
+      isPublic: false,
+      showInGallery: false,
+    });
+    setIsModalOpen(true);
+  };
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -158,6 +305,7 @@ export default function Media() {
         category: formData.category,
         notes: cleanNotes,
         isPublic: formData.isPublic || false,
+        showInGallery: formData.isPublic && formData.showInGallery,
       });
       setImagesList((prevList) => [...prevList, created]);
       void loadPreviewIntoList(created);
@@ -174,6 +322,19 @@ export default function Media() {
 
   const triggerDeleteConfirm = (e, img) => {
     e.stopPropagation();
+    if (img.usageCount > 0) {
+      showToast(`לא ניתן למחוק: התמונה בשימוש ב-${img.usageCount} מקומות באתר.`);
+      setDetailsModal({ isOpen: true, image: { ...img } });
+      return;
+    }
+    if (img.siteAsset) {
+      showToast("לא ניתן למחוק תמונת אתר. יש להסיר תחילה את הסיווג 'תמונת אתר'.");
+      return;
+    }
+    if (img.showInGallery) {
+      showToast("יש להסיר את התמונה מהגלריה לפני המחיקה.");
+      return;
+    }
     setDeleteConfirm({ isOpen: true, image: img });
   };
 
@@ -181,6 +342,8 @@ export default function Media() {
     const imageToDelete = deleteConfirm.image;
     if (!imageToDelete) return;
 
+    if (pendingImageIds.has(imageToDelete.id)) return;
+    setImagePending(imageToDelete.id, true);
     try {
       await deleteImageService(imageToDelete);
 
@@ -193,29 +356,85 @@ export default function Media() {
       showToast("התמונה נמחקה בהצלחה!");
     } catch (error) {
       console.error("Error deleting image:", error);
-      showToast("שגיאה במחיקת התמונה.");
+      showToast(imageMutationErrorMessage(error, "שגיאה במחיקת התמונה."));
     } finally {
+      setImagePending(imageToDelete.id, false);
       setDeleteConfirm({ isOpen: false, image: null });
     }
   };
 
-  const toggleIsPublic = async (e, img) => {
+  const requestImageAction = (e, type, img) => {
     e.stopPropagation();
-    if (img.category === PROMOTIONAL_IMAGE_CATEGORY && img.isPublic) {
-      showToast("תמונות אתר פרסומי חייבות להישאר ציבוריות");
+    if (pendingImageIds.has(img.id)) return;
+    if (type === "make-private" && img.usageCount > 0) {
+      showToast(`לא ניתן להפוך לפרטית: התמונה בשימוש ב-${img.usageCount} מקומות באתר.`);
+      setDetailsModal({ isOpen: true, image: { ...img } });
       return;
     }
-    try {
-      const newStatus = !img.isPublic;
-      const updated = await toggleImagePublic(img, newStatus);
-      setImagesList((prevList) =>
-        prevList.map((item) => (item.id === img.id ? updated : item))
+    if (type === "make-private" && img.siteAsset) {
+      showToast("לא ניתן להפוך תמונת אתר לפרטית. יש להסיר תחילה את הסיווג 'תמונת אתר'.");
+      return;
+    }
+    if (type === "make-private" && img.showInGallery) {
+      showToast("יש להסיר את התמונה מהגלריה לפני הפיכתה לפרטית.");
+      return;
+    }
+    if (type === "remove-site-asset" && img.usageCount > 0) {
+      const places = img.usageRefs
+        .map((usage) => usage.label || usage.field)
+        .filter(Boolean)
+        .join(", ");
+      showToast(
+        places
+          ? `לא ניתן להסיר: התמונה בשימוש ב-${places}.`
+          : `לא ניתן להסיר: התמונה בשימוש ב-${img.usageCount} מקומות באתר.`,
       );
+      setDetailsModal({ isOpen: true, image: { ...img } });
+      return;
+    }
+    setActionConfirm({ isOpen: true, type, image: img });
+  };
+
+  const executeImageAction = async () => {
+    const { image, type } = actionConfirm;
+    if (!image || pendingImageIds.has(image.id)) return;
+    setImagePending(image.id, true);
+    try {
+      let updated;
+      if (type === "make-public") updated = await toggleImagePublic(image, true);
+      else if (type === "make-private") updated = await toggleImagePublic(image, false);
+      else if (type === "publish-and-add-gallery") updated = await publishImageToGallery(image);
+      else if (type === "add-site-asset") updated = await setImageSiteAsset(image, true);
+      else if (type === "remove-site-asset") updated = await setImageSiteAsset(image, false);
+      else if (type === "add-gallery") updated = await setImageGalleryVisibility(image, true);
+      else if (type === "remove-gallery") updated = await setImageGalleryVisibility(image, false);
+      else throw new Error("Unknown image action");
+
+      setImagesList((prevList) =>
+        prevList.map((item) => (item.id === image.id ? updated : item))
+      );
+      setDetailsModal((current) => (
+        current.image?.id === image.id
+          ? { isOpen: true, image: updated }
+          : current
+      ));
       void loadPreviewIntoList(updated);
-      showToast(newStatus ? "התמונה צורפה למوقع הציבורי בהצלחה!" : "התמונה הוסרה מהאתר הציבורי בהצלחה!");
+      const successMessages = {
+        "make-public": "התמונה הפכה לציבורית. היא לא נוספה לגלריה.",
+        "make-private": "התמונה הפכה לפרטית והוסרה מהגלריה.",
+        "add-gallery": "התמונה נוספה לגלריה הציבורית.",
+        "remove-gallery": "התמונה הוסרה מהגלריה.",
+        "publish-and-add-gallery": "התמונה פורסמה ונוספה לגלריה הציבורית.",
+        "add-site-asset": "התמונה נוספה לתמונות האתר. מצב הגלריה לא השתנה.",
+        "remove-site-asset": "התמונה הוסרה מתמונות האתר. היא לא נמחקה.",
+      };
+      showToast(successMessages[type]);
     } catch (error) {
-      console.error("Error updating image public status:", error);
-      showToast("שגיאה בעדכון סטטוס התמונה.");
+      console.error("Error updating image visibility:", error);
+      showToast(imageMutationErrorMessage(error, "לא ניתן לעדכן את מצב התמונה."));
+    } finally {
+      setImagePending(image.id, false);
+      setActionConfirm({ isOpen: false, type: "", image: null });
     }
   };
 
@@ -249,7 +468,6 @@ export default function Media() {
         title: cleanTitle,
         category: detailsModal.image.category,
         notes: cleanNotes,
-        isPublic: detailsModal.image.isPublic || false,
       });
 
       setImagesList((prevList) =>
@@ -344,6 +562,7 @@ export default function Media() {
             url: url,
             displayDate: displayDate,
             isPublic: true,
+            showInGallery: true,
           });
           addedDocs.push({
             ...created,
@@ -371,7 +590,9 @@ export default function Media() {
     .filter((img) => {
       const matchesSearch = (img.title || "").toLowerCase().includes((searchQuery || "").toLowerCase());
       const matchesCategory = selectedCategory === "" || img.category === selectedCategory;
-      return matchesSearch && matchesCategory;
+      const matchesVisibility = imageMatchesVisibilityFilter(img, visibilityFilter);
+      const matchesTab = imageMatchesLibraryTab(img, activeTab);
+      return matchesSearch && matchesCategory && matchesVisibility && matchesTab;
     })
     .sort((a, b) => {
       if (dateSort === "newest") {
@@ -463,6 +684,85 @@ export default function Media() {
             overflow: hidden;
             text-overflow: ellipsis;
         }
+
+        .media-status-row, .media-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .media-status-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 26px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            border: 1px solid transparent;
+        }
+        .media-status-public { color: #1f6b3a; background: #edf8f0; border-color: #b9dfc4; }
+        .media-status-private { color: #4b5563; background: #f1f5f9; border-color: #cbd5e1; }
+        .media-status-gallery { color: #7f1d1d; background: #fff1f2; border-color: #fecdd3; }
+        .media-status-legacy { color: #854d0e; background: #fefce8; border-color: #fde68a; }
+        .media-status-site { color: #1e3a8a; background: #eff6ff; border-color: #bfdbfe; }
+        .media-status-site-asset { color: #075985; background: #ecfeff; border-color: #a5f3fc; }
+        .media-library-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            direction: rtl;
+            margin-bottom: 16px;
+        }
+        .media-library-tab {
+            min-height: 44px;
+            padding: 9px 18px;
+            border: 1px solid #d8dee5;
+            border-radius: 999px;
+            background: #fff;
+            color: #475569;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .media-library-tab.is-active {
+            color: #fff;
+            border-color: #8b2c2c;
+            background: #8b2c2c;
+        }
+        .media-usage-list {
+            margin: 8px 0 0;
+            padding: 8px 24px 8px 8px;
+            border-radius: 10px;
+            background: #eff6ff;
+            color: #1e3a8a;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .media-card-actions {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #edf0f2;
+        }
+        .media-action-button {
+            min-height: 38px;
+            padding: 7px 10px;
+            border-radius: 9px;
+            border: 1px solid #d8dee5;
+            background: #fff;
+            color: #334155;
+            cursor: pointer;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 700;
+            flex: 1 1 112px;
+        }
+        .media-action-button:hover:not(:disabled) { border-color: #8b2c2c; color: #8b2c2c; }
+        .media-action-button:disabled { cursor: wait; opacity: .55; }
+        .media-action-danger { color: #b42318; border-color: #fecaca; background: #fff7f7; }
+        @media (max-width: 640px) {
+            .media-action-button { flex-basis: 100%; min-height: 44px; }
+        }
       `}</style>
 
       {toastMessage && (
@@ -471,6 +771,28 @@ export default function Media() {
           {toastMessage}
         </div>
       )}
+
+      <div className="media-library-tabs" role="tablist" aria-label="סוגי תמונות">
+        {[
+          { id: "all", label: "כל התמונות" },
+          { id: "gallery", label: "תמונות הגלריה" },
+          { id: "site", label: "תמונות האתר" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={`media-library-tab ${activeTab === tab.id ? "is-active" : ""}`}
+            onClick={() => {
+              setActiveTab(tab.id);
+              setVisibilityFilter("all");
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       <SectionCard>
         <div
@@ -588,6 +910,34 @@ export default function Media() {
                 <option value="oldest">הישן ביותר</option>
               </select>
             </div>
+
+            {activeTab === "all" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
+              <span style={{ color: "#8b2c2c", fontWeight: "bold", fontSize: "14px" }}>מצב:</span>
+              <select
+                className="modal-form-select"
+                value={visibilityFilter}
+                onChange={(e) => setVisibilityFilter(e.target.value)}
+                dir="rtl"
+                style={{
+                  ...inputStyle,
+                  padding: "10px 16px",
+                  borderRadius: "30px",
+                  minWidth: "190px",
+                  backgroundColor: "#fff",
+                }}
+              >
+                <option value="all">כל המצבים</option>
+                <option value="gallery">מוצגות בגלריה</option>
+                <option value="public">ציבוריות מחוץ לגלריה</option>
+                <option value="private">פרטיות</option>
+                <option value="legacy">דורשות השלמת הסבה</option>
+              </select>
+            </div>
+            )}
+          </div>
+          <div style={{ marginTop: 12, color: "#64748b", fontSize: 12 }}>
+            נטענו {imagesList.length} תמונות. החיפוש והסינון חלים על התמונות שנטענו.
           </div>
         </div>
 
@@ -601,132 +951,6 @@ export default function Media() {
         >
           {displayedImages.map((img) => (
             <div key={img.id} className="image-card-container" onClick={() => handleOpenDetails(img)}>
-              <button
-                onClick={(e) => triggerDeleteConfirm(e, img)}
-                title="מחק תמונה"
-                style={{
-                  position: "absolute",
-                  top: 8,
-                  left: 8,
-                  background: "rgba(255, 255, 255, 0.9)",
-                  color: "#dc3545",
-                  border: "1px solid #f5c6cb",
-                  borderRadius: "50%",
-                  width: 30,
-                  height: 30,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                  zIndex: 5,
-                  transition: "0.2s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#dc3545")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.9)")}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ transition: "0.2s", color: "inherit" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = "#dc3545")}
-                >
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  <line x1="10" y1="11" x2="10" y2="17"></line>
-                  <line x1="14" y1="11" x2="14" y2="17"></line>
-                </svg>
-              </button>
-
-              <button
-                onClick={(e) => toggleIsPublic(e, img)}
-                title={img.isPublic ? "הסר מהאתר הציבורי" : "צרף לאתר הציבורי"}
-                style={{
-                  position: "absolute",
-                  top: 8,
-                  right: 8,
-                  background: img.isPublic ? "#2e7d32" : "rgba(255, 255, 255, 0.9)",
-                  color: img.isPublic ? "#ffffff" : "#495057",
-                  border: `1px solid ${img.isPublic ? "#2e7d32" : "#ced4da"}`,
-                  borderRadius: "50%",
-                  width: 30,
-                  height: 30,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                  zIndex: 5,
-                  transition: "0.2s",
-                }}
-              >
-                {img.isPublic ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                  </svg>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
-                )}
-              </button>
-
-              {img.isPublic && img.url && (
-                <button
-                  type="button"
-                  onClick={(e) => copyPublicImageUrl(e, img)}
-                  title="העתקת קישור התמונה"
-                  aria-label={`העתקת קישור: ${img.title || "תמונה"}`}
-                  style={{
-                    position: "absolute",
-                    top: 46,
-                    right: 8,
-                    background: "rgba(255, 255, 255, 0.94)",
-                    color: "#8b2c2c",
-                    border: "1px solid #d9c5bd",
-                    borderRadius: "50%",
-                    width: 30,
-                    height: 30,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                    zIndex: 5,
-                  }}
-                >
-                  <Copy size={15} />
-                </button>
-              )}
-
               <div
                 style={{
                   aspectRatio: "4/3",
@@ -745,6 +969,25 @@ export default function Media() {
               </div>
 
               <div style={{ padding: "12px" }}>
+                <div className="media-status-row" style={{ marginBottom: 9 }}>
+                  <span className={`media-status-badge ${img.isPublic ? "media-status-public" : "media-status-private"}`}>
+                    {img.isPublic ? "ציבורית" : "פרטית"}
+                  </span>
+                  {img.showInGallery && (
+                    <span className="media-status-badge media-status-gallery">מוצגת בגלריה</span>
+                  )}
+                  {img.siteAsset && (
+                    <span className="media-status-badge media-status-site-asset">תמונת אתר</span>
+                  )}
+                  {img.usageCount > 0 && (
+                    <span className="media-status-badge media-status-site">
+                      בשימוש באתר · {img.usageCount}
+                    </span>
+                  )}
+                  {img.galleryVisibilityLegacy && (
+                    <span className="media-status-badge media-status-legacy">מצב ישן — טרם הוסב</span>
+                  )}
+                </div>
                 <div
                   className="text-truncate"
                   style={{ fontWeight: 700, color: "#343a40", fontSize: "13.5px" }}
@@ -808,15 +1051,105 @@ export default function Media() {
                     {img.notes}
                   </div>
                 )}
+                {img.usageCount > 0 && (
+                  <ul className="media-usage-list">
+                    {img.usageRefs.slice(0, 2).map((usage) => (
+                      <li key={usage.key}>{usage.label || usage.field}</li>
+                    ))}
+                    {img.usageCount > 2 && <li>ועוד {img.usageCount - 2} מקומות</li>}
+                  </ul>
+                )}
+                <div className="media-card-actions">
+                  <button
+                    type="button"
+                    className="media-action-button"
+                    disabled={pendingImageIds.has(img.id)}
+                    onClick={(e) => requestImageAction(
+                      e,
+                      img.isPublic ? "make-private" : "make-public",
+                      img,
+                    )}
+                  >
+                    {pendingImageIds.has(img.id)
+                      ? "מעדכן..."
+                      : img.isPublic ? "הפוך לפרטית" : "הפוך לציבורית"}
+                  </button>
+                  <button
+                    type="button"
+                    className="media-action-button"
+                    disabled={pendingImageIds.has(img.id)}
+                    onClick={(e) => requestImageAction(
+                      e,
+                      img.showInGallery
+                        ? "remove-gallery"
+                        : (img.isPublic ? "add-gallery" : "publish-and-add-gallery"),
+                      img,
+                    )}
+                  >
+                    {img.showInGallery
+                      ? "הסר מהגלריה"
+                      : (img.isPublic ? "הוסף לגלריה" : "פרסם והוסף לגלריה")}
+                  </button>
+                  <button
+                    type="button"
+                    className="media-action-button"
+                    disabled={pendingImageIds.has(img.id)}
+                    onClick={(e) => requestImageAction(
+                      e,
+                      img.siteAsset ? "remove-site-asset" : "add-site-asset",
+                      img,
+                    )}
+                  >
+                    {img.siteAsset ? "הסר מתמונות האתר" : "הוסף לתמונות האתר"}
+                  </button>
+                  {img.isPublic && img.url && (
+                    <button
+                      type="button"
+                      className="media-action-button"
+                      disabled={pendingImageIds.has(img.id)}
+                      onClick={(e) => copyPublicImageUrl(e, img)}
+                      title="העתקת קישור התמונה"
+                      aria-label={`העתקת קישור: ${img.title || "תמונה"}`}
+                    >
+                      <Copy size={14} aria-hidden /> העתק קישור
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="media-action-button media-action-danger"
+                    disabled={pendingImageIds.has(img.id)}
+                    onClick={(e) => triggerDeleteConfirm(e, img)}
+                  >
+                    מחיקה
+                  </button>
+                </div>
               </div>
             </div>
           ))}
-          {displayedImages.length === 0 && (
+          {!isLoadingImages && displayedImages.length === 0 && (
             <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "60px", color: "#adb5bd" }}>
               לא נמצאו תמונות התואמות לחיפוש שלך.
             </div>
           )}
+          {isLoadingImages && (
+            <div role="status" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "60px", color: "#64748b" }}>
+              טוען תמונות...
+            </div>
+          )}
         </div>
+        {hasMoreImages && (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={loadMoreImages}
+              disabled={isLoadingMore}
+              style={{ minWidth: 180 }}
+            >
+              {isLoadingMore ? "טוען..." : "טען תמונות נוספות"}
+            </button>
+          </div>
+        )}
       </SectionCard>
 
       {/* 1. Upload Modal */}
@@ -1027,7 +1360,6 @@ export default function Media() {
                       onChange={(e) => setFormData((prev) => ({
                         ...prev,
                         category: e.target.value,
-                        isPublic: e.target.value === PROMOTIONAL_IMAGE_CATEGORY ? true : prev.isPublic,
                       }))}
                       style={{ backgroundColor: "#fff" }}
                     >
@@ -1069,18 +1401,37 @@ export default function Media() {
                       fontSize: "14px",
                     }}
                   ></textarea>
-                  <div className="field" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-  <label style={{ margin: 0, fontWeight: "600", fontSize: "13.5px", color: "#495057", display: "flex", alignItems: "center", gap: "6px" }}>
-    <Globe size={16} /> הצג באתר הציבורי:
-  </label>
-  <input
-    type="checkbox"
-    checked={formData.isPublic || false}
-    disabled={formData.category === PROMOTIONAL_IMAGE_CATEGORY}
-    onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
-    style={{ width: "20px", height: "20px", accentColor: "#8B0000", cursor: "pointer" }}
-  />
-</div>
+                  <div style={{ marginTop: 16, padding: 14, border: "1px solid #e2d8c9", borderRadius: 12, background: "#fffaf5" }}>
+                    <label style={{ margin: 0, fontWeight: "700", fontSize: "13.5px", color: "#495057", display: "flex", alignItems: "center", gap: "8px" }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.isPublic || false}
+                        onChange={(e) => setFormData((current) => ({
+                          ...current,
+                          isPublic: e.target.checked,
+                          showInGallery: e.target.checked ? current.showInGallery : false,
+                        }))}
+                        style={{ width: "20px", height: "20px", accentColor: "#8B0000", cursor: "pointer" }}
+                      />
+                      <Globe size={16} /> תמונה ציבורית — מאפשרת קישור ציבורי
+                    </label>
+                    <label style={{ margin: "12px 0 0", fontWeight: "700", fontSize: "13.5px", color: formData.isPublic ? "#495057" : "#94a3b8", display: "flex", alignItems: "center", gap: "8px" }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.showInGallery || false}
+                        disabled={!formData.isPublic}
+                        onChange={(e) => setFormData((current) => ({
+                          ...current,
+                          showInGallery: e.target.checked,
+                        }))}
+                        style={{ width: "20px", height: "20px", accentColor: "#8B0000", cursor: formData.isPublic ? "pointer" : "not-allowed" }}
+                      />
+                      הצג בגלריה הציבורית
+                    </label>
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                      הוספה לגלריה אפשרית רק לאחר שהחלטת להפוך את התמונה לציבורית.
+                    </div>
+                  </div>
                 </div>
               </form>
             </div>
@@ -1351,9 +1702,6 @@ export default function Media() {
                             image: {
                               ...prev.image,
                               category: e.target.value,
-                              isPublic: e.target.value === PROMOTIONAL_IMAGE_CATEGORY
-                                ? true
-                                : prev.image.isPublic,
                             },
                           }))
                         }
@@ -1426,26 +1774,75 @@ export default function Media() {
                     placeholder="הוסף הערות או תיאור לתמונה זו..."
                   ></textarea>
 
-                  <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "10px" }}>
-                    <input
-                      type="checkbox"
-                      id="modal-is-public"
-                      checked={detailsModal.image.isPublic || false}
-                      disabled={detailsModal.image.category === PROMOTIONAL_IMAGE_CATEGORY}
-                      onChange={(e) =>
-                        setDetailsModal((prev) => ({
-                          isOpen: true,
-                          image: { ...prev.image, isPublic: e.target.checked },
-                        }))
-                      }
-                      style={{ width: "18px", height: "18px", accentColor: "#8b2c2c", cursor: "pointer" }}
-                    />
-                    <label
-                      htmlFor="modal-is-public"
-                      style={{ fontWeight: "600", fontSize: "14px", color: "#495057", cursor: "pointer", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}
-                    >
-                      <Globe size={16} /> הצג באתר הציבורי (בגלריה הציבורית)
-                    </label>
+                  <div style={{ marginTop: "16px", padding: 14, borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                    <div className="media-status-row">
+                      <span className={`media-status-badge ${detailsModal.image.isPublic ? "media-status-public" : "media-status-private"}`}>
+                        {detailsModal.image.isPublic ? "ציבורית" : "פרטית"}
+                      </span>
+                  {detailsModal.image.showInGallery && (
+                    <span className="media-status-badge media-status-gallery">מוצגת בגלריה</span>
+                  )}
+                  {detailsModal.image.siteAsset && (
+                    <span className="media-status-badge media-status-site-asset">תמונת אתר</span>
+                  )}
+                  {detailsModal.image.usageCount > 0 && (
+                        <span className="media-status-badge media-status-site">
+                          בשימוש באתר · {detailsModal.image.usageCount}
+                        </span>
+                      )}
+                      {detailsModal.image.galleryVisibilityLegacy && (
+                        <span className="media-status-badge media-status-legacy">מצב ישן — טרם הוסב</span>
+                      )}
+                    </div>
+                    {detailsModal.image.usageCount > 0 && (
+                      <ul className="media-usage-list">
+                        {detailsModal.image.usageRefs.map((usage) => (
+                          <li key={usage.key}>{usage.label || usage.field}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="media-card-actions">
+                      <button
+                        type="button"
+                        className="media-action-button"
+                        disabled={pendingImageIds.has(detailsModal.image.id)}
+                        onClick={(e) => requestImageAction(
+                          e,
+                          detailsModal.image.isPublic ? "make-private" : "make-public",
+                          detailsModal.image,
+                        )}
+                      >
+                        {detailsModal.image.isPublic ? "הפוך לפרטית" : "הפוך לציבורית"}
+                      </button>
+                      <button
+                        type="button"
+                        className="media-action-button"
+                        disabled={pendingImageIds.has(detailsModal.image.id)}
+                        onClick={(e) => requestImageAction(
+                          e,
+                          detailsModal.image.showInGallery
+                            ? "remove-gallery"
+                            : (detailsModal.image.isPublic ? "add-gallery" : "publish-and-add-gallery"),
+                          detailsModal.image,
+                        )}
+                      >
+                        {detailsModal.image.showInGallery
+                          ? "הסר מהגלריה"
+                          : (detailsModal.image.isPublic ? "הוסף לגלריה" : "פרסם והוסף לגלריה")}
+                      </button>
+                      <button
+                        type="button"
+                        className="media-action-button"
+                        disabled={pendingImageIds.has(detailsModal.image.id)}
+                        onClick={(e) => requestImageAction(
+                          e,
+                          detailsModal.image.siteAsset ? "remove-site-asset" : "add-site-asset",
+                          detailsModal.image,
+                        )}
+                      >
+                        {detailsModal.image.siteAsset ? "הסר מתמונות האתר" : "הוסף לתמונות האתר"}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1471,6 +1868,70 @@ export default function Media() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {actionConfirm.isOpen && actionConfirm.image && (
+        <div
+          role="presentation"
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15,23,42,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 5100,
+            direction: "rtl",
+            padding: 20,
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="image-action-confirm-title"
+            style={{
+              backgroundColor: "#fff",
+              padding: 28,
+              borderRadius: 20,
+              width: "100%",
+              maxWidth: 440,
+              boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
+            }}
+          >
+            <h4 id="image-action-confirm-title" style={{ color: "#343a40", margin: "0 0 12px", fontSize: "1.2rem" }}>
+              {IMAGE_ACTION_COPY[actionConfirm.type]?.title}
+            </h4>
+            <p style={{ color: "#475569", fontSize: 14, lineHeight: 1.65, margin: "0 0 8px" }}>
+              <strong>{actionConfirm.image.title}</strong>
+            </p>
+            <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.65, margin: "0 0 24px" }}>
+              {IMAGE_ACTION_COPY[actionConfirm.type]?.message}
+            </p>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn"
+                disabled={pendingImageIds.has(actionConfirm.image.id)}
+                onClick={() => setActionConfirm({ isOpen: false, type: "", image: null })}
+                style={{ flex: "1 1 140px" }}
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={pendingImageIds.has(actionConfirm.image.id)}
+                onClick={executeImageAction}
+                style={{ flex: "1 1 180px" }}
+              >
+                {pendingImageIds.has(actionConfirm.image.id)
+                  ? "מעדכן..."
+                  : IMAGE_ACTION_COPY[actionConfirm.type]?.confirm}
+              </button>
             </div>
           </div>
         </div>
@@ -1543,6 +2004,7 @@ export default function Media() {
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
               <button
                 onClick={() => setDeleteConfirm({ isOpen: false, image: null })}
+                disabled={pendingImageIds.has(deleteConfirm.image?.id)}
                 style={{
                   flex: 1,
                   padding: "12px",
@@ -1559,6 +2021,7 @@ export default function Media() {
               </button>
               <button
                 onClick={executeDelete}
+                disabled={pendingImageIds.has(deleteConfirm.image?.id)}
                 style={{
                   flex: 1,
                   padding: "12px",
@@ -1572,7 +2035,7 @@ export default function Media() {
                   boxShadow: "0 4px 12px rgba(220,53,69,0.2)",
                 }}
               >
-                כן, מחק לחלוטין
+                {pendingImageIds.has(deleteConfirm.image?.id) ? "מוחק..." : "כן, מחק לחלוטין"}
               </button>
             </div>
           </div>

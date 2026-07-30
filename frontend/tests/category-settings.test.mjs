@@ -3,12 +3,13 @@ import test from "node:test";
 import {
   getCategoryItems,
   IMAGE_CATEGORIES_TITLE,
+  hasExplicitGalleryVisibility,
   isProtectedCategory,
   isPublicGalleryImage,
   LINK_CATEGORIES_TITLE,
   normalizeCategoryGroups,
+  normalizeImageVisibility,
   PROMOTIONAL_IMAGE_CATEGORY,
-  shouldImageBePublic,
 } from "../src/utils/categorySettings.js";
 
 test("normalizes current settings and injects the protected promotional image category", () => {
@@ -51,7 +52,7 @@ test("marks only the reserved image category as protected", () => {
   );
 });
 
-test("keeps promotional images publicly readable but out of gallery presentation", () => {
+test("keeps legacy promotional images out of gallery presentation", () => {
   const promotional = {
     isPublic: true,
     category: PROMOTIONAL_IMAGE_CATEGORY,
@@ -60,6 +61,36 @@ test("keeps promotional images publicly readable but out of gallery presentation
   assert.equal(isPublicGalleryImage(promotional), false);
   assert.equal(isPublicGalleryImage({ isPublic: true, category: "קהילה" }), true);
   assert.equal(isPublicGalleryImage({ isPublic: false, category: "קהילה" }), false);
-  assert.equal(shouldImageBePublic(PROMOTIONAL_IMAGE_CATEGORY, false), true);
-  assert.equal(shouldImageBePublic("קהילה", false), false);
+});
+
+test("explicit gallery visibility is independent from category and requires public access", () => {
+  assert.equal(isPublicGalleryImage({
+    isPublic: true,
+    category: PROMOTIONAL_IMAGE_CATEGORY,
+    showInGallery: true,
+  }), true);
+  assert.equal(isPublicGalleryImage({
+    isPublic: true,
+    category: "קהילה",
+    showInGallery: false,
+  }), false);
+  assert.equal(isPublicGalleryImage({
+    isPublic: false,
+    category: "קהילה",
+    showInGallery: true,
+  }), false);
+});
+
+test("normalizes legacy visibility without hiding migration state", () => {
+  const legacy = normalizeImageVisibility({ isPublic: true, category: "קהילה" });
+  assert.equal(legacy.showInGallery, true);
+  assert.equal(legacy.galleryVisibilityLegacy, true);
+  const current = normalizeImageVisibility({
+    isPublic: true,
+    category: "קהילה",
+    showInGallery: false,
+  });
+  assert.equal(current.showInGallery, false);
+  assert.equal(current.galleryVisibilityLegacy, false);
+  assert.equal(hasExplicitGalleryVisibility(current), true);
 });

@@ -83,26 +83,20 @@ function RouteBoundary({ children }) {
 
 export default function App() {
   useEffect(() => {
-    // حقن أيقونة إمكانية الوصول (UserWay) 
-    // تأخير التحميل لثانية ونصف لتحسين أداء الموقع
-    const timer = setTimeout(() => {
-      if (!document.getElementById("userway-script")) {
-        const script = document.createElement("script");
-        script.id = "userway-script";
-        script.src = "https://cdn.userway.org/widget.js";
-        
-        // الحساب الفعال للأيقونة
-        script.setAttribute("data-account", "v82XqLOMxV");
-        script.setAttribute("data-position", "5");
-        // تغيير اللون للعنابي الخاص بمنظمة متحبريم
-        script.setAttribute("data-color", "#8b2c2c"); 
-        
-        script.async = true;
-        document.body.appendChild(script);
-      }
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    // Keep one persistent UserWay instance across client-side route changes.
+    if (!document.getElementById("userway-script")) {
+      const script = document.createElement("script");
+      script.id = "userway-script";
+      script.src = "https://cdn.userway.org/widget.js";
+      script.setAttribute("data-account", "v82XqLOMxV");
+      script.setAttribute("data-position", "5");
+      script.setAttribute("data-color", "#8b2c2c");
+      script.async = true;
+      script.addEventListener("error", () => {
+        console.warn("UserWay widget could not be loaded from its CDN.");
+      });
+      document.body.appendChild(script);
+    }
   }, []);
   return (
     <>

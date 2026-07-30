@@ -1,4 +1,5 @@
 import useSiteContent from "@/hooks/useSiteContent";
+import { resolveSiteImageUrl } from "@/utils/siteImageReferences";
 
 export default function TeamSection() {
   const { content } = useSiteContent();
@@ -15,7 +16,7 @@ export default function TeamSection() {
           {(t.members || []).map((m, i) => (
             <article key={i} className="team-card">
               <div className="team-photo">
-                {m.img && <img src={m.img} alt={m.name} loading="lazy" />}
+                {resolveSiteImageUrl(m.img) && <img src={resolveSiteImageUrl(m.img)} alt={m.name} loading="lazy" />}
               </div>
               <div className="team-info">
                 <h4>{m.name}</h4>

@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { auth } from "../firebase";
 import { getPublicGalleryImages } from "../services/imagesService";
-import { Camera, Image } from "lucide-react";
+import { Image } from "lucide-react";
 import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
 import "../styles/public.css";
@@ -67,8 +67,8 @@ export default function PublicGallery() {
       <PublicNavbar />
       <div className="container" style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px 20px" }}>
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
-          <h1 style={{ color: "#8B0000", fontSize: "2.5rem", marginBottom: "10px", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
-            <Camera size={38} strokeWidth={1.8} /> גلריית תמונות
+          <h1 style={{ color: "#8B0000", fontSize: "2.5rem", marginBottom: "10px" }}>
+            גלריית תמונות
           </h1>
           <p style={{ color: "#666", fontSize: "1.1rem" }}>
             כל התמונות שהועלו לאתר על ידי הקהילה
@@ -148,17 +148,6 @@ export default function PublicGallery() {
                     decoding="async"
                     style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                   />
-                </div>
-                <div style={{ padding: "12px 16px" }}>
-                  <div style={{ fontWeight: "600", color: "#333" }}>{img.title}</div>
-                  <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
-                    {img.category} • {img.displayDate}
-                  </div>
-                  {img.notes && (
-                    <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>
-                      {img.notes}
-                    </div>
-                  )}
                 </div>
               </div>
             ))}

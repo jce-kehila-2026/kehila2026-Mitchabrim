@@ -4,6 +4,7 @@ import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
 import { getActivityBySlug } from "@/data/activities";
 import useSiteContent from "@/hooks/useSiteContent";
+import { resolveSiteImageUrl } from "@/utils/siteImageReferences";
 
 function NL({ text }) {
   return (text || "").split("\n").map((line, i, arr) => (
@@ -34,7 +35,7 @@ export default function ActivityDetail() {
   const activity = {
     title: override.title?.trim() || base.title,
     longDescription: override.longDescription?.trim() || base.longDescription,
-    image: override.image?.trim() || base.image,
+    image: resolveSiteImageUrl(override.image) || base.image,
   };
 
 

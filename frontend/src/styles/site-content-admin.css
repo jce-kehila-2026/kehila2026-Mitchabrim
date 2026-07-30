@@ -180,6 +180,15 @@
   flex-direction: column;
   gap: 8px;
 }
+.sc-image-reference-state {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #8a5b34;
+}
+.sc-image-reference-state.is-managed {
+  color: #1f6b3a;
+  font-weight: 700;
+}
 .sc-image-buttons { display: flex; gap: 8px; }
 .sc-btn-ghost {
   background: transparent;

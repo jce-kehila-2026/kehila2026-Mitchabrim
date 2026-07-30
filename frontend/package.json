@@ -40,6 +40,13 @@
     "test:location-production": "node --test tests/location-production-build.test.mjs",
     "test:location-duplicate": "node --test tests/location-duplicate-request.test.mjs",
     "test:partners-wave": "node --test tests/partners-wave.test.mjs",
+    "test:userway": "node --test tests/userway-widget.test.mjs",
+    "test:image-management": "node --test tests/image-management-phase1.test.mjs",
+    "test:image-management-phase2": "node --test tests/image-management-phase2.test.mjs",
+    "test:image-management-usability": "node --test tests/image-management-usability.test.mjs",
+    "backfill:image-gallery-visibility:dry-run": "node scripts/image-gallery-visibility-backfill.mjs",
+    "backfill:image-site-assets:dry-run": "node scripts/image-site-asset-backfill.mjs",
+    "migrate:site-image-references:dry-run": "node scripts/site-image-reference-migration.mjs",
     "reconcile:profile-requests:dry-run": "node scripts/profile-update-pending-locks.mjs",
     "backfill:profile-request-expiration:dry-run": "node scripts/profile-update-expiration-backfill.mjs",
     "verify:hosting-artifact": "node scripts/verify-hosting-artifact.mjs"

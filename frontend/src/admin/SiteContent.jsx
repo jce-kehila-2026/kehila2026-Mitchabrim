@@ -59,7 +59,12 @@ export default function SiteContent() {
     });
   };
 
-  const saveOne = (key) => async () => { await saveSection(key, content[key]); };
+  const saveOne = (key) => async () => {
+    const result = await saveSection(key, content[key]);
+    if (result?.sectionData) {
+      setSection(key, result.sectionData);
+    }
+  };
 
   const addItem = (sectionKey, listPath, item) => {
     setSection(sectionKey, (s) => {

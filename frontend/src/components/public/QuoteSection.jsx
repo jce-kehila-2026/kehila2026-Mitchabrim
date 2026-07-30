@@ -1,8 +1,10 @@
 import useSiteContent from "@/hooks/useSiteContent";
+import { resolveSiteImageUrl } from "@/utils/siteImageReferences";
 
 export default function QuoteSection() {
   const { content } = useSiteContent();
   const q = content.quote;
+  const imageUrl = resolveSiteImageUrl(q.image);
   return (
     <section className="quote-section-v2">
       <span className="qv-shape qv-shape-circle-lg" aria-hidden />
@@ -12,7 +14,7 @@ export default function QuoteSection() {
         <div className="qv-card">
           <div className="qv-portrait-wrap">
             <div className="qv-portrait">
-              {q.image && <img src={q.image} alt={q.author || "ציטוט"} loading="lazy" decoding="async" />}
+              {imageUrl && <img src={imageUrl} alt={q.author || "ציטוט"} loading="lazy" decoding="async" />}
             </div>
             <div className="qv-logo-badge" aria-hidden>
               <svg viewBox="0 0 32 32" width="22" height="22">

@@ -11,6 +11,7 @@ import beitIsraelStudents from "@/assets/partners/beit-israel-students.svg";
 import schools from "@/assets/partners/schools.svg";
 import electricCompany from "@/assets/partners/electric-company.svg";
 import { getFlowTrackLength } from "@/utils/partnersWave";
+import { resolveSiteImageUrl } from "@/utils/siteImageReferences";
 
 const DEFAULT_PARTNERS = [
   { name: "עיריית ירושלים", logo: jerusalemMunicipality },
@@ -37,7 +38,7 @@ const isPortableImageUrl = (url) => {
 };
 
 function PartnerLogo({ partner, fallbackLogo }) {
-  const dynamicImageUrl = partner.imageUrl || partner.logo;
+  const dynamicImageUrl = resolveSiteImageUrl(partner.imageUrl || partner.logo);
   const logo = isPortableImageUrl(dynamicImageUrl) ? dynamicImageUrl : null;
   const [failed, setFailed] = useState(false);
 
