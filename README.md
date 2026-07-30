@@ -141,21 +141,8 @@ npx.cmd firebase-tools deploy --only hosting --project mitchabrim-jce2026
 
 Project documentation is maintained in the GitHub Wiki.
 
-### Main Documentation
-
 - [Wiki Home](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki)
-- [Project-Overview](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/Project-Overview)
-- [User-Guide](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/User-Guide)
-- [Architecture-and-Design](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/Architecture-and-Design)
-- [Installation-and-Maintenance](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/Installation-and-Maintenance)
-- [Permissions-and-Security](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/Permissions-Security)
 
-### Additional Documentation
-
-- [Risk-Assessment](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/Risk-Assessment)
-- [System-Requirements](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/System-Requirements)
-- [Test-Plan](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/Test-Plan)
-- [Use-Case-Documentation](https://github.com/jce-kehila-2026/kehila2026-Mitchabrim/wiki/Use-Case-Documentation)
 
 ## Privacy and Security
 
