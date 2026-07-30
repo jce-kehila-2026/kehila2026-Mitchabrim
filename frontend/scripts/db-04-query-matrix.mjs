@@ -89,6 +89,23 @@ function staticCases(projectId) {
   return [
     ...equalityAndCreatedAt,
     {
+      name: "profileUpdateRequests:status+createdAt-desc",
+      collectionId: "profileUpdateRequests",
+      filters: [fieldFilter("status", "EQUAL", { stringValue: "pending" })],
+      orderBy: [{ field: { fieldPath: "createdAt" }, direction: "DESCENDING" }],
+      page: true,
+    },
+    {
+      name: "profileUpdateRequests:volunteerAuthUid+status+createdAt-desc",
+      collectionId: "profileUpdateRequests",
+      filters: [
+        fieldFilter("volunteerAuthUid"),
+        fieldFilter("status", "EQUAL", { stringValue: "pending" }),
+      ],
+      orderBy: [{ field: { fieldPath: "createdAt" }, direction: "DESCENDING" }],
+      page: true,
+    },
+    {
       name: "volunteerNotifications:volunteerAuthUid+read",
       collectionId: "volunteerNotifications",
       filters: [

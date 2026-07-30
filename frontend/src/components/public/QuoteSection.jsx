@@ -7,11 +7,6 @@ export default function QuoteSection() {
     <section className="quote-section-v2">
       <span className="qv-shape qv-shape-circle-lg" aria-hidden />
       <span className="qv-shape qv-shape-circle-sm" aria-hidden />
-      <span className="qv-shape qv-shape-dots" aria-hidden />
-      <svg className="qv-leaf" viewBox="0 0 120 180" aria-hidden>
-        <path d="M60 10 C 20 60 20 130 60 170 C 100 130 100 60 60 10 Z M60 10 L60 170" fill="none" stroke="#E89A4A" strokeWidth="2" opacity="0.55" />
-        <path d="M60 50 L30 70 M60 80 L25 100 M60 110 L30 130 M60 50 L90 70 M60 80 L95 100 M60 110 L90 130" stroke="#E89A4A" strokeWidth="1.5" opacity="0.5" fill="none" strokeLinecap="round" />
-      </svg>
 
       <div className="container">
         <div className="qv-card">
@@ -41,11 +36,9 @@ export default function QuoteSection() {
             <p className="qv-quote">{q.text}</p>
 
             <div className="qv-divider" aria-hidden>
-              <span className="qv-brush" />
               <svg viewBox="0 0 24 24" width="14" height="14">
                 <path d="M12 21s-7-4.5-9.5-9C.8 8.5 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6.2 4.5 4.5 8-2.5 4.5-9.5 9-9.5 9z" fill="none" stroke="#E89A4A" strokeWidth="1.8" />
               </svg>
-              <span className="qv-brush" />
             </div>
 
             <div className="qv-sign">{q.author}</div>

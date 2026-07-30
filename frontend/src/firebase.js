@@ -4,7 +4,10 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage"; 
 import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
 import { getToken, initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
-import { prepareAppCheckDebugMode } from "./utils/appCheckDebug";
+import {
+  APP_CHECK_DEBUG_BUILD,
+  prepareAppCheckDebugMode,
+} from "@app-check-debug";
 
 const firebaseConfig = {
  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -21,7 +24,8 @@ const app = initializeApp(firebaseConfig);
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
 const useFirebaseEmulators = import.meta.env.DEV
   && import.meta.env.VITE_FIREBASE_USE_EMULATORS === "true";
-const useAppCheckDebug = import.meta.env.DEV
+const useAppCheckDebug = APP_CHECK_DEBUG_BUILD
+  && import.meta.env.DEV
   && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG === "true";
 
 let appCheckDebugSetupError = null;
@@ -65,7 +69,11 @@ export async function getSecureFunctions() {
     error.code = "join-request/app-check-debug-unsupported";
     throw error;
   }
-  if (!appCheck) return null;
+  if (!appCheck) {
+    const error = new Error("App Check is not configured for this application build.");
+    error.code = "app-check/config-missing";
+    throw error;
+  }
 
   // Do not instantiate Functions until App Check has completed one successful
   // exchange. This guarantees that the Functions context observes the App

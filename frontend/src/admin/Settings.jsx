@@ -30,6 +30,7 @@ import {
   normalizeLocationName,
   updateAreasModel,
 } from "@/utils/elderlyFormModel";
+import { createSubmissionGuard } from "@/utils/submissionGuard";
 
 const ROLE_LABEL = { admin: "מנהל", volunteer: "מתנדב" };
 
@@ -183,6 +184,7 @@ export default function Settings() {
     confirmLabel: "כן, המשך",
     onConfirm: null,
   });
+  const [isLocationChangePending, setIsLocationChangePending] = useState(false);
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -324,12 +326,15 @@ export default function Settings() {
       showToast(error.message);
       return;
     }
+    const submissionGuard = createSubmissionGuard();
     setGenericConfirm({
       isOpen: true,
       title,
       message,
       confirmLabel: "כן, המשך",
       onConfirm: async () => {
+        if (!submissionGuard.tryAcquire()) return;
+        setIsLocationChangePending(true);
         try {
           const result = await updateLocationSettings(change);
           setAreas(sortAreas(result?.areas || preview));
@@ -347,6 +352,7 @@ export default function Settings() {
           });
           showToast(locationSettingsErrorMessage(error));
         } finally {
+          setIsLocationChangePending(false);
           setGenericConfirm({ isOpen: false });
         }
       },
@@ -1101,9 +1107,9 @@ export default function Settings() {
           <div style={{ backgroundColor: "white", padding: "24px", borderRadius: "16px", width: "90%", maxWidth: "400px", boxShadow: "0 10px 30px rgba(0,0,0,0.2)", textAlign: "center" }}>
             <h3 style={{ margin: "0 0 10px 0", color: "#dc3545", fontWeight: "bold", fontSize: "1.3rem" }}>{genericConfirm.title}</h3>
             <p style={{ color: "#6c757d", marginBottom: "24px", fontSize: "15px", lineHeight: "1.5" }}>{genericConfirm.message}</p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#f8f9fa", color: "#495057", border: "1px solid #ced4da", fontWeight: "bold", cursor: "pointer" }} onClick={() => setGenericConfirm({ isOpen: false })}>ביטול</button>
-              <button style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#dc3545", color: "white", border: "none", fontWeight: "bold", cursor: "pointer" }} onClick={genericConfirm.onConfirm}>{genericConfirm.confirmLabel || "כן, המשך"}</button>
+            <div aria-busy={isLocationChangePending} style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+              <button type="button" disabled={isLocationChangePending} style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#f8f9fa", color: "#495057", border: "1px solid #ced4da", fontWeight: "bold", cursor: isLocationChangePending ? "not-allowed" : "pointer", opacity: isLocationChangePending ? 0.65 : 1 }} onClick={() => setGenericConfirm({ isOpen: false })}>ביטול</button>
+              <button type="button" disabled={isLocationChangePending} style={{ flex: 1, padding: "10px 0", borderRadius: "10px", backgroundColor: "#dc3545", color: "white", border: "none", fontWeight: "bold", cursor: isLocationChangePending ? "not-allowed" : "pointer", opacity: isLocationChangePending ? 0.65 : 1 }} onClick={genericConfirm.onConfirm}>{isLocationChangePending ? "שומר..." : (genericConfirm.confirmLabel || "כן, המשך")}</button>
             </div>
           </div>
         </div>

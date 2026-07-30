@@ -8,6 +8,7 @@
     "rules": "storage.rules"
   },
   "hosting": {
+    "predeploy": ["npm run build:production"],
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [{ "source": "**", "destination": "/index.html" }]

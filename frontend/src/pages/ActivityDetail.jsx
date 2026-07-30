@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { Link, useParams, Navigate } from "react-router-dom";
 import PublicNavbar from "@/components/public/PublicNavbar.jsx";
 import PublicFooter from "@/components/public/PublicFooter.jsx";
-import BackgroundDecorations from "@/components/public/BackgroundDecorations.jsx";
 import { getActivityBySlug } from "@/data/activities";
 import useSiteContent from "@/hooks/useSiteContent";
 
@@ -41,7 +40,6 @@ export default function ActivityDetail() {
 
   return (
     <div className="homepage-background">
-      <BackgroundDecorations />
       <PublicNavbar />
 
       <section className="pub-section activity-detail">

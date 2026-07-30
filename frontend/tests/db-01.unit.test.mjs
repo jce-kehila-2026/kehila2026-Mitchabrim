@@ -15,15 +15,25 @@ test("operation ids are stable Firestore-safe idempotency keys", () => {
   assert.throws(() => requireOperationId("not/allowed operation id"), /operation id/i);
 });
 
-test("task and profile request paired writes use transactions and deterministic ids", () => {
+test("task and profile request paired writes are atomic and use deterministic ids", () => {
   const tasks = source("src/services/tasksService.js");
   assert.match(tasks, /runTransaction\(db/);
   assert.match(tasks, /`task_\$\{safeOperationId\}`/);
   assert.match(tasks, /`task_assigned_\$\{docRef\.id\}`/);
 
   const requests = source("src/services/profileUpdateRequestsService.js");
-  assert.match(requests, /runTransaction\(db/);
+  assert.match(
+    requests,
+    /createProfileUpdateRequest[\s\S]*?const batch = writeBatch\(db\)[\s\S]*?await batch\.commit\(\)/,
+  );
+  assert.doesNotMatch(
+    requests,
+    /createProfileUpdateRequest[\s\S]*?transaction\.get\(reqRef\)/,
+  );
   assert.match(requests, /`profile_\$\{safeOperationId\}`/);
+  assert.match(requests, /profileUpdateRequestPending/);
+  assert.match(requests, /batch\.set\(pendingLockRef/);
+  assert.match(requests, /transaction\.delete\(pendingLockRef\)/);
   assert.match(requests, /decision-conflict/);
 });
 
