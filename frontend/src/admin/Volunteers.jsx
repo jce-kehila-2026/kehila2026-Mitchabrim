@@ -27,9 +27,10 @@ import {
 } from "../services/volunteersService";
 import { getReportsForVolunteer } from "../services/reportsService";
 import { getTasksForVolunteer, taskStatusLabel, taskTypeLabel, taskStatusBadge } from "../services/tasksService";
-import { getElderlyForVolunteerIds } from "../services/elderlyService";
+import { subscribeElderlyForVolunteerIds } from "../services/elderlyService";
 import useFirestorePagination from "../hooks/useFirestorePagination";
 import useDebouncedValue from "../hooks/useDebouncedValue";
+import { deriveVolunteerAssignment } from "../utils/volunteerAssignments";
 
 import useAreasAndNeighborhoods from "../hooks/useAreasAndNeighborhoods";
 
@@ -215,31 +216,33 @@ export default function Volunteers() {
      Uses a single Firestore `in` query on elderly.volId (chunked at 30).
   ========================= */
   const [elderlyByVolunteer, setElderlyByVolunteer] = useState(new Map());
+  const [assignmentsLoading, setAssignmentsLoading] = useState(true);
+  const [assignmentsError, setAssignmentsError] = useState("");
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const ids = paged.items.map((v) => v.id);
-      if (ids.length === 0) {
-        setElderlyByVolunteer(new Map());
-        return;
-      }
-      try {
-        const rows = await getElderlyForVolunteerIds(ids);
-        if (cancelled) return;
+    const ids = paged.items.map((volunteer) => String(volunteer.id)).filter(Boolean);
+    setAssignmentsLoading(true);
+    setAssignmentsError("");
+    return subscribeElderlyForVolunteerIds(
+      ids,
+      (rows) => {
         const map = new Map();
         for (const e of rows) {
           if (!e.volId) continue;
           const name = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.name || "אזרח ותיק";
-          const arr = map.get(e.volId) || [];
+          const volunteerId = String(e.volId);
+          const arr = map.get(volunteerId) || [];
           arr.push({ id: e.id, name });
-          map.set(e.volId, arr);
+          map.set(volunteerId, arr);
         }
         setElderlyByVolunteer(map);
-      } catch (err) {
+        setAssignmentsLoading(false);
+      },
+      (err) => {
         console.error("getElderlyForVolunteerIds failed:", err);
-      }
-    })();
-    return () => { cancelled = true; };
+        setAssignmentsError("טעינת שיוכי האזרחים הוותיקים נכשלה");
+        setAssignmentsLoading(false);
+      },
+    );
   }, [paged.items]);
 
   /* =========================
@@ -352,11 +355,16 @@ export default function Volunteers() {
     return [...fullVolunteers].sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
   }, [fullVolunteers]);
 
-  const volPageItems = paged.items;
+  const volPageItems = useMemo(
+    () => paged.items.map((volunteer) => deriveVolunteerAssignment(
+      volunteer,
+      elderlyByVolunteer.get(String(volunteer.id)) || [],
+    )),
+    [paged.items, elderlyByVolunteer],
+  );
   const volCurrentPage = paged.page;
   const volTotalPages = paged.totalPages;
   const volPaginationTotal = totalCount ?? 0;
-  const activeElderlyByVolunteer = elderlyByVolunteer;
   const loading = paged.loading;
 
   // Groups pagination — unchanged (client-side slice).
@@ -798,7 +806,9 @@ export default function Volunteers() {
                   key: "assigned",
                   label: "משויך ל",
                   render: (r) => {
-                    const list = activeElderlyByVolunteer.get(r.id) || [];
+                    if (assignmentsLoading) return <span style={{ color: "#6b7280" }}>טוען...</span>;
+                    if (assignmentsError) return <span style={{ color: "#b91c1c" }}>לא זמין</span>;
+                    const list = r.assignedElderly || [];
                     if (list.length === 0) {
                       return <span style={{ color: "#6b7280" }}>לא משויך</span>;
                     }
@@ -821,7 +831,13 @@ export default function Volunteers() {
                 {
                   key: "status",
                   label: "סטטוס",
-                  render: (r) => <span className={`badge ${statusBadge(r.status)}`}>{r.status || "—"}</span>,
+                  render: (r) => assignmentsLoading ? (
+                    <span style={{ color: "#6b7280" }}>טוען...</span>
+                  ) : assignmentsError ? (
+                    <span style={{ color: "#b91c1c" }}>לא זמין</span>
+                  ) : (
+                    <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
+                  ),
                 },
                 { key: "rating", label: "דירוג" },
               ]}
@@ -1946,7 +1962,7 @@ function AddVolunteerModal({ groups = [], onClose, onSave }) {
     address: "",
     neighborhood: "",
     area: "",
-    status: "משויך לאזרח ותיק",
+    status: "ממתין לשיבוץ",
     start: "",
     notes: "",
     groupId: null,

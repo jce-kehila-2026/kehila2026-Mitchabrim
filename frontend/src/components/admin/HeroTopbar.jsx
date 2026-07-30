@@ -7,6 +7,19 @@ import {
 } from "../../services/notificationsService";
 
 const MAX_NOTIFICATIONS = 10;
+const VIEWPORT_GUTTER = 12;
+
+function dropdownPosition(trigger, width) {
+  const rect = trigger.getBoundingClientRect();
+  const availableWidth = Math.max(0, window.innerWidth - (VIEWPORT_GUTTER * 2));
+  const dropdownWidth = Math.min(width, availableWidth);
+  const idealRight = window.innerWidth - rect.right;
+  const maximumRight = Math.max(VIEWPORT_GUTTER, window.innerWidth - dropdownWidth - VIEWPORT_GUTTER);
+  return {
+    top: rect.bottom + 8,
+    right: Math.min(Math.max(idealRight, VIEWPORT_GUTTER), maximumRight),
+  };
+}
 
 function formatNotifDate(ts) {
   try {
@@ -92,8 +105,7 @@ export default function HeroTopbar() {
     if (!notifOpen) return;
     const update = () => {
       if (!notifBtnRef.current) return;
-      const r = notifBtnRef.current.getBoundingClientRect();
-      setNotifPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+      setNotifPos(dropdownPosition(notifBtnRef.current, 320));
     };
     update();
     window.addEventListener("scroll", update, true);
@@ -108,8 +120,7 @@ export default function HeroTopbar() {
     if (!menuOpen) return;
     const update = () => {
       if (!menuBtnRef.current) return;
-      const r = menuBtnRef.current.getBoundingClientRect();
-      setMenuPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+      setMenuPos(dropdownPosition(menuBtnRef.current, 200));
     };
     update();
     window.addEventListener("scroll", update, true);

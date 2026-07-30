@@ -267,42 +267,37 @@ const REPORT_TYPES = {
     description: "התקדמות, מסירות ובעיות",
     collection: "projects",
     loadData: async () => {
-      try {
-        const [projs, groupsByProject, participantsByProject] = await Promise.all([
-          getProjects(),
-          getProjectGroupsByProject(),
-          getElderlyParticipantsByProject(),
-        ]);
-        const participants = Object.values(participantsByProject).flat();
-        const groupAssignments = Object.values(groupsByProject).flat();
-        const elderlyIds = participants.map((item) => item.elderlyId || item.id);
-        const groupIds = [
-          ...groupAssignments.map((item) => item.id),
-          ...participants.map((item) => item.assignedGroupId),
-        ];
-        const [elderly, volGroups] = await Promise.all([
-          getElderlyByIds(elderlyIds),
-          getVolunteerGroupsByIds(groupIds),
-        ]);
-        const volunteerIds = [
-          ...groupAssignments.flatMap((item) => item.volunteerIds || []),
-          ...participants.map((item) => item.assignedVolunteerId),
-          ...participants.map((item) => item.volId),
-          ...elderly.map((item) => item.volId),
-        ];
-        const volunteers = await getVolunteersByIds(volunteerIds);
-        return buildProjectReports({
-          projects: projs,
-          participantsByProject,
-          groupsByProject,
-          elderly,
-          groups: volGroups,
-          volunteers,
-        });
-      } catch (error) {
-        console.error("Failed to load projects from Firestore:", error);
-        return [];
-      }
+      const [projs, groupsByProject, participantsByProject] = await Promise.all([
+        getProjects(),
+        getProjectGroupsByProject(),
+        getElderlyParticipantsByProject(),
+      ]);
+      const participants = Object.values(participantsByProject).flat();
+      const groupAssignments = Object.values(groupsByProject).flat();
+      const elderlyIds = participants.map((item) => item.elderlyId || item.id);
+      const groupIds = [
+        ...groupAssignments.map((item) => item.id),
+        ...participants.map((item) => item.assignedGroupId),
+      ];
+      const [elderly, volGroups] = await Promise.all([
+        getElderlyByIds(elderlyIds),
+        getVolunteerGroupsByIds(groupIds),
+      ]);
+      const volunteerIds = [
+        ...groupAssignments.flatMap((item) => item.volunteerIds || []),
+        ...participants.map((item) => item.assignedVolunteerId),
+        ...participants.map((item) => item.volId),
+        ...elderly.map((item) => item.volId),
+      ];
+      const volunteers = await getVolunteersByIds(volunteerIds);
+      return buildProjectReports({
+        projects: projs,
+        participantsByProject,
+        groupsByProject,
+        elderly,
+        groups: volGroups,
+        volunteers,
+      });
     },
     fields: [
       { key: "name", label: "שם הפרויקט" },
@@ -1086,6 +1081,7 @@ function ProjectReportDetails({ project, expanded, onToggle, selectedFields, fie
 const ReportBuilder = ({ reportKey, onBack }) => {
   const report = REPORT_TYPES[reportKey];
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [allData, setAllData] = useState([]);
   const [selectedFields, setSelectedFields] = useState(report.defaults);
   const [filters, setFilters] = useState({});
@@ -1096,6 +1092,7 @@ const ReportBuilder = ({ reportKey, onBack }) => {
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setLoadError("");
     (async () => {
       try {
         const data = await report.loadData();
@@ -1107,6 +1104,13 @@ const ReportBuilder = ({ reportKey, onBack }) => {
         console.error("Failed to load", report.collection, e);
         if (alive) {
           setAllData([]);
+          setLoadError(
+            e?.code === "permission-denied"
+              ? "אין הרשאה לטעון את נתוני הפרויקטים. יש לוודא שהמשתמש הוא מנהל פעיל ושכללי Firestore העדכניים פורסמו."
+              : e?.code === "failed-precondition"
+                ? "לא ניתן לטעון את נתוני הפרויקטים בגלל אינדקס חסר ב-Firestore."
+                : "טעינת נתוני הדוח נכשלה. נסו שוב ובדקו את פרטי השגיאה במסוף.",
+          );
         }
       } finally {
         if (alive) setLoading(false);
@@ -1170,6 +1174,9 @@ const ReportBuilder = ({ reportKey, onBack }) => {
 
   const toggleField = (k) => setSelectedFields((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
   const projectSelected = reportKey !== "projects" || Boolean(filters.projectId);
+  const visibleRecordCount = reportKey === "projects" && filters.projectId && filteredData.length
+    ? filteredData[0].participants.length
+    : filteredData.length;
 
   const selectedProjectPrintSections = (project) => {
     const selectedEntries = selectedFields
@@ -1468,22 +1475,22 @@ const ReportBuilder = ({ reportKey, onBack }) => {
               exportToPDF(report, filteredData, selectedFields, filters, sortLabel);
             }
           }}
-          disabled={!filteredData.length || !selectedFields.length || !projectSelected}
+          disabled={Boolean(loadError) || !filteredData.length || !selectedFields.length || !projectSelected}
           style={{
             padding: "10px 20px",
             background: "#8B0000",
             color: "white",
             border: "none",
             borderRadius: "8px",
-            cursor: filteredData.length && selectedFields.length && projectSelected ? "pointer" : "not-allowed",
-            opacity: filteredData.length && selectedFields.length && projectSelected ? 1 : 0.6,
+            cursor: !loadError && filteredData.length && selectedFields.length && projectSelected ? "pointer" : "not-allowed",
+            opacity: !loadError && filteredData.length && selectedFields.length && projectSelected ? 1 : 0.6,
             fontSize: "14px",
           }}
         >
           📄 ייצוא ל-PDF
         </button>
         <div style={{ marginInlineStart: "auto", color: "#666", alignSelf: "center" }}>
-          {loading ? "טוען…" : `${filteredData.length} רשומות`}
+          {loading ? "טוען…" : loadError ? "טעינת הנתונים נכשלה" : `${visibleRecordCount} רשומות`}
         </div>
       </div>
 
@@ -1491,6 +1498,10 @@ const ReportBuilder = ({ reportKey, onBack }) => {
       <SectionCard title="תצוגה מקדימה">
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "#666" }}>טוען נתונים…</div>
+        ) : loadError ? (
+          <div role="alert" style={{ padding: 40, textAlign: "center", color: "#8B0000" }}>
+            {loadError}
+          </div>
         ) : !selectedFields.length ? (
           <div style={{ padding: 40, textAlign: "center", color: "#666" }}>בחר לפחות עמודה אחת</div>
         ) : !filteredData.length ? (

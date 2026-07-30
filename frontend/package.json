@@ -44,6 +44,7 @@
     "test:image-management": "node --test tests/image-management-phase1.test.mjs",
     "test:image-management-phase2": "node --test tests/image-management-phase2.test.mjs",
     "test:image-management-usability": "node --test tests/image-management-usability.test.mjs",
+    "test:backup-status": "node --test tests/backup-status-integration.test.mjs",
     "backfill:image-gallery-visibility:dry-run": "node scripts/image-gallery-visibility-backfill.mjs",
     "backfill:image-site-assets:dry-run": "node scripts/image-site-asset-backfill.mjs",
     "migrate:site-image-references:dry-run": "node scripts/site-image-reference-migration.mjs",

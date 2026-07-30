@@ -166,6 +166,7 @@ export default function AdminTopbar() {
         .topbar-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(139,44,44,0.15); }
         .tb-dropdown {
           position: absolute; top: calc(100% + 8px); background: #fff;
+          right: 0; left: auto; max-width: calc(100vw - 24px);
           border: 1px solid #e2d8c9; border-radius: 14px;
           box-shadow: 0 10px 30px rgba(139,44,44,0.12);
           z-index: 1000; overflow: hidden; animation: tbFade .15s ease;
@@ -343,7 +344,7 @@ export default function AdminTopbar() {
           </button>
 
           {notifOpen && (
-            <div className="tb-dropdown" style={{ left: 0, width: 320, maxHeight: 420, overflowY: "auto" }}>
+            <div className="tb-dropdown" style={{ right: 0, left: "auto", width: 320, maxHeight: 420, overflowY: "auto" }}>
               <div style={{ padding: "14px 16px", borderBottom: "1px solid #f0e6d6", fontWeight: "bold", color: "#8b2c2c" }}>
                 התראות
               </div>
@@ -398,7 +399,7 @@ export default function AdminTopbar() {
           </button>
 
           {menuOpen && (
-            <div className="tb-dropdown" style={{ left: 0, width: 200 }}>
+            <div className="tb-dropdown" style={{ right: 0, left: "auto", width: 200 }}>
               <button className="tb-menu-item" onClick={() => { setMenuOpen(false); setProfileOpen(true); }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />

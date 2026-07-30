@@ -198,6 +198,7 @@ test("project UI routes every project print action through the safe printer", ()
   const projectsSource = readFileSync(resolve(root, "src/admin/Projects.jsx"), "utf8");
   const reportsSource = readFileSync(resolve(root, "src/admin/Reports.jsx"), "utf8");
   const modelSource = readFileSync(resolve(root, "src/utils/projectReportModel.js"), "utf8");
+  const rulesSource = readFileSync(resolve(root, "firestore.rules"), "utf8");
   assert.match(projectsSource, /openSafePrintReport/);
   assert.match(projectsSource, /מספר חבילות ששובץ להן מתנדב/);
   assert.match(projectsSource, /projectTotals\.notes/);
@@ -218,6 +219,13 @@ test("project UI routes every project print action through the safe printer", ()
   assert.match(reportsSource, /getElderlyByIds/);
   assert.match(reportsSource, /getVolunteersByIds/);
   assert.match(reportsSource, /getVolunteerGroupsByIds/);
+  assert.match(reportsSource, /setLoadError/);
+  assert.match(reportsSource, /role="alert"/);
+  assert.match(reportsSource, /filteredData\[0\]\.participants\.length/);
+  assert.match(
+    rulesSource,
+    /match \/\{path=\*\*\}\/projectGroups\/\{groupId\} \{\s*allow read: if isAdmin\(\);/,
+  );
   assert.match(modelSource, /current\.volName/);
   assert.match(modelSource, /current\.volId/);
   assert.doesNotMatch(
