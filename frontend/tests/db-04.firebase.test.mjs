@@ -56,6 +56,7 @@ await seed("volunteerTasks/match_task", {
 });
 await seed("profileUpdateRequests/match_request", {
   volunteerAuthUid: string("__db04_volunteerAuthUid__"),
+  status: string("pending"),
   createdAt: timestamp(),
 });
 await seed("volunteerNotifications/match_notification", {
@@ -79,8 +80,8 @@ const result = await probeDb04Queries({
   token: "owner",
   apiRoot,
 });
-assert.equal(result.queryCases, 80);
-assert.equal(result.checks, 214);
+assert.equal(result.queryCases, 82);
+assert.equal(result.checks, 216);
 assert.deepEqual(result.failures, []);
 
 async function runQuery(testCase, options = {}) {

@@ -9,24 +9,49 @@ import {
   query,
   where,
   orderBy,
+  startAfter,
   limit as fbLimit,
   onSnapshot,
   getDocs,
-  deleteDoc,
+  getDoc,
   doc,
   serverTimestamp,
+  Timestamp,
   runTransaction,
+  writeBatch,
 } from "firebase/firestore";
 import { sanitizeText } from "../utils/sanitize";
 import { retrySafeRead } from "../utils/errorPolicy";
 import { requireOperationId } from "../utils/operationId";
+import { profileUpdateRequestExpiryDate } from "../utils/profileUpdateRequestRetention";
 
 const COLLECTION = "profileUpdateRequests";
+const PENDING_LOCKS_COLLECTION = "profileUpdateRequestPending";
+export const PROFILE_REQUEST_PAGE_SIZE = 20;
+
+const mapRequest = (snapshot) => ({ id: snapshot.id, ...snapshot.data() });
+
+function pendingQueryForVolunteer(volunteerAuthUid) {
+  return query(
+    collection(db, COLLECTION),
+    where("volunteerAuthUid", "==", volunteerAuthUid),
+    where("status", "==", "pending"),
+    orderBy("createdAt", "desc"),
+    fbLimit(1),
+  );
+}
+
+function pendingExistsError(requestId = null) {
+  const error = new Error("A pending profile update request already exists");
+  error.code = "profile-update/pending-exists";
+  error.requestId = requestId;
+  return error;
+}
 
 /**
  * Subscribe to all profile update requests (admin view), newest first.
- * Optional `max` caps the result window (Dashboard passes 50; the
- * admin ProfileUpdateRequests page passes nothing = no limit).
+ * Optional `max` caps the live operational window used by Dashboard.
+ * Full management history uses cursor-based page functions below.
  * Returns the unsubscribe function.
  */
 export function subscribeAllProfileUpdateRequests(onData, onError, { max } = {}) {
@@ -39,32 +64,50 @@ export function subscribeAllProfileUpdateRequests(onData, onError, { max } = {})
   );
 }
 
-/**
- * Fetch the complete admin request history once.
- * The management page does not need a continuously re-delivered historical
- * collection; the dashboard keeps the bounded live operational window.
- */
-export async function getAllProfileUpdateRequests() {
-  const q = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
-  const snap = await retrySafeRead(() => getDocs(q));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+async function getRequestPage(baseParts, { pageSize = PROFILE_REQUEST_PAGE_SIZE, cursor = null } = {}) {
+  const safePageSize = Math.min(Math.max(Number(pageSize) || PROFILE_REQUEST_PAGE_SIZE, 1), 50);
+  const parts = [...baseParts];
+  if (cursor) parts.push(startAfter(cursor));
+  parts.push(fbLimit(safePageSize + 1));
+
+  const snap = await retrySafeRead(() => getDocs(query(...parts)));
+  const hasMore = snap.docs.length > safePageSize;
+  const pageDocs = hasMore ? snap.docs.slice(0, safePageSize) : snap.docs;
+  return {
+    items: pageDocs.map(mapRequest),
+    cursor: pageDocs.at(-1) || null,
+    hasMore,
+  };
 }
 
-/**
- * Subscribe to profile update requests for a single volunteer, newest first.
- * Filter matches Firestore rules: volunteerAuthUid == auth.uid.
- */
-export function subscribeProfileUpdateRequestsForVolunteer(volunteerAuthUid, onData, onError) {
-  const q = query(
+export function getProfileUpdateRequestsPageForVolunteer(
+  volunteerAuthUid,
+  options = {},
+) {
+  return getRequestPage([
     collection(db, COLLECTION),
     where("volunteerAuthUid", "==", volunteerAuthUid),
-    orderBy("createdAt", "desc")
-  );
-  return onSnapshot(
-    q,
-    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    (err) => onError && onError(err)
-  );
+    orderBy("createdAt", "desc"),
+  ], options);
+}
+
+export function getProfileUpdateRequestsPageForAdmin(
+  { status = "pending", ...options } = {},
+) {
+  const parts = [collection(db, COLLECTION)];
+  if (status && status !== "all") parts.push(where("status", "==", status));
+  parts.push(orderBy("createdAt", "desc"));
+  return getRequestPage(parts, options);
+}
+
+export async function getPendingProfileUpdateRequestForVolunteer(volunteerAuthUid) {
+  const snap = await retrySafeRead(() => getDocs(pendingQueryForVolunteer(volunteerAuthUid)));
+  return snap.empty ? null : mapRequest(snap.docs[0]);
+}
+
+export async function getProfileUpdateRequestById(requestId) {
+  const snap = await retrySafeRead(() => getDoc(doc(db, COLLECTION, requestId)));
+  return snap.exists() ? mapRequest(snap) : null;
 }
 
 /**
@@ -83,7 +126,11 @@ export async function createProfileUpdateRequest({
   const trimmed = sanitizeText(message, 1000);
   const safeVolName = sanitizeText(volunteerName, 200);
 
+  const existingPending = await getPendingProfileUpdateRequestForVolunteer(volunteerAuthUid);
+  if (existingPending) throw pendingExistsError(existingPending.id);
+
   const reqRef = doc(db, COLLECTION, `profile_${safeOperationId}`);
+  const pendingLockRef = doc(db, PENDING_LOCKS_COLLECTION, volunteerAuthUid);
   const notificationRef = doc(db, "notifications", `profile_request_${reqRef.id}`);
   const requestPayload = {
     volunteerId,
@@ -107,23 +154,41 @@ export async function createProfileUpdateRequest({
     createdAt: serverTimestamp(),
   };
 
-  return runTransaction(db, async (transaction) => {
-    const existing = await transaction.get(reqRef);
-    if (existing.exists()) {
-      if (
-        existing.data().operationId !== safeOperationId
-        || existing.data().volunteerAuthUid !== volunteerAuthUid
-      ) {
-        const error = new Error("Profile request operation ID conflict");
-        error.code = "db01/operation-conflict";
-        throw error;
-      }
-      return { id: reqRef.id, idempotentReplay: true };
-    }
-    transaction.set(reqRef, requestPayload);
-    transaction.set(notificationRef, notificationPayload);
-    return { id: reqRef.id, idempotentReplay: false };
+  const batch = writeBatch(db);
+  batch.set(reqRef, requestPayload);
+  batch.set(pendingLockRef, {
+    volunteerAuthUid,
+    requestId: reqRef.id,
+    createdAt: serverTimestamp(),
   });
+  batch.set(notificationRef, notificationPayload);
+
+  try {
+    await batch.commit();
+    return { id: reqRef.id, idempotentReplay: false };
+  } catch (error) {
+    // A retry of a commit whose response was lost reaches the update rule and
+    // is denied. Only then read the now-existing, volunteer-owned request and
+    // accept it when both immutable operation identifiers match.
+    if (error?.code === "permission-denied") {
+      try {
+        const existing = await getDoc(reqRef);
+        if (
+          existing.exists()
+          && existing.data().operationId === safeOperationId
+          && existing.data().volunteerAuthUid === volunteerAuthUid
+        ) {
+          return { id: reqRef.id, idempotentReplay: true };
+        }
+      } catch {
+        // Preserve the original batch failure when no own request is readable.
+      }
+      const pending = await getPendingProfileUpdateRequestForVolunteer(volunteerAuthUid)
+        .catch(() => null);
+      if (pending) throw pendingExistsError(pending.id);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -138,6 +203,7 @@ export async function decideProfileUpdateRequest({ requestId, volunteerAuthUid, 
   }
   const safeResponse = sanitizeText(response, 2000);
   const requestRef = doc(db, COLLECTION, requestId);
+  const pendingLockRef = doc(db, PENDING_LOCKS_COLLECTION, volunteerAuthUid);
   const notificationRef = doc(db, "volunteerNotifications", `profile_response_${requestId}`);
   const notificationPayload = {
     volunteerAuthUid,
@@ -155,9 +221,10 @@ export async function decideProfileUpdateRequest({ requestId, volunteerAuthUid, 
   };
 
   return runTransaction(db, async (transaction) => {
-    const [requestSnap, notificationSnap] = await Promise.all([
+    const [requestSnap, notificationSnap, pendingLockSnap] = await Promise.all([
       transaction.get(requestRef),
       transaction.get(notificationRef),
+      transaction.get(pendingLockRef),
     ]);
     if (!requestSnap.exists()) {
       const error = new Error("Profile update request not found");
@@ -175,16 +242,34 @@ export async function decideProfileUpdateRequest({ requestId, volunteerAuthUid, 
       error.code = "db01/decision-conflict";
       throw error;
     }
-    if (current.status === decision && notificationSnap.exists()) {
-      return { id: requestId, decision, idempotentReplay: true };
+    if (
+      current.status === decision
+      && !current.expiresAt
+      && current.reviewedAt?.toDate
+    ) {
+      transaction.update(requestRef, {
+        expiresAt: Timestamp.fromDate(
+          profileUpdateRequestExpiryDate(current.reviewedAt.toDate()),
+        ),
+      });
     }
     if (current.status === "pending") {
+      const reviewedAt = Timestamp.now();
       transaction.update(requestRef, {
         status: decision,
         adminResponse: safeResponse,
-        reviewedAt: serverTimestamp(),
+        reviewedAt,
+        expiresAt: Timestamp.fromDate(
+          profileUpdateRequestExpiryDate(reviewedAt.toDate()),
+        ),
         reviewedBy: auth.currentUser?.uid || null,
       });
+    }
+    if (pendingLockSnap.exists() && pendingLockSnap.data().requestId === requestId) {
+      transaction.delete(pendingLockRef);
+    }
+    if (current.status === decision && notificationSnap.exists()) {
+      return { id: requestId, decision, idempotentReplay: true };
     }
     if (!notificationSnap.exists()) {
       transaction.set(notificationRef, notificationPayload);
@@ -197,5 +282,22 @@ export async function decideProfileUpdateRequest({ requestId, volunteerAuthUid, 
  * Admin: delete a profile update request by id.
  */
 export async function deleteProfileUpdateRequest(requestId) {
-  await deleteDoc(doc(db, COLLECTION, requestId));
+  const requestRef = doc(db, COLLECTION, requestId);
+  await runTransaction(db, async (transaction) => {
+    const requestSnap = await transaction.get(requestRef);
+    if (!requestSnap.exists()) return;
+
+    const volunteerAuthUid = requestSnap.data().volunteerAuthUid;
+    const pendingLockRef = volunteerAuthUid
+      ? doc(db, PENDING_LOCKS_COLLECTION, volunteerAuthUid)
+      : null;
+    const pendingLockSnap = pendingLockRef
+      ? await transaction.get(pendingLockRef)
+      : null;
+
+    transaction.delete(requestRef);
+    if (pendingLockSnap?.exists() && pendingLockSnap.data().requestId === requestId) {
+      transaction.delete(pendingLockRef);
+    }
+  });
 }

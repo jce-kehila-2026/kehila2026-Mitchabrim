@@ -33,6 +33,23 @@
       ]
     },
     {
+      "collectionGroup": "profileUpdateRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "volunteerAuthUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "profileUpdateRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "volunteerNotifications",
       "queryScope": "COLLECTION",
       "fields": [
@@ -58,6 +75,15 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "profileUpdateRequests",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
     {
       "collectionGroup": "joinRequestDuplicates",
       "fieldPath": "expiresAt",

@@ -19,8 +19,6 @@ export default function PressSection() {
     <section id="press" className="press-section" dir="rtl">
       <div className="press-deco press-deco-blob" aria-hidden="true" />
       <div className="press-deco press-deco-circle-soft" aria-hidden="true" />
-      <div className="press-deco press-deco-dots-tl" aria-hidden="true" />
-      <div className="press-deco press-deco-dots-br" aria-hidden="true" />
 
       <div className="press-header">
         <h2 className="press-title">{p.title}</h2>

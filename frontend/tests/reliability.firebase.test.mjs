@@ -81,10 +81,16 @@ try {
     volunteerName: "Safe Volunteer",
     message: "Update request",
     status: "pending",
+    operationId: "reliability_atomic_request",
     createdAt: serverTimestamp(),
     reviewedAt: null,
     reviewedBy: null,
     adminResponse: "",
+  });
+  requestBatch.set(doc(volunteer.db, "profileUpdateRequestPending", volunteer.uid), {
+    volunteerAuthUid: volunteer.uid,
+    requestId,
+    createdAt: serverTimestamp(),
   });
   requestBatch.set(doc(volunteer.db, "notifications", `profile_request_${requestId}`), {
     audience: "admin",

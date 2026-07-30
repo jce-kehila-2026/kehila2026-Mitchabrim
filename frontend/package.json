@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:production",
+    "build:production": "node scripts/validate-production-env.mjs && vite build --mode production && node scripts/verify-hosting-artifact.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "test:sec01": "node scripts/run-sec-01-tests.mjs",
@@ -35,7 +36,13 @@
     "test:categories": "node --test tests/category-settings.test.mjs",
     "test:smoke": "node tests/reliability.hosting.test.mjs",
     "test:project-reports": "node --test tests/project-reports.test.mjs tests/media-public-copy.test.mjs",
-    "test:elderly-settings": "node --test tests/elderly-validation-location.test.mjs"
+    "test:elderly-settings": "node --test tests/elderly-validation-location.test.mjs",
+    "test:location-production": "node --test tests/location-production-build.test.mjs",
+    "test:location-duplicate": "node --test tests/location-duplicate-request.test.mjs",
+    "test:partners-wave": "node --test tests/partners-wave.test.mjs",
+    "reconcile:profile-requests:dry-run": "node scripts/profile-update-pending-locks.mjs",
+    "backfill:profile-request-expiration:dry-run": "node scripts/profile-update-expiration-backfill.mjs",
+    "verify:hosting-artifact": "node scripts/verify-hosting-artifact.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",

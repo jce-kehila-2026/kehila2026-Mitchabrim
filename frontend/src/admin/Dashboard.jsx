@@ -4,6 +4,7 @@ import { Calendar, Clock, Sun, CloudSun, CloudFog, CloudRain, Snowflake, CloudLi
 import AdminPageLayout from "@/components/admin/AdminPageLayout.jsx";
 import StatsCard from "@/components/admin/StatsCard.jsx";
 import SectionCard from "@/components/admin/SectionCard.jsx";
+import ProfileUpdateRequestModal from "@/components/admin/ProfileUpdateRequestModal.jsx";
 import { useAuth } from "../context/AuthContext";
 
 import { getElderlyCount } from "../services/elderlyService";
@@ -35,6 +36,7 @@ export default function Dashboard() {
   const [nearestProject, setNearestProject] = useState(null);
   const [requests, setRequests] = useState([]);
   const [profileRequests, setProfileRequests] = useState([]);
+  const [selectedProfileRequest, setSelectedProfileRequest] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -489,7 +491,7 @@ export default function Dashboard() {
                 {activeTab === "update" && (
                   <ProfileRequestList
                     items={profileRequests.filter((r) => !r.type || r.type === "update")}
-                    navigate={navigate}
+                    onOpen={setSelectedProfileRequest}
                     setDeleteProfileId={setDeleteProfileId}
                     emptyText="אין בקשות עדכון פרטים כרגע"
                   />
@@ -497,7 +499,7 @@ export default function Dashboard() {
                 {activeTab === "special" && (
                   <ProfileRequestList
                     items={profileRequests.filter((r) => r.type === "special")}
-                    navigate={navigate}
+                    onOpen={setSelectedProfileRequest}
                     setDeleteProfileId={setDeleteProfileId}
                     emptyText="אין בקשות מיוחדות מהמתנדבים כרגע"
                   />
@@ -683,6 +685,19 @@ export default function Dashboard() {
         </div>
       )}
 
+      {selectedProfileRequest && (
+        <ProfileUpdateRequestModal
+          request={selectedProfileRequest}
+          onClose={() => setSelectedProfileRequest(null)}
+          onDecided={(updated) => {
+            setProfileRequests((current) =>
+              current.map((request) => request.id === updated.id ? updated : request)
+            );
+            setSelectedProfileRequest(updated);
+          }}
+        />
+      )}
+
       {/* --- Personal Task View Modal --- */}
       {viewTask && (
         <div onClick={() => setViewTask(null)} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000, direction: "rtl" }}>
@@ -712,7 +727,7 @@ export default function Dashboard() {
   );
 }
 
-function ProfileRequestList({ items, navigate, setDeleteProfileId, emptyText }) {
+function ProfileRequestList({ items, onOpen, setDeleteProfileId, emptyText }) {
   const statusMap = {
     pending:  { label: "ממתין", bg: "#fff3cd", color: "#856404", border: "#ffeeba" },
     approved: { label: "אושר",  bg: "#e8f5e9", color: "#1e6b2c", border: "#c3e6cb" },
@@ -739,7 +754,7 @@ function ProfileRequestList({ items, navigate, setDeleteProfileId, emptyText }) 
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <button
-                onClick={() => navigate(`/admin/profile-update-requests?id=${r.id}`)}
+                onClick={() => onOpen(r)}
                 style={{ padding: "6px 12px", borderRadius: 6, backgroundColor: "#f8f9fa", border: "1px solid #ced4da", cursor: "pointer", fontWeight: "bold", color: "#495057", fontSize: 12 }}
               >
                 צפייה

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import VolunteerLayout from "@/components/volunteer/VolunteerLayout.jsx";
 import LoadingLine from "@/components/common/LoadingLine.jsx";
 import useCurrentVolunteer from "@/hooks/useCurrentVolunteer";
 import { useAuth } from "@/context/AuthContext";
 import {
-  subscribeProfileUpdateRequestsForVolunteer,
   createProfileUpdateRequest,
+  getPendingProfileUpdateRequestForVolunteer,
+  getProfileUpdateRequestsPageForVolunteer,
 } from "@/services/profileUpdateRequestsService";
 import { sanitizeText } from "@/utils/sanitize";
 import { createOperationId } from "@/utils/operationId";
@@ -19,16 +20,71 @@ export default function VolunteerProfile() {
   const { user } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [requests, setRequests] = useState([]);
+  const [pendingRequest, setPendingRequest] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [pendingCheckLoading, setPendingCheckLoading] = useState(true);
+  const [pendingCheckError, setPendingCheckError] = useState("");
+  const [hasMoreRequests, setHasMoreRequests] = useState(false);
+  const historyCursor = useRef(null);
+
+  const loadHistory = useCallback(async ({ reset = false } = {}) => {
+    if (!user?.uid) return;
+    setHistoryLoading(true);
+    setHistoryError("");
+    if (reset) {
+      setPendingCheckLoading(true);
+      setPendingCheckError("");
+    }
+    try {
+      const [pageResult, pendingResult] = await Promise.allSettled([
+        getProfileUpdateRequestsPageForVolunteer(user.uid, {
+          cursor: reset ? null : historyCursor.current,
+        }),
+        reset
+          ? getPendingProfileUpdateRequestForVolunteer(user.uid)
+          : Promise.resolve(undefined),
+      ]);
+      if (reset && pendingResult.status === "fulfilled") {
+        setPendingRequest(pendingResult.value);
+      }
+      if (reset && pendingResult.status === "rejected") {
+        console.warn("profile pending request check:", {
+          code: pendingResult.reason?.code || "unknown",
+        });
+        setPendingRequest(null);
+        setPendingCheckError(
+          "לא ניתן לאמת כרגע אם קיימת בקשה ממתינה. שליחת בקשה חדשה חסומה עד לרענון."
+        );
+      }
+      if (pageResult.status === "rejected") throw pageResult.reason;
+      const page = pageResult.value;
+      historyCursor.current = page.cursor;
+      setHasMoreRequests(page.hasMore);
+      setRequests((current) => reset ? page.items : [...current, ...page.items]);
+    } catch (requestError) {
+      const code = requestError?.code || "unknown";
+      console.warn("profile request history page:", { code });
+      setHistoryError(
+        code === "permission-denied"
+          ? "אין הרשאה לטעון את היסטוריית הבקשות. יש להתחבר מחדש."
+          : code === "failed-precondition"
+            ? "היסטוריית הבקשות אינה זמינה עד להשלמת הגדרת מסד הנתונים."
+            : "לא ניתן לטעון את היסטוריית הבקשות כרגע."
+      );
+    } finally {
+      setHistoryLoading(false);
+      if (reset) setPendingCheckLoading(false);
+    }
+  }, [user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    const unsub = subscribeProfileUpdateRequestsForVolunteer(
-      user.uid,
-      (list) => setRequests(list),
-      (err) => console.warn("requests listen:", err.message)
-    );
-    return () => unsub();
-  }, [user?.uid]);
+    historyCursor.current = null;
+    setRequests([]);
+    setPendingRequest(null);
+    setPendingCheckError("");
+    if (user?.uid) loadHistory({ reset: true });
+  }, [loadHistory, user?.uid]);
 
 
   const fullName =
@@ -71,23 +127,51 @@ export default function VolunteerProfile() {
             </div>
 
             <div className="vol-profile-action">
-              <button className="vol-btn vol-btn-primary" onClick={() => setModalOpen(true)}>
+              <button
+                className="vol-btn vol-btn-primary"
+                onClick={() => setModalOpen(true)}
+                disabled={pendingCheckLoading || !!pendingRequest || !!pendingCheckError}
+                title={
+                  pendingRequest
+                    ? "קיימת בקשה הממתינה לטיפול"
+                    : pendingCheckError || undefined
+                }
+              >
                 <Pencil size={16} />
-                בקשה לעדכון פרטים
+                {pendingCheckLoading
+                  ? "בודק בקשות ממתינות…"
+                  : pendingRequest
+                    ? "בקשה ממתינה לטיפול"
+                    : pendingCheckError
+                      ? "לא ניתן לשלוח בקשה כרגע"
+                      : "בקשה לעדכון פרטים"}
               </button>
               <span className="vol-profile-note">
-                לא ניתן לערוך פרטים ישירות. כל בקשת עדכון נשלחת לאישור המנהל.
+                {pendingCheckError ||
+                  "לא ניתן לערוך פרטים ישירות. כל בקשת עדכון נשלחת לאישור המנהל."}
               </span>
             </div>
 
-            {requests.length > 0 && (
+            {(requests.length > 0 || historyLoading || historyError) && (
               <div className="vol-requests-history">
                 <h3>היסטוריית בקשות</h3>
+                {historyError && <div className="vol-alert-error">{historyError}</div>}
                 <div className="vol-requests-list">
                   {requests.map((r) => (
                     <RequestRow key={r.id} request={r} />
                   ))}
                 </div>
+                {historyLoading && <LoadingLine text="טוען בקשות..." />}
+                {hasMoreRequests && !historyLoading && (
+                  <button
+                    type="button"
+                    className="vol-btn vol-btn-outline"
+                    onClick={() => loadHistory()}
+                    style={{ marginTop: 12 }}
+                  >
+                    טעינת בקשות נוספות
+                  </button>
+                )}
               </div>
             )}
           </>
@@ -99,6 +183,7 @@ export default function VolunteerProfile() {
           volunteer={volunteer}
           user={user}
           onClose={() => setModalOpen(false)}
+          onSent={() => loadHistory({ reset: true })}
         />
       )}
     </VolunteerLayout>
@@ -129,7 +214,7 @@ function RequestRow({ request }) {
   );
 }
 
-function RequestModal({ volunteer, user, onClose }) {
+function RequestModal({ volunteer, user, onClose, onSent }) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState("");
@@ -160,10 +245,17 @@ function RequestModal({ volunteer, user, onClose }) {
         operationId: operationId.current,
       });
       setSent(true);
+      Promise.resolve(onSent?.()).catch((refreshError) => {
+        console.warn("profile request history refresh:", refreshError?.code || refreshError?.message);
+      });
       setTimeout(onClose, 1400);
     } catch (e2) {
-      console.error("submit request error:", e2);
-      setErr("שגיאה בשליחת הבקשה. נסה שוב.");
+      console.error("submit request error:", { code: e2?.code });
+      setErr(
+        e2?.code === "profile-update/pending-exists"
+          ? "כבר קיימת בקשה הממתינה לטיפול. ניתן לשלוח בקשה חדשה לאחר סיום הטיפול בה."
+          : "שגיאה בשליחת הבקשה. נסה שוב."
+      );
     } finally {
       setSending(false);
     }

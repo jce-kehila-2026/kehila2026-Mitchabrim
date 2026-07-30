@@ -10,6 +10,7 @@ import beitIsraelMechina from "@/assets/partners/beit-israel-mechina.svg";
 import beitIsraelStudents from "@/assets/partners/beit-israel-students.svg";
 import schools from "@/assets/partners/schools.svg";
 import electricCompany from "@/assets/partners/electric-company.svg";
+import { getFlowTrackLength } from "@/utils/partnersWave";
 
 const DEFAULT_PARTNERS = [
   { name: "עיריית ירושלים", logo: jerusalemMunicipality },
@@ -137,7 +138,7 @@ export default function PartnersSection() {
         // Conveyor length: long enough that off-screen cards have room to
         // reset on the right before reappearing. Ensures only the leftmost
         // visible card ever leaves first → correct exit order.
-        const total = Math.max(N * spacing, W + spacing * 2);
+        const total = getFlowTrackLength(N, spacing, W);
         const ampPx = (SVG_AMP / SVG_VB_H) * H;
         const cyPx = (SVG_CY / SVG_VB_H) * H;
         const fade = spacing * 0.45;
@@ -191,49 +192,49 @@ export default function PartnersSection() {
           <h2 className="section-title">{p.title}</h2>
           <p className="section-sub">{p.subtitle}</p>
         </div>
+      </div>
 
-        <div
-          className="partners-wave-wrap partners-wave-wrap--flow"
-          ref={wrapRef}
-          aria-label="שותפים"
+      <div
+        className="partners-wave-wrap partners-wave-wrap--flow"
+        ref={wrapRef}
+        aria-label="שותפים"
+      >
+        <svg
+          className="partners-wave-svg"
+          viewBox={`0 0 ${SVG_VB_W} ${SVG_VB_H}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
         >
-          <svg
-            className="partners-wave-svg"
-            viewBox={`0 0 ${SVG_VB_W} ${SVG_VB_H}`}
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <path
-              d={wavePath}
-              fill="none"
-              stroke="#d97a4a"
-              strokeOpacity="0.45"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-          </svg>
+          <path
+            d={wavePath}
+            fill="none"
+            stroke="#d97a4a"
+            strokeOpacity="0.45"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
+        </svg>
 
-          {PARTNERS.map((partner, i) => {
-            const tone = TONES[i % TONES.length];
-            return (
-              <div
-                key={partner.name}
-                ref={(el) => (cardRefs.current[i] = el)}
-                className={`wave-slot wave-slot--flow wave-slot--${tone}`}
-              >
-                <article className="wave-partner" title={partner.name}>
-                  <div className="wave-partner-circle">
-                    <PartnerLogo
-                      partner={partner}
-                      fallbackLogo={DEFAULT_PARTNERS[i % DEFAULT_PARTNERS.length].logo}
-                    />
-                  </div>
-                  <h4 className="wave-partner-name">{partner.name}</h4>
-                </article>
-              </div>
-            );
-          })}
-        </div>
+        {PARTNERS.map((partner, i) => {
+          const tone = TONES[i % TONES.length];
+          return (
+            <div
+              key={partner.name}
+              ref={(el) => (cardRefs.current[i] = el)}
+              className={`wave-slot wave-slot--flow wave-slot--${tone}`}
+            >
+              <article className="wave-partner" title={partner.name}>
+                <div className="wave-partner-circle">
+                  <PartnerLogo
+                    partner={partner}
+                    fallbackLogo={DEFAULT_PARTNERS[i % DEFAULT_PARTNERS.length].logo}
+                  />
+                </div>
+                <h4 className="wave-partner-name">{partner.name}</h4>
+              </article>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

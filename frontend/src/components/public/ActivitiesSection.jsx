@@ -33,26 +33,10 @@ export default function ActivitiesSection() {
               </svg>
             </div>
             <p className="act2-sub">{a.subtitle}</p>
-            <svg className="act2-brush" viewBox="0 0 160 12" fill="none" aria-hidden="true">
-              <path d="M2 8 C 40 2, 90 12, 158 4" stroke="#E89A4A" strokeWidth="3.5" strokeLinecap="round" />
-            </svg>
           </div>
 
           {/* LEFT: circle cluster */}
           <div className="act2-stage" aria-label="תחומי פעילות">
-            <svg className="act2-dots act2-dots-1" viewBox="0 0 200 200" aria-hidden="true">
-              <path d="M10 100 Q 50 10, 190 60" stroke="#E89A4A" strokeWidth="2" strokeDasharray="2 8" strokeLinecap="round" fill="none" opacity=".55" />
-            </svg>
-            <svg className="act2-dots act2-dots-2" viewBox="0 0 220 120" aria-hidden="true">
-              <path d="M10 20 Q 110 110, 210 30" stroke="#E89A4A" strokeWidth="2" strokeDasharray="2 8" strokeLinecap="round" fill="none" opacity=".55" />
-            </svg>
-            <svg className="act2-leaf" viewBox="0 0 80 120" fill="none" aria-hidden="true">
-              <path d="M40 110 Q 38 60 20 30" stroke="#E89A4A" strokeWidth="1.4" opacity=".7" />
-              <path d="M30 70 Q 18 60 12 48" stroke="#E89A4A" strokeWidth="1.4" opacity=".7" />
-              <path d="M34 55 Q 22 48 16 38" stroke="#E89A4A" strokeWidth="1.4" opacity=".7" />
-              <path d="M36 85 Q 26 78 22 68" stroke="#E89A4A" strokeWidth="1.4" opacity=".7" />
-            </svg>
-
             {/* Bubble 1 — top */}
             <Link to={`/our-work/${SLUGS.bubble0}`} className="act2-bubble act2-bubble-top">
               <div className="act2-bubble-inner">

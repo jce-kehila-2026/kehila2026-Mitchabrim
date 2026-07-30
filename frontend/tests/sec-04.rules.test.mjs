@@ -10,11 +10,15 @@ import {
   getDoc,
   getDocs,
   getFirestore,
+  limit,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { normalizeVolunteerReportInput } from "../src/services/volunteerReportPolicy.js";
 import { planVolunteerReportReconciliation, runReportReconciliation } from "../scripts/sec-04-reconcile-reports.mjs";
@@ -90,6 +94,22 @@ function validPayload(client, overrides = {}) {
   };
 }
 
+function validProfileRequest(client, overrides = {}) {
+  return {
+    volunteerId: "volunteer-a",
+    volunteerAuthUid: client.uid,
+    volunteerName: "Volunteer A",
+    message: "Please update my phone number",
+    status: "pending",
+    operationId: "profile_test_operation_a",
+    createdAt: serverTimestamp(),
+    reviewedAt: null,
+    reviewedBy: null,
+    adminResponse: "",
+    ...overrides,
+  };
+}
+
 const volunteerA = await createClient("sec04-a", "volunteer", "volunteer-a");
 const volunteerB = await createClient("sec04-b", "volunteer", "volunteer-b");
 const admin = await createClient("sec04-admin", "admin");
@@ -127,6 +147,172 @@ try {
   await expectAllowed("admin reviews report", () => updateDoc(doc(admin.db, "volunteerReports", created.id), { status: "approved", adminNote: "reviewed" }));
   await expectAllowed("admin creates compatibility report", () => setDoc(doc(admin.db, "volunteerReports", "admin-legacy"), { legacy: true }));
 
+  const profileRequestRef = doc(
+    volunteerA.db,
+    "profileUpdateRequests",
+    "profile_profile_test_operation_a",
+  );
+  const profileNotificationRef = doc(
+    volunteerA.db,
+    "notifications",
+    "profile_request_profile_profile_test_operation_a",
+  );
+  const profilePendingLockRef = doc(
+    volunteerA.db,
+    "profileUpdateRequestPending",
+    volunteerA.uid,
+  );
+  const commitProfileRequest = async (requestRef, payload) => {
+    const batch = writeBatch(volunteerA.db);
+    batch.set(requestRef, payload);
+    batch.set(profilePendingLockRef, {
+      volunteerAuthUid: volunteerA.uid,
+      requestId: requestRef.id,
+      createdAt: serverTimestamp(),
+    });
+    await batch.commit();
+  };
+  await expectAllowed("volunteer atomically creates own profile request", async () => {
+    const batch = writeBatch(volunteerA.db);
+    batch.set(profileRequestRef, validProfileRequest(volunteerA));
+    batch.set(profilePendingLockRef, {
+      volunteerAuthUid: volunteerA.uid,
+      requestId: profileRequestRef.id,
+      createdAt: serverTimestamp(),
+    });
+    batch.set(profileNotificationRef, {
+      audience: "admin",
+      type: "profile_update_request",
+      title: "New profile update request",
+      message: "Volunteer A submitted a profile update request",
+      requestId: profileRequestRef.id,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+    await batch.commit();
+  });
+  await expectDenied(
+    "volunteer cannot stack a second pending profile request",
+    () => commitProfileRequest(
+      doc(volunteerA.db, "profileUpdateRequests", "profile_second_pending_operation"),
+      validProfileRequest(volunteerA, { operationId: "profile_second_pending_operation" }),
+    ),
+  );
+  await expectDenied(
+    "other volunteer cannot read pending profile request lock",
+    () => getDoc(doc(volunteerB.db, "profileUpdateRequestPending", volunteerA.uid)),
+  );
+  await expectDenied(
+    "volunteer cannot delete own pending profile request lock",
+    () => deleteDoc(profilePendingLockRef),
+  );
+  await expectAllowed(
+    "volunteer reads own profile request",
+    () => getDoc(profileRequestRef),
+  );
+  await expectDenied(
+    "volunteer cannot read another volunteer profile request",
+    () => getDoc(doc(volunteerB.db, "profileUpdateRequests", profileRequestRef.id)),
+  );
+  const ownProfileQuery = query(
+    collection(volunteerA.db, "profileUpdateRequests"),
+    where("volunteerAuthUid", "==", volunteerA.uid),
+    orderBy("createdAt", "desc"),
+    limit(20),
+  );
+  const ownProfileRequests = await expectAllowed(
+    "volunteer lists own profile requests",
+    () => getDocs(ownProfileQuery),
+  );
+  assert.equal(ownProfileRequests.size, 1);
+  const ownPendingProfileQuery = query(
+    collection(volunteerA.db, "profileUpdateRequests"),
+    where("volunteerAuthUid", "==", volunteerA.uid),
+    where("status", "==", "pending"),
+    orderBy("createdAt", "desc"),
+    limit(1),
+  );
+  const ownPendingProfileRequests = await expectAllowed(
+    "volunteer loads own pending request state",
+    () => getDocs(ownPendingProfileQuery),
+  );
+  assert.equal(ownPendingProfileRequests.size, 1);
+  await expectAllowed("admin processes request and releases pending lock", async () => {
+    const reviewedAt = Timestamp.now();
+    const batch = writeBatch(admin.db);
+    batch.update(doc(admin.db, "profileUpdateRequests", profileRequestRef.id), {
+      status: "approved",
+      reviewedAt,
+      expiresAt: Timestamp.fromMillis(reviewedAt.toMillis() + (62 * 24 * 60 * 60 * 1000)),
+      reviewedBy: admin.uid,
+      adminResponse: "Updated",
+    });
+    batch.delete(doc(admin.db, "profileUpdateRequestPending", volunteerA.uid));
+    await batch.commit();
+  });
+  await expectDenied(
+    "volunteer cannot forge linked volunteer id",
+    () => commitProfileRequest(
+      doc(volunteerA.db, "profileUpdateRequests", "profile_forged_volunteer"),
+      validProfileRequest(volunteerA, {
+        volunteerId: "volunteer-b",
+        operationId: "profile_forged_volunteer",
+      }),
+    ),
+  );
+  await expectDenied(
+    "volunteer cannot forge auth uid",
+    () => commitProfileRequest(
+      doc(volunteerA.db, "profileUpdateRequests", "profile_forged_auth"),
+      validProfileRequest(volunteerA, {
+        volunteerAuthUid: volunteerB.uid,
+        operationId: "profile_forged_auth",
+      }),
+    ),
+  );
+  for (const [label, patch] of [
+    ["reviewedBy", { reviewedBy: volunteerA.uid }],
+    ["reviewedAt", { reviewedAt: new Date() }],
+    ["adminResponse", { adminResponse: "self approved" }],
+    ["adminNote", { adminNote: "injected" }],
+    ["createdBy", { createdBy: volunteerA.uid }],
+    ["status", { status: "approved" }],
+  ]) {
+    await expectDenied(
+      `volunteer cannot create profile request with administrative ${label}`,
+      () => commitProfileRequest(
+        doc(volunteerA.db, "profileUpdateRequests", `profile_admin_${label}`),
+        validProfileRequest(volunteerA, {
+          ...patch,
+          operationId: `profile_admin_${label}`,
+        }),
+      ),
+    );
+  }
+  await expectDenied(
+    "volunteer cannot modify profile review fields",
+    () => updateDoc(profileRequestRef, {
+      status: "approved",
+      reviewedBy: volunteerA.uid,
+      adminResponse: "self approved",
+    }),
+  );
+  await expectAllowed(
+    "admin reads profile update request",
+    () => getDoc(doc(admin.db, "profileUpdateRequests", profileRequestRef.id)),
+  );
+  await expectAllowed(
+    "admin lists profile update requests",
+    () => getDocs(collection(admin.db, "profileUpdateRequests")),
+  );
+  await expectAllowed(
+    "volunteer creates a new request after previous request is processed",
+    () => commitProfileRequest(
+      doc(volunteerA.db, "profileUpdateRequests", "profile_after_review_operation"),
+      validProfileRequest(volunteerA, { operationId: "profile_after_review_operation" }),
+    ),
+  );
+
   await seedDocument("volunteerReports/existing-inconsistent", {
     volunteerId: "volunteer-b",
     volunteerAuthUid: volunteerA.uid,
@@ -157,7 +343,11 @@ try {
   assert.equal(reconciliation.mode, "dry-run-emulator");
   assert.equal(reconciliation.review >= 2, true);
 
-  console.log("SEC-04: 29 assertions passed (identity, assignment, schema, Admin workflow, legacy compatibility, and dry-run reconciliation).");
+  console.log(
+    "SEC-04: report and profile-request rules passed "
+    + "(own create/read/list, cross-user isolation, administrative-field protection, "
+    + "Admin workflow, legacy compatibility, and dry-run reconciliation).",
+  );
 } finally {
   await Promise.all([deleteApp(volunteerA.app), deleteApp(volunteerB.app), deleteApp(admin.app)]);
 }

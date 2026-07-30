@@ -24,6 +24,8 @@ const REQUIRED_COMPOSITE_INDEXES = Object.freeze([
   ["volunteerTasks", "volunteerId:ASCENDING", "createdAt:DESCENDING"],
   ["volunteerTasks", "volunteerAuthUid:ASCENDING", "createdAt:DESCENDING"],
   ["profileUpdateRequests", "volunteerAuthUid:ASCENDING", "createdAt:DESCENDING"],
+  ["profileUpdateRequests", "volunteerAuthUid:ASCENDING", "status:ASCENDING", "createdAt:DESCENDING"],
+  ["profileUpdateRequests", "status:ASCENDING", "createdAt:DESCENDING"],
   ["volunteerNotifications", "volunteerAuthUid:ASCENDING", "createdAt:DESCENDING"],
 ]);
 const DB04_ADDITIONS = Object.freeze([
@@ -39,14 +41,14 @@ test("DB-04 query catalog covers all UI filter combinations and operational quer
   const volunteerMatrix = cases.filter((item) => item.name.startsWith("volunteers:"));
   assert.equal(elderlyMatrix.length, 32);
   assert.equal(volunteerMatrix.length, 32);
-  assert.equal(cases.length, 80);
+  assert.equal(cases.length, 82);
 
   const checks = cases.reduce(
     (total, item) => total + Number(Boolean(item.page))
       + Number(Boolean(item.pagination)) + Number(Boolean(item.count)),
     0,
   );
-  assert.equal(checks, 214);
+  assert.equal(checks, 216);
   for (const item of elderlyMatrix) {
     assert.ok(item.filters.some((filter) => (
       filter.fieldFilter?.field?.fieldPath === "status"
@@ -54,10 +56,12 @@ test("DB-04 query catalog covers all UI filter combinations and operational quer
   }
   assert.ok(cases.some((item) => item.name === "volunteerReports:volunteerId+createdAt-desc"));
   assert.ok(cases.some((item) => item.name === "profileUpdateRequests:volunteerAuthUid+createdAt-desc"));
+  assert.ok(cases.some((item) => item.name === "profileUpdateRequests:status+createdAt-desc"));
+  assert.ok(cases.some((item) => item.name === "profileUpdateRequests:volunteerAuthUid+status+createdAt-desc"));
   assert.ok(cases.some((item) => item.name === "volunteerNotifications:volunteerAuthUid+createdAt-desc"));
 });
 
-test("firestore.indexes.json contains exactly the seven proven composite indexes without duplicates", () => {
+test("firestore.indexes.json contains exactly the nine proven composite indexes without duplicates", () => {
   const actual = indexes.indexes.map(indexSignature);
   assert.equal(new Set(actual).size, actual.length, "duplicate composite index definition");
   assert.equal(actual.length, REQUIRED_COMPOSITE_INDEXES.length);
@@ -82,7 +86,7 @@ test("the three DB-04 additions are necessary and were absent from the previous 
   }
 });
 
-test("index deployment configuration preserves the three active DB-03 TTL policies", () => {
+test("index deployment configuration preserves operational TTL policies", () => {
   assert.deepEqual(
     indexes.fieldOverrides.map((override) => (
       `${override.collectionGroup}|${override.fieldPath}|${override.ttl}`
@@ -91,12 +95,16 @@ test("index deployment configuration preserves the three active DB-03 TTL polici
       "joinRequestDuplicates|expiresAt|true",
       "joinRequestIdempotency|expiresAt|true",
       "joinRequestRateLimits|expiresAt|true",
+      "profileUpdateRequests|expiresAt|true",
     ],
   );
   for (const override of indexes.fieldOverrides) {
+    const expectedIndexes = override.collectionGroup === "profileUpdateRequests"
+      ? ["ASCENDING", "DESCENDING"]
+      : ["ASCENDING", "DESCENDING", "CONTAINS"];
     assert.deepEqual(
       override.indexes.map((entry) => entry.order || entry.arrayConfig),
-      ["ASCENDING", "DESCENDING", "CONTAINS"],
+      expectedIndexes,
     );
     assert.ok(override.indexes.every((entry) => entry.queryScope === "COLLECTION"));
   }
