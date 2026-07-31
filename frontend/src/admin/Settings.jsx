@@ -16,8 +16,6 @@ import {
 } from "@/services/allowedUsersService";
 import { getVolunteers } from "@/services/volunteersService";
 import {
-  backupStatusErrorMessage,
-  getBackupStatus,
   getSettingsGeneral,
   locationSettingsErrorMessage,
   saveSettingsGeneral,
@@ -48,23 +46,6 @@ const sortCategories = (catsArray) => {
     .sort((a, b) => a.title.localeCompare(b.title, 'he'))
     .map(c => ({ ...c, items: [...c.items].sort((i1, i2) => i1.localeCompare(i2, 'he')) }));
 };
-
-const formatBackupDate = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Jerusalem",
-  }).format(date);
-};
-
-const backupStateLabel = (state) => ({
-  READY: "מוכן",
-  CREATING: "בתהליך",
-  NOT_AVAILABLE: "לא זמין",
-}[state] || state || "—");
 
 function LocationMenuButton({
   menuKey,
@@ -204,32 +185,10 @@ export default function Settings() {
     onConfirm: null,
   });
   const [isLocationChangePending, setIsLocationChangePending] = useState(false);
-  const [backupStatus, setBackupStatus] = useState(null);
-  const [backupLoadState, setBackupLoadState] = useState("loading");
-  const [backupError, setBackupError] = useState("");
 
   const showToast = (message) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(""), 3500);
-  };
-
-  const refreshBackupStatus = async () => {
-    setBackupLoadState("loading");
-    setBackupError("");
-    try {
-      const status = await getBackupStatus();
-      setBackupStatus(status);
-      setBackupLoadState(status?.available && status?.enabled ? "success" : "unavailable");
-    } catch (error) {
-      console.error("Backup status load failed", {
-        code: error?.code || "unknown",
-        message: error?.message || "Unknown backup status error",
-      });
-      setBackupStatus(null);
-      const code = String(error?.code || "");
-      setBackupLoadState(code.includes("not-found") ? "unavailable" : "failure");
-      setBackupError(backupStatusErrorMessage(error));
-    }
   };
 
   // ==========================================
@@ -283,7 +242,6 @@ export default function Settings() {
 
     fetchSettings();
     fetchUsers();
-    refreshBackupStatus();
   }, []);
 
   const refreshUsers = async () => {
@@ -1065,85 +1023,6 @@ export default function Settings() {
               </div>
             </div>
           ))}
-        </div>
-      </SectionCard>
-
-      {/* --- Section 5: Backup --- */}
-      <SectionCard>
-        <h3 className="settings-section-title">גיבוי נתונים</h3>
-        <div style={{ direction: "rtl" }}>
-          {backupLoadState === "loading" && (
-            <p role="status" aria-live="polite" style={{ color: "#6c757d", margin: "0 0 12px" }}>
-              טוען את מצב הגיבוי...
-            </p>
-          )}
-
-          {backupLoadState === "success" && backupStatus && (
-            <>
-              <p style={{ color: "#287a3e", margin: "0 0 14px", fontWeight: 700 }}>
-                הגיבוי האוטומטי מופעל
-              </p>
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "10px",
-                marginBottom: "14px",
-              }}>
-                {[
-                  ["סוג", backupStatus.type === "firestore-managed-backups" ? "Firestore Managed Backups" : "—"],
-                  ["תדירות", backupStatus.schedule === "daily" ? "יומי" : backupStatus.schedule === "weekly" ? "שבועי" : "—"],
-                  ["משך שמירה", Number.isFinite(backupStatus.retentionDays) ? `${backupStatus.retentionDays} ימים` : "—"],
-                  ["אזור", backupStatus.location || "—"],
-                  ["מצב הגיבוי האחרון", backupStateLabel(backupStatus.latestBackup?.state)],
-                  ["מועד הגיבוי האחרון", formatBackupDate(backupStatus.latestBackup?.snapshotTime)],
-                  ["גיבויים מוכנים", String(backupStatus.readyBackupsCount ?? "—")],
-                ].map(([label, value]) => (
-                  <div key={label} style={{
-                    padding: "10px 12px",
-                    border: "1px solid #eadfd4",
-                    borderRadius: "10px",
-                    background: "#fffaf5",
-                  }}>
-                    <div style={{ color: "#7b6b60", fontSize: "12px", marginBottom: "3px" }}>{label}</div>
-                    <div style={{ color: "#343a40", fontWeight: 700 }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-              {backupStatus.partial && (
-                <p role="status" style={{ color: "#9a6700", margin: "0 0 12px", fontSize: "14px" }}>
-                  התקבל מידע חלקי בלבד מחלק מאזורי Firestore.
-                </p>
-              )}
-            </>
-          )}
-
-          {backupLoadState === "unavailable" && (
-            <p role="status" style={{ color: "#6c757d", margin: "0 0 12px" }}>
-              {backupError || "לא נמצא לוח גיבוי פעיל או ששירות בדיקת המצב טרם נפרס."}
-            </p>
-          )}
-
-          {backupLoadState === "failure" && (
-            <p role="alert" style={{ color: "#b42318", margin: "0 0 12px" }}>
-              {backupError}
-            </p>
-          )}
-
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={refreshBackupStatus}
-            disabled={backupLoadState === "loading"}
-            style={{
-              padding: "8px 24px",
-              borderRadius: "8px",
-              fontWeight: "bold",
-              cursor: backupLoadState === "loading" ? "wait" : "pointer",
-              opacity: backupLoadState === "loading" ? 0.65 : 1,
-            }}
-          >
-            {backupLoadState === "loading" ? "מעדכן..." : "עדכון מצב"}
-          </button>
         </div>
       </SectionCard>
 

@@ -142,10 +142,34 @@ export default function Media() {
   const [toastMessage, setToastMessage] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, image: null });
   const [actionConfirm, setActionConfirm] = useState({ isOpen: false, type: "", image: null });
+  const [openCardMenu, setOpenCardMenu] = useState(null);
 
   // State for Image Details/Edit Modal
   const [detailsModal, setDetailsModal] = useState({ isOpen: false, image: null });
   const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    if (!openCardMenu) return undefined;
+    const closeMenu = (event) => {
+      if (!event.target.closest("[data-media-card-menu]")) setOpenCardMenu(null);
+    };
+    const closeOnViewportChange = () => setOpenCardMenu(null);
+    document.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("resize", closeOnViewportChange);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("resize", closeOnViewportChange);
+    };
+  }, [openCardMenu]);
+
+  const toggleCardMenu = (event, image) => {
+    event.stopPropagation();
+    if (openCardMenu?.imageId === image.id) {
+      setOpenCardMenu(null);
+      return;
+    }
+    setOpenCardMenu({ imageId: image.id });
+  };
 
   useEffect(() => {
     const generation = ++previewGenerationRef.current;
@@ -655,11 +679,11 @@ export default function Media() {
         }
 
         .image-card-container {
-            border-radius: 12px;
-            overflow: hidden;
+            border-radius: 14px;
+            overflow: visible;
             background: #fff;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            border: 1px solid #e7e0d8;
+            box-shadow: 0 3px 12px rgba(61,45,35,0.08);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             position: relative;
             cursor: pointer;
@@ -694,8 +718,8 @@ export default function Media() {
         .media-status-badge {
             display: inline-flex;
             align-items: center;
-            min-height: 26px;
-            padding: 3px 9px;
+            min-height: 23px;
+            padding: 2px 8px;
             border-radius: 999px;
             font-size: 11px;
             font-weight: 700;
@@ -739,10 +763,46 @@ export default function Media() {
             font-size: 12px;
             line-height: 1.6;
         }
-        .media-card-actions {
+        .media-card-image {
+            aspect-ratio: 4 / 3;
+            overflow: hidden;
+            border-radius: 13px 13px 0 0;
+            background: #f8f5f1;
+            border-bottom: 1px solid #eee7df;
+        }
+        .media-card-body { padding: 10px 11px 9px; }
+        .media-card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 9px;
+            color: #7b6b60;
+            font-size: 11px;
+        }
+        .media-card-menu-trigger {
+            width: 30px;
+            height: 30px;
+            display: inline-grid;
+            place-items: center;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: #3f342f;
+            font-size: 23px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .media-card-menu-trigger:hover, .media-card-menu-trigger[aria-expanded="true"] {
+            background: #f5ece7;
+            color: #8b2c2c;
+        }
+        .media-card-expanded-actions {
             margin-top: 10px;
             padding-top: 10px;
             border-top: 1px solid #edf0f2;
+            direction: rtl;
+            cursor: default;
         }
         .media-action-button {
             min-height: 38px;
@@ -944,21 +1004,14 @@ export default function Media() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-            gap: 16,
+            gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))",
+            gap: 14,
             direction: "rtl",
           }}
         >
           {displayedImages.map((img) => (
             <div key={img.id} className="image-card-container" onClick={() => handleOpenDetails(img)}>
-              <div
-                style={{
-                  aspectRatio: "4/3",
-                  backgroundColor: "#f8f9fa",
-                  borderBottom: "1px solid #e2e8f0",
-                  overflow: "hidden",
-                }}
-              >
+              <div className="media-card-image">
                 <img
                   src={img.url}
                   alt={img.title || ""}
@@ -968,8 +1021,8 @@ export default function Media() {
                 />
               </div>
 
-              <div style={{ padding: "12px" }}>
-                <div className="media-status-row" style={{ marginBottom: 9 }}>
+              <div className="media-card-body">
+                <div className="media-status-row" style={{ marginBottom: 7 }}>
                   <span className={`media-status-badge ${img.isPublic ? "media-status-public" : "media-status-private"}`}>
                     {img.isPublic ? "ציבורית" : "פרטית"}
                   </span>
@@ -990,124 +1043,90 @@ export default function Media() {
                 </div>
                 <div
                   className="text-truncate"
-                  style={{ fontWeight: 700, color: "#343a40", fontSize: "13.5px" }}
+                  style={{ fontWeight: 750, color: "#2f2926", fontSize: "14px" }}
                   title={img.title}
                 >
                   {img.title}
                 </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#6c757d",
-                    marginTop: 4,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
+                <div className="media-card-footer">
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedCategory(img.category);
                     }}
                     title={`סנן לפי קטגוריה: ${img.category}`}
-                    style={{
-                      backgroundColor: "#fdfbf7",
-                      padding: "2px 6px",
-                      borderRadius: "10px",
-                      border: "1px solid #e2d8c9",
-                      fontWeight: "600",
-                      color: "#8b2c2c",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#8b2c2c";
-                      e.currentTarget.style.color = "#ffffff";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#fdfbf7";
-                      e.currentTarget.style.color = "#8b2c2c";
-                    }}
+                    style={{ color: "#7b6b60", cursor: "pointer", minWidth: 0 }}
+                    className="text-truncate"
                   >
-                    {img.category}
+                    {img.displayDate || img.category}
                   </span>
-                  <span>{img.displayDate}</span>
-                </div>
-                {img.notes && (
-                  <div
-                    className="notes-truncate"
-                    style={{
-                      fontSize: 11,
-                      color: "#6c757d",
-                      marginTop: 8,
-                      fontStyle: "italic",
-                      borderTop: "1px dashed #e2e8f0",
-                      paddingTop: "6px",
-                      lineHeight: "1.4",
-                    }}
-                    title={img.notes}
+                  <button
+                    type="button"
+                    className="media-card-menu-trigger"
+                    disabled={pendingImageIds.has(img.id)}
+                    aria-label={`פעולות לתמונה: ${img.title || "תמונה"}`}
+                    aria-expanded={openCardMenu?.imageId === img.id}
+                    onClick={(e) => toggleCardMenu(e, img)}
                   >
-                    {img.notes}
-                  </div>
-                )}
-                {img.usageCount > 0 && (
-                  <ul className="media-usage-list">
-                    {img.usageRefs.slice(0, 2).map((usage) => (
-                      <li key={usage.key}>{usage.label || usage.field}</li>
-                    ))}
-                    {img.usageCount > 2 && <li>ועוד {img.usageCount - 2} מקומות</li>}
-                  </ul>
-                )}
-                <div className="media-card-actions">
+                    &#8942;
+                  </button>
+                </div>
+                {openCardMenu?.imageId === img.id && (
+                  <div
+                    data-media-card-menu
+                    className="media-card-actions media-card-expanded-actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                   <button
                     type="button"
                     className="media-action-button"
                     disabled={pendingImageIds.has(img.id)}
-                    onClick={(e) => requestImageAction(
-                      e,
-                      img.isPublic ? "make-private" : "make-public",
-                      img,
-                    )}
+                    onClick={(e) => {
+                      setOpenCardMenu(null);
+                      requestImageAction(e, img.isPublic ? "make-private" : "make-public", img);
+                    }}
                   >
-                    {pendingImageIds.has(img.id)
-                      ? "מעדכן..."
-                      : img.isPublic ? "הפוך לפרטית" : "הפוך לציבורית"}
+                    {img.isPublic ? "הפוך לפרטית" : "הפוך לציבורית"}
                   </button>
                   <button
                     type="button"
                     className="media-action-button"
                     disabled={pendingImageIds.has(img.id)}
-                    onClick={(e) => requestImageAction(
-                      e,
-                      img.showInGallery
-                        ? "remove-gallery"
-                        : (img.isPublic ? "add-gallery" : "publish-and-add-gallery"),
-                      img,
-                    )}
+                    onClick={(e) => {
+                      setOpenCardMenu(null);
+                      requestImageAction(
+                        e,
+                        img.showInGallery
+                          ? "remove-gallery"
+                          : (img.isPublic ? "add-gallery" : "publish-and-add-gallery"),
+                        img,
+                      );
+                    }}
                   >
                     {img.showInGallery
                       ? "הסר מהגלריה"
                       : (img.isPublic ? "הוסף לגלריה" : "פרסם והוסף לגלריה")}
                   </button>
-                  <button
+                  {(!img.siteAsset || img.usageCount <= 0) && <button
                     type="button"
                     className="media-action-button"
                     disabled={pendingImageIds.has(img.id)}
-                    onClick={(e) => requestImageAction(
-                      e,
-                      img.siteAsset ? "remove-site-asset" : "add-site-asset",
-                      img,
-                    )}
+                    onClick={(e) => {
+                      setOpenCardMenu(null);
+                      requestImageAction(e, img.siteAsset ? "remove-site-asset" : "add-site-asset", img);
+                    }}
                   >
                     {img.siteAsset ? "הסר מתמונות האתר" : "הוסף לתמונות האתר"}
-                  </button>
+                  </button>}
                   {img.isPublic && img.url && (
                     <button
                       type="button"
                       className="media-action-button"
                       disabled={pendingImageIds.has(img.id)}
-                      onClick={(e) => copyPublicImageUrl(e, img)}
+                      onClick={(e) => {
+                        setOpenCardMenu(null);
+                        copyPublicImageUrl(e, img);
+                      }}
                       title="העתקת קישור התמונה"
                       aria-label={`העתקת קישור: ${img.title || "תמונה"}`}
                     >
@@ -1118,11 +1137,15 @@ export default function Media() {
                     type="button"
                     className="media-action-button media-action-danger"
                     disabled={pendingImageIds.has(img.id)}
-                    onClick={(e) => triggerDeleteConfirm(e, img)}
+                    onClick={(e) => {
+                      setOpenCardMenu(null);
+                      triggerDeleteConfirm(e, img);
+                    }}
                   >
                     מחיקה
                   </button>
                 </div>
+                )}
               </div>
             </div>
           ))}

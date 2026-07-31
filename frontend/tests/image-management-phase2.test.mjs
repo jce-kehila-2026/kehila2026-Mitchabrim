@@ -8,6 +8,7 @@ import {
 import {
   assertImageMutationAllowed,
   assertReferenceMigrationReady,
+  mutateImageCore,
 } from "../functions/src/imageMutationCore.js";
 import { saveSiteContentSectionCore } from "../functions/src/siteContentImageCore.js";
 import { planSiteImageReferenceMigration } from "../scripts/site-image-reference-migration.mjs";
@@ -96,20 +97,108 @@ test("protected mutation rejects used images and gallery deletion", () => {
   }, { deleting: true }));
 });
 
-test("destructive operations remain locked until the reference migration marker exists", () => {
+test("unmigrated references block deletion but only block privacy when the image is actually used", () => {
   assert.throws(
     () => assertReferenceMigrationReady({}, "delete"),
     (error) => error.details.reason === "image-reference-migration-required",
   );
-  assert.throws(
-    () => assertReferenceMigrationReady({ imageReferenceSchemaVersion: 1 }, "make-private"),
-    (error) => error.details.reason === "image-reference-migration-required",
-  );
+  assert.doesNotThrow(() => assertReferenceMigrationReady(
+    { imageReferenceSchemaVersion: 1, hero: { imageMain: "https://cdn.test/other.jpg" } },
+    "make-private",
+    { id: "unused", url: "https://cdn.test/unused.jpg" },
+  ));
+  assert.throws(() => assertReferenceMigrationReady(
+    { imageReferenceSchemaVersion: 1, hero: { imageMain: "https://cdn.test/used.jpg" } },
+    "make-private",
+    { id: "used", url: "https://cdn.test/used.jpg" },
+  ), (error) => error.details.reason === "image-in-use" && error.details.usageCount === 1);
+  assert.throws(() => assertReferenceMigrationReady(
+    { imageReferenceSchemaVersion: 1, about: { image: { imageId: "used-by-id", imageUrl: "old" } } },
+    "make-private",
+    { id: "used-by-id", url: "https://cdn.test/current.jpg" },
+  ), (error) => error.details.reason === "image-in-use" && error.details.usageCount === 1);
   assert.doesNotThrow(() => assertReferenceMigrationReady(
     { imageReferenceSchemaVersion: 2 },
     "delete",
   ));
   assert.doesNotThrow(() => assertReferenceMigrationReady({}, "make-public"));
+});
+
+test("mutateImage makes an unused non-gallery non-site image private before migration completes", async () => {
+  const state = {
+    image: {
+      isPublic: true,
+      showInGallery: false,
+      siteAsset: false,
+      usageCount: 0,
+      usageRefs: [],
+      status: "active",
+      storagePath: "images/public/safe/image.jpg",
+      url: "https://cdn.test/safe.jpg",
+    },
+    site: {
+      hero: { imageMain: "https://external.test/hero.jpg" },
+    },
+  };
+  let copiedTo = "";
+  let deletedPath = "";
+  const db = {
+    collection(collectionName) {
+      return {
+        doc(id) {
+          return {
+            collectionName,
+            id,
+            firestore: db,
+            async get() {
+              const data = collectionName === "images"
+                ? state.image
+                : collectionName === "users"
+                  ? { role: "admin", status: "active" }
+                  : state.site;
+              return { id, exists: true, data: () => data };
+            },
+            async update(patch) {
+              if (collectionName === "images") Object.assign(state.image, patch);
+            },
+          };
+        },
+      };
+    },
+    async runTransaction(callback) {
+      return callback({
+        get: (ref) => ref.get(),
+        update(ref, patch) {
+          if (ref.collectionName === "images") Object.assign(state.image, patch);
+        },
+        delete() {},
+      });
+    },
+  };
+  const bucket = {
+    file(path) {
+      return {
+        path,
+        async copy(target) { copiedTo = target.path; },
+        async delete() { deletedPath = path; },
+      };
+    },
+  };
+
+  const result = await mutateImageCore({
+    db,
+    bucket,
+    getDownloadUrl: async () => { throw new Error("private images need no public URL"); },
+    callerUid: "admin",
+    data: { imageId: "safe", operation: "make-private" },
+  });
+
+  assert.equal(result.image.isPublic, false);
+  assert.equal(result.image.showInGallery, false);
+  assert.equal(result.image.siteAsset, false);
+  assert.equal(result.image.url, "");
+  assert.equal(copiedTo, "images/private/safe/image.jpg");
+  assert.equal(deletedPath, "images/public/safe/image.jpg");
 });
 
 test("protected site-content save writes the canonical reference and reverse usage atomically", async () => {

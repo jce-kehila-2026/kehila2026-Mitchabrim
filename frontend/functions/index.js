@@ -67,7 +67,11 @@ export const updateLocationSettings = onCall({
 
 export const getBackupStatus = onCall({
   region: "us-central1",
-  enforceAppCheck: true,
+  // This endpoint returns only a sanitized operational summary and performs
+  // its own Firebase Auth + active-admin authorization. Keeping App Check
+  // optional prevents a reCAPTCHA outage from hiding backup health.
+  invoker: "public",
+  enforceAppCheck: false,
 }, async (request) => backupStatusCore({
   db: getFirestore(),
   callerUid: request.auth?.uid,

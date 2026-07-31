@@ -136,27 +136,6 @@ export async function updateLocationSettings(change) {
   return result.data;
 }
 
-export async function getBackupStatus() {
-  const functions = await getSecureFunctions();
-  const result = await httpsCallable(functions, "getBackupStatus")({});
-  return result.data;
-}
-
-export function backupStatusErrorMessage(error) {
-  const code = normalizeErrorCode(error);
-  if (code === "unauthenticated") return "ההתחברות פגה. יש להתחבר מחדש.";
-  if (code === "permission-denied") return "אין הרשאת מנהל פעילה לצפייה במצב הגיבוי.";
-  if (code === "not-found") return "שירות מצב הגיבוי טרם נפרס.";
-  if (code.includes("app-check") || code === "failed-precondition") {
-    return "אימות אבטחת היישום נכשל. יש לרענן ולנסות שוב.";
-  }
-  if (code === "unavailable") return "שירות מצב הגיבוי אינו זמין כרגע.";
-  if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    return "אין חיבור לרשת. לא ניתן לבדוק את מצב הגיבוי.";
-  }
-  return "בדיקת מצב הגיבוי נכשלה.";
-}
-
 export function locationSettingsErrorMessage(error) {
   const code = normalizeErrorCode(error);
   const reason = error?.details?.reason;

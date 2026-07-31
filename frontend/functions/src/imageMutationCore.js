@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
-import { assertActiveAdmin } from "./imageReferencePolicy.js";
+import {
+  assertActiveAdmin,
+  enumerateSectionImageFields,
+  normalizeComparableImageUrl,
+  SITE_CONTENT_SECTIONS,
+} from "./imageReferencePolicy.js";
 
 const ACTIVE_STATUS = "active";
 const MAX_USAGE_DETAILS = 25;
@@ -51,16 +56,51 @@ export function assertImageMutationAllowed(
   }
 }
 
-export function assertReferenceMigrationReady(siteData, operation) {
-  if (
-    (operation === "delete" || operation === "make-private")
-    && siteData?.imageReferenceSchemaVersion !== 2
-  ) {
+const directSiteUsages = (siteData, image) => {
+  const imageId = String(image?.id || "").trim();
+  const imageUrl = normalizeComparableImageUrl(image?.url);
+  const usages = [];
+  for (const section of SITE_CONTENT_SECTIONS) {
+    for (const descriptor of enumerateSectionImageFields(section, siteData?.[section])) {
+      const value = descriptor.value;
+      const referencedId = String(value?.imageId || "").trim();
+      const referencedUrl = normalizeComparableImageUrl(
+        typeof value === "string" ? value : value?.imageUrl,
+      );
+      if (
+        (imageId && referencedId === imageId)
+        || (imageUrl && referencedUrl === imageUrl)
+      ) {
+        usages.push({
+          key: `home:${section}:${descriptor.field}`,
+          section,
+          documentId: "home",
+          field: descriptor.field,
+          label: descriptor.label,
+        });
+      }
+    }
+  }
+  return usages.slice(0, MAX_USAGE_DETAILS);
+};
+
+export function assertReferenceMigrationReady(siteData, operation, image = null) {
+  if (operation === "delete" && siteData?.imageReferenceSchemaVersion !== 2) {
     throw new HttpsError(
       "failed-precondition",
       "Image references must be migrated before destructive image operations are enabled.",
       { reason: "image-reference-migration-required" },
     );
+  }
+  if (operation === "make-private" && siteData?.imageReferenceSchemaVersion !== 2) {
+    const usages = directSiteUsages(siteData, image);
+    if (usages.length) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The image is used by the public site and cannot be made private.",
+        { reason: "image-in-use", usageCount: usages.length, usages },
+      );
+    }
   }
 }
 
@@ -84,7 +124,7 @@ async function acquireMutation({ db, callerUid, imageId, operation }) {
       );
     }
     const current = { id: imageSnapshot.id, ...imageSnapshot.data() };
-    assertReferenceMigrationReady(siteSnapshot.data(), operation);
+    assertReferenceMigrationReady(siteSnapshot.data(), operation, current);
     const resumingDelete = operation === "delete" && current.status === "deleting";
     if (current.status && current.status !== ACTIVE_STATUS && !resumingDelete) {
       throw new HttpsError("failed-precondition", "Image is not active.");

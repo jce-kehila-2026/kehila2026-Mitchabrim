@@ -131,9 +131,10 @@ test("settings UI refreshes status and contains no fixed backup result", () => {
   assert.match(settings, /backupLoadState === "failure"/);
   assert.match(settings, /backupLoadState === "unavailable"/);
   assert.doesNotMatch(settings, /28\.05\.2026|29 ביולי 2026|14 גיבויים/);
+  assert.match(service, /getAuthenticatedFunctions\(\)/);
   assert.match(service, /httpsCallable\(functions, "getBackupStatus"\)/);
   assert.match(
     functionsIndex,
-    /export const getBackupStatus = onCall\(\{[\s\S]*?enforceAppCheck: true/,
+    /export const getBackupStatus = onCall\(\{[\s\S]*?invoker: "public"[\s\S]*?enforceAppCheck: false/,
   );
 });
