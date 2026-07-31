@@ -1,0 +1,690 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================
+    // Helper functions
+    // =========================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasUserDoc() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isActiveUser() {
+      return hasUserDoc()
+        // `status` is the single authoritative account-state field. The
+        // legacy `active` boolean may remain as a compatibility mirror, but
+        // it must never grant authorization.
+        && 'status' in userDoc().data
+        && userDoc().data.status == 'active';
+    }
+
+    function isAdmin() {
+      return isActiveUser()
+        && userDoc().data.role == 'admin';
+    }
+
+    function isVolunteer() {
+      return isActiveUser()
+        && userDoc().data.role == 'volunteer';
+    }
+
+    function imageVisibilityIsValid(data) {
+      return ((
+          !('isPublic' in data)
+          && (
+            !('showInGallery' in data)
+            || (data.showInGallery is bool && data.showInGallery == false)
+          )
+        )
+        || (
+          data.isPublic is bool
+          && (
+            !('showInGallery' in data)
+            || (
+              data.showInGallery is bool
+              && (data.showInGallery == false || data.isPublic == true)
+            )
+          )
+        ))
+        && (
+          !('siteAsset' in data)
+          || (
+            data.siteAsset is bool
+            && (data.siteAsset == false || data.isPublic == true)
+          )
+        );
+    }
+
+    function imageCreateIsValid(data) {
+      return imageVisibilityIsValid(data)
+        && (!('status' in data) || data.status == 'active')
+        && (!('usageRefs' in data) || (data.usageRefs is list && data.usageRefs.size() == 0))
+        && (!('usageCount' in data) || data.usageCount == 0)
+        && (!('siteAsset' in data) || data.siteAsset == false)
+        && !('mutationLock' in data)
+        && !('cleanupSourcePath' in data);
+    }
+
+    function imageClientUpdateIsValid() {
+      return imageVisibilityIsValid(request.resource.data)
+        && (!('status' in request.resource.data) || request.resource.data.status == 'active')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'category',
+          'notes',
+          'displayDate',
+          'showInGallery',
+          'updatedAt'
+        ]);
+    }
+
+    function linkedVolunteerId() {
+      return userDoc().data.linkedVolunteerId;
+    }
+
+    function volunteerReportHasValidShape() {
+      return request.resource.data.keys().hasOnly([
+          'volunteerId', 'volunteerAuthUid', 'volunteerName', 'volunteerEmail',
+          'elderlyId', 'elderlyName', 'reportDate', 'reportType', 'notes',
+          'status', 'reviewedAt', 'reviewedBy', 'adminNote', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'volunteerId', 'volunteerAuthUid', 'volunteerName', 'volunteerEmail',
+          'elderlyId', 'elderlyName', 'reportDate', 'reportType', 'notes',
+          'status', 'reviewedAt', 'reviewedBy', 'adminNote', 'createdAt'
+        ])
+        && request.resource.data.volunteerId is string
+        && request.resource.data.volunteerId.size() > 0
+        && request.resource.data.volunteerId.size() <= 200
+        && request.resource.data.volunteerAuthUid is string
+        && request.resource.data.volunteerName is string
+        && request.resource.data.volunteerName.size() > 0
+        && request.resource.data.volunteerName.size() <= 200
+        && request.resource.data.volunteerEmail is string
+        && request.resource.data.volunteerEmail.size() > 0
+        && request.resource.data.volunteerEmail.size() <= 320
+        && request.resource.data.elderlyId is string
+        && request.resource.data.elderlyId.size() > 0
+        && request.resource.data.elderlyId.size() <= 200
+        && request.resource.data.elderlyName is string
+        && request.resource.data.elderlyName.size() > 0
+        && request.resource.data.elderlyName.size() <= 200
+        && request.resource.data.reportDate is string
+        && request.resource.data.reportDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.reportType in [
+          'ביקור בית', 'שיחת טלפון', 'ליווי',
+          'חלוקת חבילה', 'מפגש פרלמנט', 'אחר'
+        ]
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() <= 2000
+        && request.resource.data.status == 'pending'
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedBy == null
+        && request.resource.data.adminNote == ''
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function volunteerReportHasValidRelationships() {
+      return request.resource.data.volunteerAuthUid == request.auth.uid
+        && request.resource.data.volunteerId == linkedVolunteerId()
+        && request.resource.data.volunteerEmail == request.auth.token.email
+        && exists(/databases/$(database)/documents/volunteers/$(linkedVolunteerId()))
+        && exists(/databases/$(database)/documents/elderly/$(request.resource.data.elderlyId))
+        && get(/databases/$(database)/documents/elderly/$(request.resource.data.elderlyId)).data.volId == linkedVolunteerId();
+    }
+
+    function profileUpdateRequestHasValidShape() {
+      return request.resource.data.keys().hasOnly([
+          'volunteerId', 'volunteerAuthUid', 'volunteerName', 'message',
+          'status', 'operationId', 'createdAt',
+          'reviewedAt', 'reviewedBy', 'adminResponse'
+        ])
+        && request.resource.data.keys().hasAll([
+          'volunteerId', 'volunteerAuthUid', 'volunteerName', 'message',
+          'status', 'operationId', 'createdAt',
+          'reviewedAt', 'reviewedBy', 'adminResponse'
+        ])
+        && request.resource.data.volunteerId is string
+        && request.resource.data.volunteerId.size() > 0
+        && request.resource.data.volunteerId.size() <= 200
+        && request.resource.data.volunteerAuthUid is string
+        && request.resource.data.volunteerName is string
+        && request.resource.data.volunteerName.size() > 0
+        && request.resource.data.volunteerName.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 1000
+        && request.resource.data.operationId is string
+        && request.resource.data.operationId.size() >= 8
+        && request.resource.data.operationId.size() <= 128
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedBy == null
+        && request.resource.data.adminResponse == '';
+    }
+
+    function profileUpdateRequestHasValidRelationships() {
+      return request.resource.data.volunteerAuthUid == request.auth.uid
+        && request.resource.data.volunteerId == linkedVolunteerId();
+    }
+
+    function profileUpdateRequestHasPendingLock(reqId) {
+      return existsAfter(
+          /databases/$(database)/documents/profileUpdateRequestPending/$(request.auth.uid)
+        )
+        && getAfter(
+          /databases/$(database)/documents/profileUpdateRequestPending/$(request.auth.uid)
+        ).data.requestId == reqId;
+    }
+
+    function isOwnVolunteerDoc(volunteerId) {
+      return isVolunteer()
+        && (
+          resource.data.authUid == request.auth.uid
+          || linkedVolunteerId() == volunteerId
+        );
+    }
+
+    // =========================
+    // Users
+    // =========================
+    // Only admin can create/update/delete users.
+    // A signed-in user can read only their own user document.
+    // Admin can read all users.
+
+    match /users/{userId} {
+      function invitationDoc() {
+        return get(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_')));
+      }
+
+      function hasVerifiedInvitation() {
+        return request.auth.token.email_verified == true
+          && exists(/databases/$(database)/documents/users/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_')))
+          && invitationDoc().data.email is string
+          && invitationDoc().data.email.lower() == request.auth.token.email.lower()
+          && invitationDoc().data.role in ['admin', 'volunteer']
+          && invitationDoc().data.status in ['active', 'inactive'];
+      }
+
+      function validSelfBootstrapDocument() {
+        return request.resource.data.keys().hasOnly([
+            'email', 'fullName', 'displayName', 'phoneNumber', 'role',
+            'status', 'active', 'linkedVolunteerId', 'createdAt', 'updatedAt',
+            'lastLogin'
+          ])
+          && request.resource.data.keys().hasAll(['email', 'role', 'status', 'active'])
+          && request.resource.data.email is string
+          && request.resource.data.email.lower() == request.auth.token.email.lower()
+          && request.resource.data.role == invitationDoc().data.role
+          && request.resource.data.status == invitationDoc().data.status
+          && request.resource.data.active == (invitationDoc().data.status == 'active')
+          && (
+            request.resource.data.role != 'volunteer'
+            || (
+              request.resource.data.linkedVolunteerId is string
+              && invitationDoc().data.linkedVolunteerId == request.resource.data.linkedVolunteerId
+              && exists(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId))
+              && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email is string
+              && get(/databases/$(database)/documents/volunteers/$(request.resource.data.linkedVolunteerId)).data.email.lower() == request.auth.token.email.lower()
+            )
+          )
+          && (
+            request.resource.data.role != 'admin'
+            || !('linkedVolunteerId' in request.resource.data)
+            || request.resource.data.linkedVolunteerId == null
+          );
+      }
+      allow get: if isSignedIn()
+        && (
+          request.auth.uid == userId
+          || isAdmin()
+        );
+
+      // Allow a signed-in user to query for their OWN user record by email.
+      // This is the login-time fallback when users/{uid} hasn't been mirrored
+      // yet (e.g. the admin invited the email before the auth account was
+      // linked to that uid). Firestore enforces that the query filter matches
+      // the rule, so it can only return the caller's own document.
+      allow list: if isAdmin()
+        || (
+          isSignedIn()
+          && resource.data.email == request.auth.token.email
+        );
+
+      allow delete: if isAdmin();
+
+      // The active invite flow writes users/{uid} through an Admin-authorized
+      // callable. This client-side branch exists only for legacy email-keyed
+      // invitations, and requires verified email plus an exact safe schema.
+      allow create: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          && hasVerifiedInvitation()
+          && validSelfBootstrapDocument()
+        );
+
+      allow update: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          && request.resource.data.email is string
+          && request.resource.data.email.lower() == request.auth.token.email.lower()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['fullName', 'displayName', 'phoneNumber', 'updatedAt'])
+          && (!('fullName' in request.resource.data) || (request.resource.data.fullName is string && request.resource.data.fullName.size() <= 200))
+          && (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 200))
+          && (!('phoneNumber' in request.resource.data) || (request.resource.data.phoneNumber is string && request.resource.data.phoneNumber.size() <= 50))
+        );
+    }
+
+
+
+
+    // =========================
+    // Projects
+    // =========================
+
+    match /projects/{projectId} {
+      allow read, write: if isAdmin();
+
+      match /elderlyParticipants/{participantId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /projectGroups/{groupId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /{subDocument=**} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // Collection-group reads used by the Projects and Parliaments list pages.
+    // Direct nested-path rules above/fallback do not authorize collectionGroup
+    // queries; keep these read-only and restricted to an active Admin.
+    match /{path=**}/elderlyParticipants/{participantId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/projectGroups/{groupId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/participants/{participantId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/meetings/{meetingId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/attendance/{attendanceId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/expenses/{expenseId} {
+      allow read: if isAdmin();
+    }
+
+    // =========================
+    // Volunteers
+    // =========================
+    // Admin: full access.
+    // Volunteer: read own profile only.
+    // Volunteer: update only phone/address/email/updatedAt in own profile.
+
+    match /volunteers/{volunteerId} {
+      allow get: if isAdmin()
+        || isOwnVolunteerDoc(volunteerId);
+
+      allow list: if isAdmin();
+
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        || (
+          isOwnVolunteerDoc(volunteerId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['phone', 'address', 'email', 'updatedAt'])
+        );
+    }
+
+    // =========================
+    // Elderly / Senior Citizens
+    // =========================
+    // Admin only, because this collection contains sensitive personal data.
+
+    // Admin: full access.
+    // Volunteer: read elderly assigned to them (by volId == linkedVolunteerId).
+
+    match /elderly/{elderlyId} {
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volId == linkedVolunteerId()
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volId == linkedVolunteerId()
+        );
+
+      allow create, update, delete: if isAdmin();
+    }
+
+
+    // =========================
+    // Volunteer Tasks
+    // =========================
+    // Admin: full access.
+    // Volunteer: read own tasks only.
+    // Important:
+    // Volunteer queries should be filtered in React by:
+    // where("volunteerAuthUid", "==", auth.currentUser.uid)
+    // or:
+    // where("volunteerId", "==", linkedVolunteerId)
+
+    match /volunteerTasks/{taskId} {
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        )
+        || (
+          isVolunteer()
+          && resource.data.volunteerId == linkedVolunteerId()
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        )
+        || (
+          isVolunteer()
+          && resource.data.volunteerId == linkedVolunteerId()
+        );
+
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =========================
+    // Volunteer Reports
+    // =========================
+    // Volunteer: create own reports and read own reports only.
+    // Admin: full access.
+
+    match /volunteerReports/{reportId} {
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow create: if isVolunteer()
+        && volunteerReportHasValidShape()
+        && volunteerReportHasValidRelationships();
+
+      allow update, delete: if isAdmin();
+    }
+
+    // =========================
+    // Profile Update Requests
+    // =========================
+    // Volunteer: send and read own update requests.
+    // Admin: read/manage all requests.
+
+    match /profileUpdateRequests/{reqId} {
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow create: if isVolunteer()
+        && profileUpdateRequestHasValidShape()
+        && profileUpdateRequestHasValidRelationships()
+        && profileUpdateRequestHasPendingLock(reqId);
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /profileUpdateRequestPending/{volunteerAuthUid} {
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && volunteerAuthUid == request.auth.uid
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+      allow list: if isAdmin();
+      allow create: if isVolunteer()
+        && volunteerAuthUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'volunteerAuthUid', 'requestId', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'volunteerAuthUid', 'requestId', 'createdAt'
+        ])
+        && request.resource.data.volunteerAuthUid == request.auth.uid
+        && request.resource.data.requestId is string
+        && request.resource.data.requestId.size() >= 8
+        && request.resource.data.requestId.size() <= 160
+        && request.resource.data.createdAt == request.time
+        && existsAfter(
+          /databases/$(database)/documents/profileUpdateRequests/$(request.resource.data.requestId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/profileUpdateRequests/$(request.resource.data.requestId)
+        ).data.volunteerAuthUid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/profileUpdateRequests/$(request.resource.data.requestId)
+        ).data.status == 'pending';
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // =========================
+    // Admin Notifications
+    // =========================
+    // Collection used for admin-facing notifications.
+    // - Admin: full read/update/delete.
+    // - Public site (join_request) and signed-in volunteers
+    //   (profile_update_request) may create notifications, but only with a
+    //   strict, validated payload that matches the actual app code.
+
+    match /notifications/{notifId} {
+      allow read, update, delete: if isAdmin();
+
+      allow create: if
+        request.resource.data.keys().hasOnly([
+          'audience', 'type', 'title', 'message',
+          'requestId', 'read', 'createdAt'
+        ])
+        && request.resource.data.audience == 'admin'
+        && request.resource.data.type == 'profile_update_request'
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 1000
+        && request.resource.data.requestId is string
+        && request.resource.data.requestId.size() > 0
+        && request.resource.data.requestId.size() <= 200
+        && request.resource.data.read == false
+        && request.resource.data.createdAt == request.time
+        // Join-request notifications are created atomically by the Admin SDK.
+        && isVolunteer();
+    }
+
+
+    // =========================
+    // Join Requests
+    // =========================
+    match /joinRequests/{reqId} {
+  allow read, update, delete: if isAdmin();
+
+  // Only the App-Check-protected callable function creates public requests.
+  allow create: if false;
+}
+
+    // =========================
+    // Volunteer Notifications
+    // =========================
+    // Admin: create/delete/manage.
+    // Volunteer: read own notifications only and update only read field.
+
+    match /volunteerNotifications/{notifId} {
+      allow get: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow list: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+        );
+
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        || (
+          isVolunteer()
+          && resource.data.volunteerAuthUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        );
+    }
+
+    // =========================
+    // Public Site Content
+    // =========================
+    // Public content: readable by everyone.
+    // Admin only can edit.
+
+    match /siteContent/{docId} {
+      allow read: if true;
+      // Existing installations may still need to create the single seed
+      // document. All subsequent updates go through the App Check protected
+      // callable so image references and reverse usages change atomically.
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // =========================
+    // Settings
+    // =========================
+    // Administrative configuration. Public website content belongs in the
+    // separately protected siteContent collection, not under settings.
+
+    match /settings/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // =========================
+    // Elderly Contact Persons
+    // =========================
+
+    match /elderlyContactPersons/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /elderlyContactLinks/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // =========================
+    // Organizations
+    // =========================
+
+    match /organizations/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /organizationContacts/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // =========================
+    // Images (Gallery)
+    // =========================
+    // Admin: full access to all image documents.
+    // Anyone (including anonymous visitors): may read image documents only
+    // when isPublic == true. Firestore enforces that list/query filters
+    // match the rule, so the public site query
+    //   where("isPublic", "==", true)
+    // is required for anonymous reads to succeed. Private images
+    // (isPublic == false or missing) remain admin-only.
+    // Writes (create/update/delete) are admin-only.
+
+    match /images/{imageId} {
+      allow get: if isAdmin()
+        || (
+          resource.data.isPublic == true
+          && (!('status' in resource.data) || resource.data.status == 'active')
+        );
+
+      allow list: if isAdmin()
+        || (
+          resource.data.isPublic == true
+          && (!('status' in resource.data) || resource.data.status == 'active')
+        );
+
+      allow create: if isAdmin()
+        && imageCreateIsValid(request.resource.data);
+      allow update: if isAdmin()
+        && imageClientUpdateIsValid();
+      // Deletion and visibility/path changes are server-only. The callable
+      // validates reverse usages and uses Admin SDK, which bypasses rules.
+      allow delete: if false;
+    }
+
+
+
+    // =========================
+    // Admin fallback for all remaining CRM collections
+    // =========================
+    // This prevents admin pages from breaking when the app uses collections
+    // that are not explicitly listed above.
+    //
+    // Admin can access remaining collections.
+    // Public users and volunteers are blocked unless a collection has
+    // an explicit rule above.
+
+    match /{collection}/{document=**} {
+      // Images have stricter visibility invariants above. Excluding them here
+      // prevents this fallback from bypassing those checks for Admin writes.
+      allow read, write: if isAdmin()
+        && collection != 'images'
+        && collection != 'siteContent';
+    }
+  }
+}

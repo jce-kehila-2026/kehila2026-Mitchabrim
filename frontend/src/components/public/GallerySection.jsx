@@ -1,0 +1,237 @@
+import { useEffect, useRef, useState } from "react";
+import useSiteContent from "@/hooks/useSiteContent";
+import { Link } from "react-router-dom";
+import { auth } from "../../firebase";
+import { getPublicGalleryImages } from "../../services/imagesService";
+import { Camera, Image } from "lucide-react";
+
+// Small cap for the homepage carousel. /public-gallery uses its own larger cap.
+const HOME_GALLERY_MAX = 8;
+
+export default function GallerySection() {
+  const { content } = useSiteContent();
+  const g = content.gallery;
+
+  const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState("הכל");
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [shouldFetch, setShouldFetch] = useState(false);
+  const sectionRef = useRef(null);
+
+  // Defer gallery fetching until the section is near the viewport so the hero
+  // and above-the-fold content aren't competing for network on first paint.
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setShouldFetch(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setShouldFetch(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+    io.observe(el);
+    // Safety fallback: fetch after hero settles even if observer never fires.
+    const t = setTimeout(() => setShouldFetch(true), 2500);
+    return () => {
+      io.disconnect();
+      clearTimeout(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!shouldFetch) return;
+    let cancelled = false;
+    const fetchImages = async () => {
+      try {
+        const fetched = await getPublicGalleryImages({ max: HOME_GALLERY_MAX });
+        if (!cancelled) setImages(fetched);
+      } catch (error) {
+        const authState = auth?.currentUser ? `uid=${auth.currentUser.uid}` : "anonymous";
+        console.error(
+          `[GallerySection] Failed to fetch Firestore collection 'images' with where("isPublic","==",true). Auth: ${authState}. Code: ${error?.code}`,
+          error
+        );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchImages();
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldFetch]);
+
+  // Reset index to 0 when category changes
+  useEffect(() => {
+    setIndex(0);
+  }, [selectedCategory]);
+
+  const filtered = selectedCategory === "הכל"
+    ? images
+    : images.filter(img => img.category === selectedCategory);
+
+  // Take the last 5 images
+  const slides = filtered.slice(0, 5).map(img => ({
+    img: img.url,
+    title: img.title,
+    category: img.category
+  }));
+  const total = slides.length;
+
+  useEffect(() => {
+    if (paused || total <= 1) return;
+    const id = setInterval(() => setIndex((i) => (i + 1) % total), 3000);
+    return () => clearInterval(id);
+  }, [paused, total]);
+
+  const goTo = (i) => {
+    if (total === 0) return;
+    setIndex(((i % total) + total) % total);
+  };
+
+  const galleryLink = selectedCategory === "הכל"
+    ? "/public-gallery"
+    : `/public-gallery?category=${selectedCategory}`;
+
+  const CATEGORIES = ["הכל", "פרלמנטים", "מתנדבים", "חגים", "שיווק", "כרטיסי ברכה"];
+
+  return (
+    <section id="gallery" ref={sectionRef} className="pub-section gallery3d-section">
+      <div className="container">
+        <div className="gallery-header">
+          <span className="section-eyebrow">{g.eyebrow}</span>
+          <h2 className="section-title">{g.title}</h2>
+          <p className="section-sub">{g.subtitle}</p>
+          
+          {/* أزرار اختيار الفئة - للتصفية المباشرة في الصفحة الرئيسية */}
+          <div style={{ 
+            display: "flex", 
+            gap: "10px", 
+            flexWrap: "wrap", 
+            justifyContent: "center", 
+            marginTop: "20px",
+            marginBottom: "20px"
+          }}>
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                style={{
+                  fontSize: "14px",
+                  padding: "8px 16px",
+                  color: selectedCategory === cat ? "#fff" : "#8b2c2c",
+                  background: selectedCategory === cat ? "#8b2c2c" : "#fffaf2",
+                  border: selectedCategory === cat ? "1px solid #8b2c2c" : "1px solid #e2d8c9",
+                  borderRadius: "30px",
+                  cursor: "pointer",
+                  fontWeight: selectedCategory === cat ? "bold" : "500",
+                  transition: "all 0.2s"
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedCategory !== cat) {
+                    e.currentTarget.style.background = "#8b2c2c";
+                    e.currentTarget.style.color = "#fff";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedCategory !== cat) {
+                    e.currentTarget.style.background = "#fffaf2";
+                    e.currentTarget.style.color = "#8b2c2c";
+                  }
+                }}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* زر عرض جميع الصور في صفحة منفصلة */}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "30px" }}>
+            <Link to={galleryLink} className="btn btn-outline" style={{ fontWeight: "bold", padding: "10px 24px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+              <Camera size={18} strokeWidth={2} /> לצפייה בכל התמונות בקטגוריית {selectedCategory === "הכל" ? "הגלריה" : selectedCategory} ←
+            </Link>
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "60px", color: "#8b2c2c", fontWeight: "bold" }}>
+            טוען תמונות...
+          </div>
+        ) : total === 0 ? (
+          <div style={{ 
+            textAlign: "center", 
+            padding: "80px 20px", 
+            backgroundColor: "#fffaf2", 
+            borderRadius: "20px", 
+            border: "1px dashed #e2d8c9",
+            maxWidth: "600px",
+            margin: "0 auto",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "10px"
+          }}>
+            <Image size={48} strokeWidth={1.5} style={{ color: "#bbb" }} />
+            <h3 style={{ color: "#8b2c2c", marginTop: "5px", fontWeight: "bold" }}>אין תמונות להצגה</h3>
+            <p style={{ color: "#666", fontSize: "14px" }}>
+              עדיין לא הועלו תמונות ציבוריות בקטגוריית "{selectedCategory}".
+            </p>
+          </div>
+        ) : (
+          <div
+            className="g3d-stage"
+            onMouseEnter={() => setPaused(true)}
+            onMouseLeave={() => setPaused(false)}
+          >
+            {slides.map((s, i) => {
+              let pos = i - index;
+              if (pos > total / 2) pos -= total;
+              if (pos < -total / 2) pos += total;
+              const abs = Math.abs(pos);
+              if (abs > 2) return null;
+              return (
+                <div
+                  key={i}
+                  className={`g3d-card ${pos === 0 ? "is-active" : ""}`}
+                  style={{ "--pos": pos, "--abs": abs, zIndex: 10 - abs }}
+                  onClick={() => goTo(i)}
+                >
+                  {s.img && <img src={s.img} alt={s.title} loading="lazy" />}
+                  {pos === 0 && <div className="g3d-caption">{s.title}</div>}
+                </div>
+              );
+            })}
+
+            {total > 1 && (
+              <>
+                <button className="g3d-nav g3d-nav-right" onClick={() => goTo(index - 1)} aria-label="הקודם">›</button>
+                <button className="g3d-nav g3d-nav-left" onClick={() => goTo(index + 1)} aria-label="הבא">‹</button>
+              </>
+            )}
+          </div>
+        )}
+
+        {total > 1 && (
+          <div className="g3d-dots">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                className={`g3d-dot ${i === index ? "active" : ""}`}
+                onClick={() => goTo(i)}
+                aria-label={`תמונה ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "origin": [
+      "http://localhost:8080",
+      "http://localhost:4173",
+      "https://mitchabrim-jce2026.web.app",
+      "https://mitchabrim-jce2026.firebaseapp.com"
+    ],
+    "method": [
+      "GET",
+      "HEAD"
+    ],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "ETag"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
